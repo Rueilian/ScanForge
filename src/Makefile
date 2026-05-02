@@ -1,0 +1,18 @@
+CXX      := g++
+CXXFLAGS := -std=c++14 -O2 -Wall -Wextra
+TARGET   := scanforge
+SRCS     := main.cpp scan_chain.cpp
+OBJS     := $(SRCS:.cpp=.o)
+
+.PHONY: all clean
+
+all: $(TARGET)
+
+$(TARGET): $(OBJS)
+	$(CXX) $(CXXFLAGS) -o $@ $^
+
+%.o: %.cpp scan_chain.h
+	$(CXX) $(CXXFLAGS) -c -o $@ $<
+
+clean:
+	rm -f $(OBJS) $(TARGET)

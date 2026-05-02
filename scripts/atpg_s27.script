@@ -9,7 +9,7 @@ set_static_compression on
 set_dynamic_compression on
 set_X-Fill on
 run_atpg
-add_scan_chains
+add_scan_chains -o results/s27.sf
 report_statistics > rpt/FAN_s27.rpt
 write_pattern pat/FAN_s27.pat
 write_to_STIL pat/FAN_s27.stil

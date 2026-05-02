@@ -1,13 +1,3 @@
-# Build artifacts
-FAN_ATPG/bin/
-FAN_ATPG/obj/
-FAN_ATPG/*.o
-FAN_ATPG/**/*.o
-
-# Generated output (keep samples in results/, ignore bulk)
-*.pat
-*.log
-
-# OS
-.DS_Store
-Thumbs.db
+*.o
+scanforge
+*.sf.tmp
