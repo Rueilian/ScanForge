@@ -26,4 +26,11 @@ void sweepPartialScan(const ScanData &data,
                       const std::vector<double> &ratios,
                       SelectionMode mode = SelectionMode::SCOAP_CO);
 
+// Sweep coverage estimation across ratios, comparing all three modes.
+// Prints a table: ratio | K | CO coverage | Combined coverage | Random coverage
+void sweepCoverage(const ScanData &data,
+                   const std::vector<double> &ratios,
+                   bool csv = false,
+                   unsigned seed = 42);
+
 } // namespace ScanForge

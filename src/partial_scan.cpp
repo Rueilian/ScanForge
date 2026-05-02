@@ -9,6 +9,7 @@
 #include <iostream>
 #include <numeric>
 #include <random>
+#include <string>
 
 namespace ScanForge {
 
@@ -93,6 +94,71 @@ void sweepPartialScan(const ScanData &data,
         std::cout << "\n";
     }
     std::cout << "====================================================\n";
+}
+
+void sweepCoverage(const ScanData &data,
+                   const std::vector<double> &ratios,
+                   bool csv,
+                   unsigned seed)
+{
+    int N = data.numFF;
+
+    if (csv) {
+        std::cout << "ratio,K,co_scoap_cov,combined_scoap_cov,random_scoap_cov,"
+                     "co_ratio,combined_ratio,random_ratio\n";
+    } else {
+        std::cout << "\n====================================================\n";
+        std::cout << "  ScanForge — Coverage Estimate Sweep\n";
+        std::cout << "  Circuit FFs: " << N
+                  << "   Patterns: " << data.patterns.size() << "\n";
+        std::cout << "  SCOAP-weighted: sum(CO_i of scanned FFs) / sum(all CO_i)\n";
+        std::cout << "  Baseline(CO ratio): K / N  (uniform-weight reference)\n";
+        std::cout << "====================================================\n";
+        std::cout << std::left
+                  << std::setw(9)  << "Ratio"
+                  << std::setw(6)  << "K"
+                  << std::setw(18) << "CO(scoap)"
+                  << std::setw(18) << "Combined(scoap)"
+                  << std::setw(18) << "Random(scoap)"
+                  << "Baseline\n";
+        std::cout << std::string(77, '-') << "\n";
+    }
+
+    for (double r : ratios) {
+        int k = std::max(1, (int)std::round(r * N));
+
+        auto chainCO   = selectFFs(data, k, SelectionMode::SCOAP_CO,       seed);
+        auto chainComb = selectFFs(data, k, SelectionMode::SCOAP_COMBINED,  seed);
+        auto chainRand = selectFFs(data, k, SelectionMode::RANDOM,          seed);
+
+        auto covCO   = estimateCoverage(data, chainCO);
+        auto covComb = estimateCoverage(data, chainComb);
+        auto covRand = estimateCoverage(data, chainRand);
+        double baseline = (N > 0) ? (double)k / N : 0.0;
+
+        if (csv) {
+            std::cout << std::fixed << std::setprecision(2) << r << ","
+                      << k << ","
+                      << std::setprecision(4) << covCO.scoap_weighted   << ","
+                      << covComb.scoap_weighted << ","
+                      << covRand.scoap_weighted << ","
+                      << covCO.patternCoverage  << ","
+                      << covComb.patternCoverage << ","
+                      << covRand.patternCoverage << "\n";
+        } else {
+            auto pct = [](double v){ return std::to_string((int)(v*100+0.5)) + "%"; };
+            std::cout << std::fixed << std::setprecision(0)
+                      << std::left << std::setw(8) << (std::to_string((int)(r*100+0.5)) + "%")
+                      << std::left << std::setw(6) << k
+                      << std::setprecision(1)
+                      << std::left << std::setw(18) << pct(covCO.scoap_weighted)
+                      << std::left << std::setw(18) << pct(covComb.scoap_weighted)
+                      << std::left << std::setw(18) << pct(covRand.scoap_weighted)
+                      << pct(baseline) << "\n";
+        }
+    }
+    if (!csv)
+        std::cout << "====================================================\n";
 }
 
 } // namespace ScanForge

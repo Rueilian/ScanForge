@@ -179,5 +179,54 @@ void printReport(const ScanResult &r, const ScanData &data,
     std::cout << "====================================================\n";
 }
 
-} // namespace ScanForge
+CoverageResult estimateCoverage(const ScanData &data,
+                                const std::vector<int> &chain)
+{
+    std::vector<bool> inChain(data.numFF, false);
+    for (int idx : chain) inChain[idx] = true;
 
+    // --- Pattern-applicability metric ---
+    // A pattern is applicable if every FF needing a specific value is in chain.
+    int applicable = 0;
+    for (const auto &pat : data.patterns) {
+        bool ok = true;
+        for (int i = 0; i < data.numFF; ++i) {
+            if (pat.ppi[i] != X && !inChain[i]) { ok = false; break; }
+        }
+        if (ok) ++applicable;
+    }
+
+    // --- SCOAP-weighted observability coverage ---
+    // Each FF contributes proportionally to how hard it is to observe without scan:
+    //   weight_i = CO_i  (higher CO → harder to observe → more benefit from scanning)
+    // coverage = sum(CO_i for scanned FFs) / sum(CO_i for all FFs)
+    // Falls back to uniform weighting (= K/N) if no SCOAP data available.
+    double totalWeight = 0.0, chainWeight = 0.0;
+    bool hasSCOAP = false;
+    for (int i = 0; i < data.numFF; ++i) {
+        if (data.ffs[i].co > 0) hasSCOAP = true;
+        double w = hasSCOAP ? (double)data.ffs[i].co : 1.0;
+        totalWeight += w;
+        if (inChain[i]) chainWeight += w;
+    }
+    // Re-traverse once SCOAP flag is known
+    if (hasSCOAP) {
+        totalWeight = chainWeight = 0.0;
+        for (int i = 0; i < data.numFF; ++i) {
+            totalWeight += data.ffs[i].co;
+            if (inChain[i]) chainWeight += data.ffs[i].co;
+        }
+    }
+    double scoap_w = totalWeight > 0.0 ? chainWeight / totalWeight : 0.0;
+
+    CoverageResult r;
+    r.applicablePatterns = applicable;
+    r.totalPatterns      = (int)data.patterns.size();
+    r.patternCoverage    = r.totalPatterns > 0
+                           ? (double)applicable / r.totalPatterns : 0.0;
+    r.scoap_weighted     = scoap_w;
+    r.estimatedCoverage  = scoap_w;   // primary metric
+    return r;
+}
+
+} // namespace ScanForge

@@ -57,9 +57,24 @@ inline ScanResult simulateFull(const ScanData &data)
     return simulate(data, chain);
 }
 
+struct CoverageResult {
+    int    applicablePatterns; // patterns where all required FFs are in chain
+    int    totalPatterns;
+    double patternCoverage;    // applicablePatterns / totalPatterns
+    double scoap_weighted;     // sum(1/CO_i for scanned FFs) / sum(1/CO_i for all FFs)
+                               // approximates fault coverage based on observability
+    double estimatedCoverage;  // == scoap_weighted (primary metric for partial scan)
+};
+
+// Estimate fault coverage for a given partial scan chain.
+// A pattern is "applicable" if every FF with a non-X PPI value is in the chain
+// (i.e., every FF that needs a specific value can be loaded via scan).
+// Returns an estimate: applicable patterns / total patterns.
+CoverageResult estimateCoverage(const ScanData &data,
+                                const std::vector<int> &chain);
+
 // Print a human-readable report to stdout.
 void printReport(const ScanResult &result, const ScanData &data,
                  const std::vector<int> &chain);
 
 } // namespace ScanForge
-

@@ -4,6 +4,7 @@
 #include "scan_chain.h"
 #include "partial_scan.h"
 #include <iostream>
+#include <iomanip>
 #include <string>
 #include <vector>
 #include <cstdlib>
@@ -16,7 +17,10 @@ static void usage(const char *prog)
         "\n"
         "Options:\n"
         "  (no options)          Full scan analysis\n"
-        "  --sweep               Sweep partial scan ratios 25/50/75/100%%\n"
+        "  --sweep               Sweep partial scan ratios 25/50/75/100%\n"
+        "  --coverage            Coverage estimate sweep (compares CO/Combined/Random)\n"
+        "  --fine                Use fine-grained sweep (5% steps) with --sweep/--coverage\n"
+        "  --csv                 Output --coverage results as CSV\n"
         "  --partial <ratio>     Partial scan at given ratio (0.0–1.0)\n"
         "  --mode <co|combined|random>\n"
         "                        FF selection strategy (default: co)\n"
@@ -30,20 +34,26 @@ int main(int argc, char *argv[])
     if (argc < 2) { usage(argv[0]); return 1; }
 
     std::string sfPath;
-    bool        doSweep  = false;
-    double      partialR = -1.0;
+    bool        doSweep    = false;
+    bool        doCoverage = false;
+    bool        doFine     = false;
+    bool        doCSV      = false;
+    double      partialR   = -1.0;
     ScanForge::SelectionMode mode = ScanForge::SelectionMode::SCOAP_CO;
 
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
-        if (a == "-h" || a == "--help") { usage(argv[0]); return 0; }
-        else if (a == "--sweep")  { doSweep = true; }
+        if      (a == "-h" || a == "--help") { usage(argv[0]); return 0; }
+        else if (a == "--sweep")    { doSweep    = true; }
+        else if (a == "--coverage") { doCoverage = true; }
+        else if (a == "--fine")     { doFine     = true; }
+        else if (a == "--csv")      { doCSV      = true; }
         else if (a == "--partial" && i+1 < argc) { partialR = std::atof(argv[++i]); }
         else if (a == "--mode" && i+1 < argc) {
             std::string m = argv[++i];
-            if (m == "combined") mode = ScanForge::SelectionMode::SCOAP_COMBINED;
-            else if (m == "random") mode = ScanForge::SelectionMode::RANDOM;
-            else mode = ScanForge::SelectionMode::SCOAP_CO;
+            if      (m == "combined") mode = ScanForge::SelectionMode::SCOAP_COMBINED;
+            else if (m == "random")   mode = ScanForge::SelectionMode::RANDOM;
+            else                      mode = ScanForge::SelectionMode::SCOAP_CO;
         }
         else if (a[0] != '-') { sfPath = a; }
         else { std::cerr << "Unknown option: " << a << "\n"; return 1; }
@@ -54,13 +64,29 @@ int main(int argc, char *argv[])
     ScanForge::ScanData data;
     if (!ScanForge::parseScanData(sfPath, data)) return 1;
 
-    if (doSweep) {
-        ScanForge::sweepPartialScan(data, {0.25, 0.50, 0.75, 1.0}, mode);
+    // Build ratio list
+    std::vector<double> ratios;
+    if (doFine) {
+        for (int p = 5; p <= 100; p += 5) ratios.push_back(p / 100.0);
+    } else {
+        ratios = {0.25, 0.50, 0.75, 1.0};
+    }
+
+    if (doCoverage) {
+        ScanForge::sweepCoverage(data, ratios, doCSV);
+    } else if (doSweep) {
+        ScanForge::sweepPartialScan(data, ratios, mode);
     } else if (partialR > 0.0 && partialR < 1.0) {
         int k = std::max(1, (int)std::round(partialR * data.numFF));
-        auto chain = ScanForge::selectFFs(data, k, mode);
+        auto chain  = ScanForge::selectFFs(data, k, mode);
         auto result = ScanForge::simulate(data, chain);
         ScanForge::printReport(result, data, chain);
+        auto cov = ScanForge::estimateCoverage(data, chain);
+        std::cout << "  Estimated coverage: "
+                  << cov.applicablePatterns << "/" << cov.totalPatterns
+                  << " patterns applicable ("
+                  << std::fixed << std::setprecision(1)
+                  << cov.estimatedCoverage * 100 << "%)\n";
     } else {
         // Full scan
         std::vector<int> chain(data.numFF);
@@ -71,3 +97,4 @@ int main(int argc, char *argv[])
 
     return 0;
 }
+
