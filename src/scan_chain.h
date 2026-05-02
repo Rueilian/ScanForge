@@ -28,9 +28,25 @@ struct ScanData {
     std::vector<Pattern>  patterns;
 };
 
-struct FFResult {
+struct FFStress {
     std::string name;
-    long long   toggles;
+    int         index = 0;
+
+    long long toggle_count = 0;
+    long long one_count    = 0;
+    long long zero_count   = 0;
+
+    int current_value   = -1;  // 0/1 while in a run; -1 = no prior binary sample
+    int current_run_len = 0;
+    int max_run_0       = 0;
+    int max_run_1       = 0;
+
+    double toggle_rate   = 0.0;
+    double duty_1        = 0.0;
+    double duty_0        = 0.0;
+    double bias_score      = 0.0;
+    double max_run_score   = 0.0;
+    double stress_score    = 0.0;
 };
 
 struct ScanResult {
@@ -39,7 +55,7 @@ struct ScanResult {
     long long         totalShiftCycles;
     long long         totalToggles;
     double            switchingActivity;
-    std::vector<FFResult> perFF;
+    std::vector<FFStress> perFF;
 };
 
 // Parse a .sf file produced by FAN_ATPG's add_scan_chains command.
@@ -76,5 +92,8 @@ CoverageResult estimateCoverage(const ScanData &data,
 // Print a human-readable report to stdout.
 void printReport(const ScanResult &result, const ScanData &data,
                  const std::vector<int> &chain);
+
+// Write per-FF stress metrics (after simulate). Returns false on I/O error.
+bool writeStressCsv(const ScanResult &result, const std::string &path);
 
 } // namespace ScanForge
