@@ -1,7 +1,7 @@
 CXX      := g++
 CXXFLAGS := -std=c++14 -O2 -Wall -Wextra
 TARGET   := scanforge
-SRCS     := main.cpp scan_chain.cpp
+SRCS     := main.cpp scan_chain.cpp partial_scan.cpp
 OBJS     := $(SRCS:.cpp=.o)
 
 .PHONY: all clean
