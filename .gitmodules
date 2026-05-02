@@ -1,0 +1,3 @@
+[submodule "FAN_ATPG"]
+	path = FAN_ATPG
+	url = https://github.com/Rueilian/FAN_ATPG.git
