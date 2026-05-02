@@ -10,6 +10,7 @@ It uses [FAN_ATPG](https://github.com/NTU-LaDS-II/FAN_ATPG) as a backend to expo
 | Feature | Description |
 |---------|-------------|
 | **Full scan analysis** | Simulate all FFs in scan chain, report switching activity |
+| **Per-FF stress CSV** | Optional `--stress-csv` export: toggles, duty, run-length, composite stress score |
 | **Partial scan selection** | Select a subset of FFs using SCOAP-CO, SCOAP-Combined, or Random strategy |
 | **Ratio sweep** | Sweep 25/50/75/100% ratios in one command (`--sweep`) |
 | **SCOAP export** | FAN_ATPG fork computes CC0/CC1/CO and exports them to `.sf` format |
@@ -77,6 +78,9 @@ cd ..
 # Full scan
 ./src/scanforge FAN_ATPG/results/s27.sf
 
+# Per-FF stress profile (CSV) + sanity lines on stdout
+./src/scanforge FAN_ATPG/results/s27.sf --stress-csv stress.csv
+
 # Partial scan sweep (25/50/75/100%) using SCOAP-CO strategy
 ./src/scanforge FAN_ATPG/results/s953.sf --sweep
 
@@ -97,6 +101,10 @@ Usage: scanforge [options] <scan_data.sf>
 Options:
   (no options)              Full scan analysis
   --sweep                   Sweep partial scan ratios 25/50/75/100%
+  --coverage                Coverage estimate sweep
+  --fine                    Finer sweep steps (with --sweep / --coverage)
+  --csv                     CSV output for --coverage
+  --stress-csv <path>       Write per-FF scan stress metrics (full or --partial run)
   --partial <ratio>         Partial scan at given ratio (0.0–1.0)
   --mode <co|combined|random>
                             FF selection strategy (default: co)
@@ -144,7 +152,7 @@ Higher SCOAP score = harder to test = higher priority for inclusion in scan chai
 
 | Circuit | FFs | Patterns | Shift Cycles | Toggles | Switch Activity |
 |---------|-----|----------|--------------|---------|-----------------|
-| s27     | 3   | 5        | 15           | 16      | 0.3556          |
+| s27     | 3   | 5        | 15           | 19      | 0.4222          |
 | s208    | 8   | 29       | 232          | 555     | 0.2990          |
 | s510    | 6   | 59       | 354          | 984     | 0.4633          |
 | s953    | 29  | 89       | 2581         | 24933   | 0.3331          |

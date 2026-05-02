@@ -21,6 +21,7 @@ static void usage(const char *prog)
         "  --coverage            Coverage estimate sweep (compares CO/Combined/Random)\n"
         "  --fine                Use fine-grained sweep (5% steps) with --sweep/--coverage\n"
         "  --csv                 Output --coverage results as CSV\n"
+        "  --stress-csv <path>   Write per-FF scan stress metrics to CSV (full/partial run)\n"
         "  --partial <ratio>     Partial scan at given ratio (0.0–1.0)\n"
         "  --mode <co|combined|random>\n"
         "                        FF selection strategy (default: co)\n"
@@ -34,6 +35,7 @@ int main(int argc, char *argv[])
     if (argc < 2) { usage(argv[0]); return 1; }
 
     std::string sfPath;
+    std::string stressCsvPath;
     bool        doSweep    = false;
     bool        doCoverage = false;
     bool        doFine     = false;
@@ -48,6 +50,7 @@ int main(int argc, char *argv[])
         else if (a == "--coverage") { doCoverage = true; }
         else if (a == "--fine")     { doFine     = true; }
         else if (a == "--csv")      { doCSV      = true; }
+        else if (a == "--stress-csv" && i+1 < argc) { stressCsvPath = argv[++i]; }
         else if (a == "--partial" && i+1 < argc) { partialR = std::atof(argv[++i]); }
         else if (a == "--mode" && i+1 < argc) {
             std::string m = argv[++i];
@@ -73,14 +76,24 @@ int main(int argc, char *argv[])
     }
 
     if (doCoverage) {
+        if (!stressCsvPath.empty())
+            std::cerr << "Warning: --stress-csv is ignored with --coverage\n";
         ScanForge::sweepCoverage(data, ratios, doCSV);
     } else if (doSweep) {
+        if (!stressCsvPath.empty())
+            std::cerr << "Warning: --stress-csv is ignored with --sweep\n";
         ScanForge::sweepPartialScan(data, ratios, mode);
     } else if (partialR > 0.0 && partialR < 1.0) {
         int k = std::max(1, (int)std::round(partialR * data.numFF));
         auto chain  = ScanForge::selectFFs(data, k, mode);
         auto result = ScanForge::simulate(data, chain);
         ScanForge::printReport(result, data, chain);
+        if (!stressCsvPath.empty()) {
+            if (ScanForge::writeStressCsv(result, stressCsvPath))
+                std::cout << "  Stress CSV written to: " << stressCsvPath << "\n";
+            else
+                std::cerr << "Error: cannot write stress CSV: " << stressCsvPath << "\n";
+        }
         auto cov = ScanForge::estimateCoverage(data, chain);
         std::cout << "  Estimated coverage: "
                   << cov.applicablePatterns << "/" << cov.totalPatterns
@@ -93,6 +106,12 @@ int main(int argc, char *argv[])
         for (int i = 0; i < data.numFF; ++i) chain[i] = i;
         auto result = ScanForge::simulate(data, chain);
         ScanForge::printReport(result, data, chain);
+        if (!stressCsvPath.empty()) {
+            if (ScanForge::writeStressCsv(result, stressCsvPath))
+                std::cout << "  Stress CSV written to: " << stressCsvPath << "\n";
+            else
+                std::cerr << "Error: cannot write stress CSV: " << stressCsvPath << "\n";
+        }
     }
 
     return 0;
