@@ -3,12 +3,56 @@
 
 #include "scan_chain.h"
 
+#include <algorithm>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
 
 namespace ScanForge {
+
+namespace {
+
+// Duty / run-length metrics treat non-H as logic-0 (L, X, D, …) so every
+// shift cycle contributes exactly one {0,1} sample (see one_count + zero_count).
+inline int dutyBit(Value v)
+{
+    return (v == H) ? 1 : 0;
+}
+
+inline void flushOpenRun(FFStress &s)
+{
+    if (s.current_value >= 0 && s.current_run_len > 0) {
+        if (s.current_value == 1)
+            s.max_run_1 = std::max(s.max_run_1, s.current_run_len);
+        else
+            s.max_run_0 = std::max(s.max_run_0, s.current_run_len);
+    }
+    s.current_value   = -1;
+    s.current_run_len = 0;
+}
+
+inline bool valueToggles(Value oldV, Value newV)
+{
+    return oldV != X && newV != X && oldV != newV;
+}
+
+void finalizeStressMetrics(ScanResult &res)
+{
+    long long C = res.totalShiftCycles;
+    if (C <= 0) return;
+
+    for (auto &s : res.perFF) {
+        s.toggle_rate = (double)s.toggle_count / (double)C;
+        s.duty_1      = (double)s.one_count / (double)C;
+        s.duty_0      = (double)s.zero_count / (double)C;
+        s.bias_score    = std::abs(s.duty_1 - 0.5);
+        s.max_run_score = (double)std::max(s.max_run_0, s.max_run_1) / (double)C;
+        s.stress_score  = 1.0 * s.toggle_rate + 0.5 * s.bias_score + 0.5 * s.max_run_score;
+    }
+}
+
+} // namespace
 
 // ---------------------------------------------------------------------------
 // Parser
@@ -87,11 +131,12 @@ ScanResult simulate(const ScanData &data, const std::vector<int> &chain)
     res.switchingActivity = 0.0;
     res.perFF.resize(K);
     for (int i = 0; i < K; ++i) {
-        res.perFF[i].name    = data.ffs[chain[i]].name;
-        res.perFF[i].toggles = 0;
+        res.perFF[i].name  = data.ffs[chain[i]].name;
+        res.perFF[i].index = i;
     }
 
-    std::vector<Value> chainState(K, X);
+    // Scan-in from logic-0 (matches documented SI=0); known binary initial state.
+    std::vector<Value> chainState(K, L);
 
     for (const auto &pat : data.patterns) {
         if (pat.ppi.empty()) continue;
@@ -103,19 +148,45 @@ ScanResult simulate(const ScanData &data, const std::vector<int> &chain)
 
             for (int i = K - 1; i > 0; --i) {
                 Value incoming = chainState[i - 1];
-                if (chainState[i] != X && incoming != X && chainState[i] != incoming) {
-                    ++res.perFF[i].toggles;
+                if (valueToggles(chainState[i], incoming)) {
+                    ++res.perFF[i].toggle_count;
                     ++res.totalToggles;
                 }
                 chainState[i] = incoming;
             }
-            if (chainState[0] != X && newBit != X && chainState[0] != newBit) {
-                ++res.perFF[0].toggles;
+            if (valueToggles(chainState[0], newBit)) {
+                ++res.perFF[0].toggle_count;
                 ++res.totalToggles;
             }
             chainState[0] = newBit;
             ++res.totalShiftCycles;
+
+            for (int i = 0; i < K; ++i) {
+                FFStress &st = res.perFF[i];
+                int       b  = dutyBit(chainState[i]);
+                if (b == 1)
+                    ++st.one_count;
+                else
+                    ++st.zero_count;
+
+                if (st.current_value < 0) {
+                    st.current_value   = b;
+                    st.current_run_len = 1;
+                } else if (b == st.current_value) {
+                    ++st.current_run_len;
+                } else {
+                    if (st.current_value == 1)
+                        st.max_run_1 = std::max(st.max_run_1, st.current_run_len);
+                    else
+                        st.max_run_0 = std::max(st.max_run_0, st.current_run_len);
+                    st.current_value   = b;
+                    st.current_run_len = 1;
+                }
+            }
         }
+
+        for (int i = 0; i < K; ++i)
+            flushOpenRun(res.perFF[i]);
 
         if (!pat.ppo.empty())
             for (int i = 0; i < K; ++i) {
@@ -123,6 +194,11 @@ ScanResult simulate(const ScanData &data, const std::vector<int> &chain)
                 chainState[i] = (ffIdx < (int)pat.ppo.size()) ? pat.ppo[ffIdx] : X;
             }
     }
+
+    for (int i = 0; i < K; ++i)
+        flushOpenRun(res.perFF[i]);
+
+    finalizeStressMetrics(res);
 
     if (K > 0 && res.totalShiftCycles > 0)
         res.switchingActivity =
@@ -148,8 +224,26 @@ void printReport(const ScanResult &r, const ScanData &data,
     std::cout << "  Test patterns        : " << r.numPatterns     << "\n";
     std::cout << "  Total shift cycles   : " << r.totalShiftCycles << "\n";
     std::cout << "  Total toggles        : " << r.totalToggles    << "\n";
+    long long sumPer = 0;
+    for (const auto &ff : r.perFF) sumPer += ff.toggle_count;
+    std::cout << "  Sum of per-FF toggles: " << sumPer << "\n";
+    if (sumPer != r.totalToggles)
+        std::cout << "  (warning: per-FF sum != total toggles)\n";
     std::cout << "  Switching activity   : " << std::fixed << std::setprecision(4)
               << r.switchingActivity << "\n";
+    if (!r.perFF.empty()) {
+        int   bestIdx = 0;
+        double bestS  = r.perFF[0].stress_score;
+        for (int i = 1; i < r.numFF; ++i) {
+            if (r.perFF[i].stress_score > bestS) {
+                bestS  = r.perFF[i].stress_score;
+                bestIdx = i;
+            }
+        }
+        std::cout << "  Max stress FF        : " << r.perFF[bestIdx].name << "\n";
+        std::cout << "  Max stress score     : " << std::fixed << std::setprecision(4)
+                  << bestS << "\n";
+    }
     std::cout << "\n  Scan chain order (SI →";
     for (int idx : chain)
         std::cout << " " << data.ffs[idx].name << " →";
@@ -174,9 +268,35 @@ void printReport(const ScanResult &r, const ScanData &data,
                       << std::setw(7) << data.ffs[idx].cc0
                       << std::setw(7) << data.ffs[idx].cc1
                       << std::setw(7) << data.ffs[idx].co;
-        std::cout << std::right << std::setw(10) << r.perFF[i].toggles << "\n";
+        std::cout << std::right << std::setw(10) << r.perFF[i].toggle_count << "\n";
     }
     std::cout << "====================================================\n";
+}
+
+bool writeStressCsv(const ScanResult &result, const std::string &path)
+{
+    std::ofstream out(path);
+    if (!out) return false;
+
+    out << "index,ff_name,toggle_count,toggle_rate,one_count,zero_count,"
+           "duty_1,duty_0,bias_score,max_run_0,max_run_1,max_run_score,stress_score\n";
+    out << std::fixed << std::setprecision(6);
+    for (int i = 0; i < result.numFF; ++i) {
+        const FFStress &s = result.perFF[i];
+        out << s.index << ',' << s.name << ','
+            << s.toggle_count << ','
+            << s.toggle_rate << ','
+            << s.one_count << ','
+            << s.zero_count << ','
+            << s.duty_1 << ','
+            << s.duty_0 << ','
+            << s.bias_score << ','
+            << s.max_run_0 << ','
+            << s.max_run_1 << ','
+            << s.max_run_score << ','
+            << s.stress_score << '\n';
+    }
+    return (bool)out;
 }
 
 CoverageResult estimateCoverage(const ScanData &data,

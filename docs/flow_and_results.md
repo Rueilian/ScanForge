@@ -45,7 +45,7 @@ The tool is evaluated on all 12 ISCAS'89 benchmark circuits.
 │  simulate(data, chain):                                              │
 │    for each pattern:                                                 │
 │      shift-in PPI values through chain (K cycles)                   │
-│      count toggles per shift                                        │
+│      count toggles per shift; optional per-FF duty / run-length     │
 │    → ScanResult { shiftCycles, toggles, switchActivity, perFF[] }  │
 │                                                                      │
 │  sweepPartialScan(data, {0.25,0.5,0.75,1.0}, mode):                 │
@@ -105,7 +105,11 @@ Value encoding: 0=Low, 1=High, 2=X (unknown), 3=D (fault sensitized), 4=B (D-bar
 For each test pattern:
 - **Load phase** (K shift cycles): shift PPI values through the scan chain  
   - Cycle t: chain[j] captures chain[j-1]'s state (or SI=0 for j=0)
-- A **toggle** is counted when a FF's state changes between two consecutive shift cycles
+  - The chain starts at **all zeros** before the first pattern so the first shift matches SI=0 semantics (same as treating unknowns as L for the first transition).
+- **Capture phase**: latch PPO values into the chain (end of pattern)
+- A **toggle** is counted when a FF's **known** state (L/H) changes to a different known state between consecutive shift edges (X does not contribute to toggles).
+
+Per-FF **stress metrics** (toggle rate, duty, longest run of 0/1, composite `stress_score`) are accumulated over all shift cycles; use CLI `--stress-csv <file>` to export CSV after a full-scan or `--partial` run.
 
 ```
 Switching Activity = total_toggles / (K × total_shift_cycles)
@@ -121,7 +125,7 @@ where `total_shift_cycles = K × P` (K FFs × P patterns).
 
 | Circuit | FFs | Patterns | Shift Cycles | Toggles     | Switch Activity |
 |---------|-----|----------|--------------|-------------|-----------------|
-| s27     | 3   | 5        | 15           | 16          | 0.3556          |
+| s27     | 3   | 5        | 15           | 19          | 0.4222          |
 | s208    | 8   | 29       | 232          | 555         | 0.2990          |
 | s510    | 6   | 59       | 354          | 984         | 0.4633          |
 | s953    | 29  | 89       | 2,581        | 24,933      | 0.3331          |
@@ -138,10 +142,10 @@ where `total_shift_cycles = K × P` (K FFs × P patterns).
 
 | Ratio | K | Shift Cycles | Toggles | Activity | Selected FFs |
 |-------|---|--------------|---------|----------|-------------|
-| 25%   | 1 | 5            | 2       | 0.4000   | U_G6        |
-| 50%   | 2 | 10           | 7       | 0.3500   | U_G6, U_G7  |
-| 75%   | 2 | 10           | 7       | 0.3500   | U_G6, U_G7  |
-| 100%  | 3 | 15           | 16      | 0.3556   | U_G5, U_G6, U_G7 |
+| 25%   | 1 | 5            | 3       | 0.6000   | U_G6        |
+| 50%   | 2 | 10           | 9       | 0.4500   | U_G6, U_G7  |
+| 75%   | 2 | 10           | 9       | 0.4500   | U_G6, U_G7  |
+| 100%  | 3 | 15           | 19      | 0.4222   | U_G5, U_G6, U_G7 |
 
 U_G6 (CO=13) is selected first — it has the highest observability cost.
 
