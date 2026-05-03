@@ -10,6 +10,16 @@
 #include <cstdlib>
 #include <cmath>
 
+static std::string basenameSf(const std::string &path)
+{
+    std::size_t slash = path.find_last_of("/\\");
+    std::string base = (slash == std::string::npos) ? path : path.substr(slash + 1);
+    std::size_t dot = base.rfind('.');
+    if (dot != std::string::npos && dot > 0)
+        base = base.substr(0, dot);
+    return base.empty() ? "circuit" : base;
+}
+
 static void usage(const char *prog)
 {
     std::cout <<
@@ -20,14 +30,31 @@ static void usage(const char *prog)
         "  --sweep               Sweep partial scan ratios 25/50/75/100%\n"
         "  --coverage            Coverage estimate sweep (compares CO/Combined/Random)\n"
         "  --fine                Use fine-grained sweep (5% steps) with --sweep/--coverage\n"
-        "  --csv                 Output --coverage results as CSV\n"
+        "  --csv                 With --coverage: CSV to stdout. With --sweep: same as\n"
+        "                        --summary-csv - (CSV to stdout) unless --summary-csv is set\n"
+        "  --summary-csv <path>  With --sweep: write tradeoff / coverage-proxy sweep CSV\n"
         "  --stress-csv <path>   Write per-FF scan stress metrics to CSV (full/partial run)\n"
         "  --partial <ratio>     Partial scan at given ratio (0.0–1.0)\n"
-        "  --mode <co|combined|random>\n"
+        "  --mode <co|combined|random|co_wear|combined_wear>\n"
         "                        FF selection strategy (default: co)\n"
+        "  --lambda <x>          Stress penalty weight for *_wear modes (default: 0.5)\n"
+        "  --coverage-proxy <co|combined|controllability>\n"
+        "                        SCOAP proxy for sweep CSV (default: combined)\n"
         "  -h, --help            Print this help\n"
         "\n"
         "  <scan_data.sf>  Data file exported by FAN_ATPG's 'add_scan_chains -o' command.\n";
+}
+
+static const char *modeDisplayName(ScanForge::SelectionMode mode)
+{
+    switch (mode) {
+    case ScanForge::SelectionMode::SCOAP_CO:           return "co";
+    case ScanForge::SelectionMode::SCOAP_COMBINED:     return "combined";
+    case ScanForge::SelectionMode::RANDOM:             return "random";
+    case ScanForge::SelectionMode::SCOAP_CO_WEAR:      return "co_wear";
+    case ScanForge::SelectionMode::SCOAP_COMBINED_WEAR: return "combined_wear";
+    default:                                           return "co";
+    }
 }
 
 int main(int argc, char *argv[])
@@ -36,12 +63,15 @@ int main(int argc, char *argv[])
 
     std::string sfPath;
     std::string stressCsvPath;
+    std::string summaryCsvPath;
     bool        doSweep    = false;
     bool        doCoverage = false;
     bool        doFine     = false;
     bool        doCSV      = false;
     double      partialR   = -1.0;
+    double      lambda     = 0.5;
     ScanForge::SelectionMode mode = ScanForge::SelectionMode::SCOAP_CO;
+    ScanForge::CoverageProxyMode proxyMode = ScanForge::CoverageProxyMode::COMBINED;
 
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
@@ -51,12 +81,29 @@ int main(int argc, char *argv[])
         else if (a == "--fine")     { doFine     = true; }
         else if (a == "--csv")      { doCSV      = true; }
         else if (a == "--stress-csv" && i+1 < argc) { stressCsvPath = argv[++i]; }
+        else if (a == "--summary-csv" && i+1 < argc) { summaryCsvPath = argv[++i]; }
         else if (a == "--partial" && i+1 < argc) { partialR = std::atof(argv[++i]); }
+        else if (a == "--lambda" && i+1 < argc) { lambda = std::atof(argv[++i]); }
+        else if (a == "--coverage-proxy" && i+1 < argc) {
+            std::string p = argv[++i];
+            if      (p == "co") proxyMode = ScanForge::CoverageProxyMode::CO;
+            else if (p == "controllability")
+                proxyMode = ScanForge::CoverageProxyMode::CONTROLLABILITY;
+            else
+                proxyMode = ScanForge::CoverageProxyMode::COMBINED;
+        }
         else if (a == "--mode" && i+1 < argc) {
             std::string m = argv[++i];
-            if      (m == "combined") mode = ScanForge::SelectionMode::SCOAP_COMBINED;
-            else if (m == "random")   mode = ScanForge::SelectionMode::RANDOM;
-            else                      mode = ScanForge::SelectionMode::SCOAP_CO;
+            if      (m == "combined")      mode = ScanForge::SelectionMode::SCOAP_COMBINED;
+            else if (m == "random")        mode = ScanForge::SelectionMode::RANDOM;
+            else if (m == "co_wear")       mode = ScanForge::SelectionMode::SCOAP_CO_WEAR;
+            else if (m == "combined_wear") mode = ScanForge::SelectionMode::SCOAP_COMBINED_WEAR;
+            else if (m == "co")            mode = ScanForge::SelectionMode::SCOAP_CO;
+            else {
+                std::cerr << "Error: unknown --mode \"" << m << "\" "
+                             "(expected co|combined|random|co_wear|combined_wear)\n";
+                return 1;
+            }
         }
         else if (a[0] != '-') { sfPath = a; }
         else { std::cerr << "Unknown option: " << a << "\n"; return 1; }
@@ -78,15 +125,52 @@ int main(int argc, char *argv[])
     if (doCoverage) {
         if (!stressCsvPath.empty())
             std::cerr << "Warning: --stress-csv is ignored with --coverage\n";
+        if (!summaryCsvPath.empty())
+            std::cerr << "Warning: --summary-csv is ignored with --coverage\n";
         ScanForge::sweepCoverage(data, ratios, doCSV);
     } else if (doSweep) {
         if (!stressCsvPath.empty())
             std::cerr << "Warning: --stress-csv is ignored with --sweep\n";
-        ScanForge::sweepPartialScan(data, ratios, mode);
+        ScanForge::SweepConfig scfg;
+        scfg.circuit_name = basenameSf(sfPath);
+        scfg.wear_lambda = lambda;
+        scfg.coverage_proxy_mode = proxyMode;
+        if (!summaryCsvPath.empty()) {
+            scfg.summary_csv_path = summaryCsvPath;
+            scfg.csv_stdout = false;
+        } else if (doCSV) {
+            scfg.csv_stdout = true;
+        }
+        ScanForge::sweepPartialScan(data, ratios, mode, scfg);
     } else if (partialR > 0.0 && partialR < 1.0) {
         int k = std::max(1, (int)std::round(partialR * data.numFF));
-        auto chain  = ScanForge::selectFFs(data, k, mode);
+
+        const std::vector<double> *stressPtr = nullptr;
+        std::vector<double>        stressProf;
+        if (mode == ScanForge::SelectionMode::SCOAP_CO_WEAR ||
+            mode == ScanForge::SelectionMode::SCOAP_COMBINED_WEAR) {
+            stressProf = ScanForge::fullScanStressScores(data);
+            stressPtr = &stressProf;
+        }
+
+        auto chain = ScanForge::selectFFs(data, k, mode, 42u, stressPtr, lambda);
+        auto agg = ScanForge::aggregateStressForChain(stressPtr ? stressProf
+            : ScanForge::fullScanStressScores(data), chain);
+
+        std::cout << std::fixed << std::setprecision(2);
+        std::cout << "Partial scan ratio: " << partialR << "\n";
+        std::cout << "Mode: " << modeDisplayName(mode) << "\n";
+        if (mode == ScanForge::SelectionMode::SCOAP_CO_WEAR ||
+            mode == ScanForge::SelectionMode::SCOAP_COMBINED_WEAR)
+            std::cout << "Lambda: " << std::setprecision(2) << lambda << "\n";
+        std::cout << "Selected FFs: " << k << " / " << data.numFF << "\n";
+
         auto result = ScanForge::simulate(data, chain);
+        std::cout << "Switching Activity: " << std::setprecision(4) << result.switchingActivity << "\n";
+        std::cout << "Max Stress: " << std::setprecision(4) << agg.maxStress << "\n";
+        std::cout << "Stress Variance: " << agg.variance << "\n";
+        std::cout << "Stress Imbalance: " << agg.imbalance << "\n";
+
         ScanForge::printReport(result, data, chain);
         if (!stressCsvPath.empty()) {
             if (ScanForge::writeStressCsv(result, stressCsvPath))
@@ -100,6 +184,11 @@ int main(int argc, char *argv[])
                   << " patterns applicable ("
                   << std::fixed << std::setprecision(1)
                   << cov.estimatedCoverage * 100 << "%)\n";
+        auto px = ScanForge::computeCoverageProxy(data, chain, proxyMode);
+        std::cout << "  Coverage proxy (" << (proxyMode == ScanForge::CoverageProxyMode::CO ? "co" :
+              proxyMode == ScanForge::CoverageProxyMode::CONTROLLABILITY ? "controllability" : "combined")
+                  << "): " << std::fixed << std::setprecision(4)
+                  << px.proxy << "  (loss " << px.loss << ")\n";
     } else {
         // Full scan
         std::vector<int> chain(data.numFF);
@@ -116,4 +205,3 @@ int main(int argc, char *argv[])
 
     return 0;
 }
-

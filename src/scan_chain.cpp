@@ -207,6 +207,53 @@ ScanResult simulate(const ScanData &data, const std::vector<int> &chain)
     return res;
 }
 
+std::vector<double> fullScanStressScores(const ScanData &data)
+{
+    std::vector<int> chain(data.numFF);
+    for (int i = 0; i < data.numFF; ++i)
+        chain[i] = i;
+    ScanResult res = simulate(data, chain);
+    std::vector<double> out(data.numFF);
+    for (int i = 0; i < data.numFF; ++i)
+        out[i] = res.perFF[i].stress_score;
+    return out;
+}
+
+StressAgg aggregateStressForChain(const std::vector<double> &stressByFF,
+                                    const std::vector<int> &chain)
+{
+    StressAgg r;
+    if (chain.empty() || stressByFF.empty())
+        return r;
+
+    double sum = 0.0;
+    int      cnt = 0;
+    for (int idx : chain) {
+        if (idx >= 0 && idx < (int)stressByFF.size()) {
+            double s = stressByFF[idx];
+            sum += s;
+            ++cnt;
+            if (s > r.maxStress)
+                r.maxStress = s;
+        }
+    }
+    if (cnt == 0)
+        return r;
+
+    r.meanStress = sum / cnt;
+    double varSum = 0.0;
+    for (int idx : chain) {
+        if (idx >= 0 && idx < (int)stressByFF.size()) {
+            double d = stressByFF[idx] - r.meanStress;
+            varSum += d * d;
+        }
+    }
+    r.variance = varSum / cnt;
+    if (r.meanStress > 1e-300)
+        r.imbalance = r.maxStress / r.meanStress;
+    return r;
+}
+
 // ---------------------------------------------------------------------------
 // Report
 // ---------------------------------------------------------------------------

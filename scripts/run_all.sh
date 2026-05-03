@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # run_all.sh — Run FAN_ATPG on all 12 ISCAS'89 circuits then sweep partial scan
-# Usage:  bash scripts/run_all.sh [--sweep | --mode <co|combined|random>]
+# Usage:  bash scripts/run_all.sh [--sweep | --mode <co|combined|combined_wear|random>]
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
