@@ -89,6 +89,9 @@ cd ..
 
 # Random baseline
 ./src/scanforge FAN_ATPG/results/s5378.sf --sweep --mode random
+
+# Wear-aware combined metric (stress penalty λ=0.5)
+./src/scanforge FAN_ATPG/results/s953.sf --partial 0.5 --mode combined_wear --lambda 0.5
 ```
 
 ---
