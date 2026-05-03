@@ -92,6 +92,9 @@ cd ..
 
 # Wear-aware combined metric (stress penalty λ=0.5)
 ./src/scanforge FAN_ATPG/results/s953.sf --partial 0.5 --mode combined_wear --lambda 0.5
+
+# Coverage–stress tradeoff sweep (SCOAP proxy + stress + Pareto flags) to CSV
+./src/scanforge FAN_ATPG/results/s5378.sf --sweep --mode combined_wear --lambda 0.5 --summary-csv sweep.csv
 ```
 
 ---
@@ -106,12 +109,16 @@ Options:
   --sweep                   Sweep partial scan ratios 25/50/75/100%
   --coverage                Coverage estimate sweep
   --fine                    Finer sweep steps (with --sweep / --coverage)
-  --csv                     CSV output for --coverage
+  --csv                     With --coverage: CSV to stdout. With --sweep: CSV to stdout
+                            unless --summary-csv is set
+  --summary-csv <path>      With --sweep: write tradeoff sweep CSV (coverage proxy, stress, score)
   --stress-csv <path>       Write per-FF scan stress metrics (full or --partial run)
   --partial <ratio>         Partial scan at given ratio (0.0–1.0)
   --mode <co|combined|random|co_wear|combined_wear>
                             FF selection strategy (default: co)
   --lambda <x>              Stress penalty weight for *_wear modes (default: 0.5)
+  --coverage-proxy <co|combined|controllability>
+                            Which SCOAP sums define coverage_proxy in sweep / --partial
   -h, --help                Print this help
 ```
 
