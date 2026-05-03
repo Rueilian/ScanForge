@@ -11,7 +11,7 @@ It uses [FAN_ATPG](https://github.com/NTU-LaDS-II/FAN_ATPG) as a backend to expo
 |---------|-------------|
 | **Full scan analysis** | Simulate all FFs in scan chain, report switching activity |
 | **Per-FF stress CSV** | Optional `--stress-csv` export: toggles, duty, run-length, composite stress score |
-| **Partial scan selection** | Select a subset of FFs using SCOAP-CO, SCOAP-Combined, or Random strategy |
+| **Partial scan selection** | Select a subset of FFs using SCOAP-CO, SCOAP-Combined, stress-aware combined, or Random |
 | **Ratio sweep** | Sweep 25/50/75/100% ratios in one command (`--sweep`) |
 | **SCOAP export** | FAN_ATPG fork computes CC0/CC1/CO and exports them to `.sf` format |
 | **12 ISCAS'89 benchmarks** | Scripts and results for s27 through s38584 |
@@ -89,6 +89,9 @@ cd ..
 
 # Random baseline
 ./src/scanforge FAN_ATPG/results/s5378.sf --sweep --mode random
+
+# Coverage–stress tradeoff sweep (SCOAP proxy + stress + Pareto flags) to CSV
+./src/scanforge FAN_ATPG/results/s5378.sf --sweep --mode combined_wear --lambda 0.5 --summary-csv sweep.csv
 ```
 
 ---
@@ -103,11 +106,16 @@ Options:
   --sweep                   Sweep partial scan ratios 25/50/75/100%
   --coverage                Coverage estimate sweep
   --fine                    Finer sweep steps (with --sweep / --coverage)
-  --csv                     CSV output for --coverage
+  --csv                     With --coverage: CSV to stdout. With --sweep: CSV to stdout
+                            unless --summary-csv is set
+  --summary-csv <path>      With --sweep: write tradeoff sweep CSV (coverage proxy, stress, score)
   --stress-csv <path>       Write per-FF scan stress metrics (full or --partial run)
   --partial <ratio>         Partial scan at given ratio (0.0–1.0)
-  --mode <co|combined|random>
+  --mode <co|combined|combined_wear|random>
                             FF selection strategy (default: co)
+  --lambda <value>          Wear blend for combined_wear (0 matches combined)
+  --coverage-proxy <co|combined|controllability>
+                            Which SCOAP sums define coverage_proxy in sweep / --partial
   -h, --help                Print this help
 ```
 
