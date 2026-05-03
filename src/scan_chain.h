@@ -65,6 +65,20 @@ bool parseScanData(const std::string &path, ScanData &out);
 // Chain order: SI → chain[0] → chain[1] → ... → chain[K-1] → SO
 ScanResult simulate(const ScanData &data, const std::vector<int> &chain);
 
+// Per-FF stress_score (same formula as post-simulate FFStress::stress_score) for a
+// full-scan chain in circuit order — used for wear-aware selection without CSV.
+std::vector<double> fullScanStressScores(const ScanData &data);
+
+// Aggregate stress metrics over selected FF indices using precomputed per-FF scores.
+struct StressAgg {
+    double maxStress      = 0.0;
+    double variance       = 0.0;
+    double imbalance      = 0.0;  // max / mean among selected
+    double meanStress     = 0.0;
+};
+StressAgg aggregateStressForChain(const std::vector<double> &stressByFF,
+                                  const std::vector<int> &chain);
+
 // Convenience: simulate full scan (all FFs in circuit order)
 inline ScanResult simulateFull(const ScanData &data)
 {

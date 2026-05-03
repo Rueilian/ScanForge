@@ -5,6 +5,7 @@
 #include "scan_chain.h"
 
 #include <algorithm>
+#include <cmath>
 #include <iomanip>
 #include <iostream>
 #include <numeric>
@@ -13,8 +14,32 @@
 
 namespace ScanForge {
 
+namespace {
+
+const double kNormEps = 1e-12;
+
+void minMaxRange(const std::vector<double> &v, double &mn, double &mx)
+{
+    mn = mx = 0.0;
+    if (v.empty()) return;
+    mn = mx = v[0];
+    for (double x : v) {
+        if (x < mn) mn = x;
+        if (x > mx) mx = x;
+    }
+}
+
+double normalizeVal(double x, double mn, double mx)
+{
+    return (x - mn) / (mx - mn + kNormEps);
+}
+
+} // namespace
+
 std::vector<int> selectFFs(const ScanData &data, int k,
-                            SelectionMode mode, unsigned seed)
+                            SelectionMode mode, unsigned seed,
+                            const std::vector<double> *stressByFF,
+                            double lambda)
 {
     int N = data.numFF;
     if (k <= 0) k = 0;
@@ -31,17 +56,37 @@ std::vector<int> selectFFs(const ScanData &data, int k,
         return indices;
     }
 
-    // Score each FF; higher score = harder to test = higher priority for scanning
-    std::vector<double> score(N);
+    const bool wear =
+        (mode == SelectionMode::SCOAP_CO_WEAR ||
+         mode == SelectionMode::SCOAP_COMBINED_WEAR);
+    bool stressOk = wear && stressByFF && (int)stressByFF->size() == N;
+
+    std::vector<double> rawTest(N);
     for (int i = 0; i < N; ++i) {
         const auto &ff = data.ffs[i];
-        if (mode == SelectionMode::SCOAP_CO)
-            score[i] = ff.co;
-        else // SCOAP_COMBINED
-            score[i] = ff.cc0 + ff.cc1 + 2.0 * ff.co;
+        if (mode == SelectionMode::SCOAP_CO || mode == SelectionMode::SCOAP_CO_WEAR)
+            rawTest[i] = ff.co;
+        else // SCOAP_COMBINED or SCOAP_COMBINED_WEAR
+            rawTest[i] = ff.cc0 + ff.cc1 + 2.0 * ff.co;
     }
 
-    // Sort by descending score (ties broken by index)
+    double tMin, tMax;
+    minMaxRange(rawTest, tMin, tMax);
+
+    std::vector<double> score(N);
+    if (!stressOk) {
+        for (int i = 0; i < N; ++i)
+            score[i] = rawTest[i];
+    } else {
+        double sMin, sMax;
+        minMaxRange(*stressByFF, sMin, sMax);
+        for (int i = 0; i < N; ++i) {
+            double nt = normalizeVal(rawTest[i], tMin, tMax);
+            double ns = normalizeVal((*stressByFF)[i], sMin, sMax);
+            score[i] = nt - lambda * ns;
+        }
+    }
+
     std::stable_sort(indices.begin(), indices.end(),
         [&](int a, int b){ return score[a] > score[b]; });
 
@@ -50,45 +95,75 @@ std::vector<int> selectFFs(const ScanData &data, int k,
     return indices;
 }
 
+static const char *selectionModeCliName(SelectionMode mode)
+{
+    switch (mode) {
+    case SelectionMode::SCOAP_CO:           return "co";
+    case SelectionMode::SCOAP_COMBINED:     return "combined";
+    case SelectionMode::RANDOM:             return "random";
+    case SelectionMode::SCOAP_CO_WEAR:      return "co_wear";
+    case SelectionMode::SCOAP_COMBINED_WEAR: return "combined_wear";
+    default:                                return "co";
+    }
+}
+
 void sweepPartialScan(const ScanData &data,
                       const std::vector<double> &ratios,
-                      SelectionMode mode)
+                      SelectionMode mode,
+                      double lambda)
 {
     int N = data.numFF;
-    const char *modeStr =
-        (mode == SelectionMode::SCOAP_CO)       ? "SCOAP-CO" :
-        (mode == SelectionMode::SCOAP_COMBINED) ? "SCOAP-Combined" : "Random";
+
+    std::vector<double> fullStress = fullScanStressScores(data);
+    const std::vector<double> *stressPtr = nullptr;
+    if (mode == SelectionMode::SCOAP_CO_WEAR ||
+        mode == SelectionMode::SCOAP_COMBINED_WEAR)
+        stressPtr = &fullStress;
 
     std::cout << "\n====================================================\n";
-    std::cout << "  ScanForge — Partial Scan Sweep (" << modeStr << ")\n";
+    std::cout << "  ScanForge — Partial Scan Sweep";
+    if (mode == SelectionMode::SCOAP_CO_WEAR ||
+        mode == SelectionMode::SCOAP_COMBINED_WEAR)
+        std::cout << " (" << selectionModeCliName(mode) << ", λ=" << std::fixed
+                  << std::setprecision(2) << lambda << ")";
+    else
+        std::cout << " (" << selectionModeCliName(mode) << ")";
+    std::cout << "\n";
     std::cout << "  Circuit FFs: " << N
               << "   Patterns: " << data.patterns.size() << "\n";
     std::cout << "====================================================\n";
+
+    std::vector<double> stressForTbl = fullStress;
+
     std::cout << std::left
               << std::setw(10) << "Ratio"
               << std::setw(8)  << "K"
-              << std::setw(16) << "ShiftCycles"
-              << std::setw(12) << "Toggles"
-              << std::setw(16) << "SwitchActivity"
+              << std::setw(14) << "Toggles"
+              << std::setw(14) << "Activity"
+              << std::setw(12) << "MaxStress"
+              << std::setw(12) << "StressVar"
+              << std::setw(15) << "StressImbal"
               << "Selected FFs\n";
-    std::cout << std::string(80, '-') << "\n";
+    std::cout << std::string(95, '-') << "\n";
 
     for (double r : ratios) {
         int k = std::max(1, (int)std::round(r * N));
-        auto chain = selectFFs(data, k, mode);
+        auto chain = selectFFs(data, k, mode, 42u, stressPtr, lambda);
         auto res   = simulate(data, chain);
+        auto agg   = aggregateStressForChain(stressForTbl, chain);
 
         std::cout << std::fixed << std::setprecision(0)
                   << std::left  << std::setw(9)  << (r * 100) + 0.5
                   << "% "
                   << std::left  << std::setw(8)  << k
-                  << std::left  << std::setw(16) << res.totalShiftCycles
-                  << std::left  << std::setw(12) << res.totalToggles
-                  << std::left  << std::setw(16) << std::setprecision(4) << res.switchingActivity;
-        // Print selected FF names (truncated if many)
+                  << std::left  << std::setw(14) << res.totalToggles
+                  << std::left  << std::setw(14) << std::setprecision(4) << res.switchingActivity
+                  << std::left  << std::setw(12) << std::setprecision(4) << agg.maxStress
+                  << std::left  << std::setw(12) << std::setprecision(4) << agg.variance
+                  << std::left  << std::setw(15) << std::setprecision(4) << agg.imbalance;
         int shown = std::min((int)chain.size(), 6);
         for (int i = 0; i < shown; ++i)
-            std::cout << data.ffs[chain[i]].name << (i+1<shown ? "," : "");
+            std::cout << data.ffs[chain[i]].name << (i + 1 < shown ? "," : "");
         if ((int)chain.size() > shown)
             std::cout << ",...";
         std::cout << "\n";
@@ -127,9 +202,9 @@ void sweepCoverage(const ScanData &data,
     for (double r : ratios) {
         int k = std::max(1, (int)std::round(r * N));
 
-        auto chainCO   = selectFFs(data, k, SelectionMode::SCOAP_CO,       seed);
-        auto chainComb = selectFFs(data, k, SelectionMode::SCOAP_COMBINED,  seed);
-        auto chainRand = selectFFs(data, k, SelectionMode::RANDOM,          seed);
+        auto chainCO   = selectFFs(data, k, SelectionMode::SCOAP_CO,       seed, nullptr, 0.5);
+        auto chainComb = selectFFs(data, k, SelectionMode::SCOAP_COMBINED,  seed, nullptr, 0.5);
+        auto chainRand = selectFFs(data, k, SelectionMode::RANDOM,          seed, nullptr, 0.5);
 
         auto covCO   = estimateCoverage(data, chainCO);
         auto covComb = estimateCoverage(data, chainComb);

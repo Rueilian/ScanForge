@@ -11,7 +11,7 @@ It uses [FAN_ATPG](https://github.com/NTU-LaDS-II/FAN_ATPG) as a backend to expo
 |---------|-------------|
 | **Full scan analysis** | Simulate all FFs in scan chain, report switching activity |
 | **Per-FF stress CSV** | Optional `--stress-csv` export: toggles, duty, run-length, composite stress score |
-| **Partial scan selection** | Select a subset of FFs using SCOAP-CO, SCOAP-Combined, or Random strategy |
+| **Partial scan selection** | SCOAP-CO, SCOAP-Combined, Random, or **wear-aware** variants (`co_wear`, `combined_wear`) using full-scan stress penalty |
 | **Ratio sweep** | Sweep 25/50/75/100% ratios in one command (`--sweep`) |
 | **SCOAP export** | FAN_ATPG fork computes CC0/CC1/CO and exports them to `.sf` format |
 | **12 ISCAS'89 benchmarks** | Scripts and results for s27 through s38584 |
@@ -106,8 +106,9 @@ Options:
   --csv                     CSV output for --coverage
   --stress-csv <path>       Write per-FF scan stress metrics (full or --partial run)
   --partial <ratio>         Partial scan at given ratio (0.0–1.0)
-  --mode <co|combined|random>
+  --mode <co|combined|random|co_wear|combined_wear>
                             FF selection strategy (default: co)
+  --lambda <x>              Stress penalty weight for *_wear modes (default: 0.5)
   -h, --help                Print this help
 ```
 
@@ -141,8 +142,10 @@ ScanForge ranks FFs by their SCOAP testability metrics and selects the **K harde
 | `co`       | `CO`              | Observability — hard-to-observe FFs benefit most from scan |
 | `combined` | `CC0 + CC1 + 2×CO` | Overall testability difficulty |
 | `random`   | Random shuffle    | Baseline for comparison |
+| `co_wear`       | `norm(CO) − λ × norm(stress)` | Same priority as `co`, penalizing high **full-scan** per-FF stress |
+| `combined_wear` | `norm(CC0+CC1+2×CO) − λ × norm(stress)` | Same as `combined` with stress penalty |
 
-Higher SCOAP score = harder to test = higher priority for inclusion in scan chain.
+Normalization uses min–max over all FFs per metric (`stress_score` matches `--stress-csv` full-scan simulation). Higher final score = higher priority for scan inclusion. With **`λ = 0`**, wear modes reduce to the same ranking as `co` / `combined`.
 
 ---
 
@@ -167,21 +170,23 @@ Higher SCOAP score = harder to test = higher priority for inclusion in scan chai
 
 ### Partial Scan Sweep — s953 (29 FFs, SCOAP-CO)
 
-| Ratio | K  | Shift Cycles | Toggles | Switch Activity |
-|-------|----|-------------|---------|-----------------|
-| 25%   | 7  | 623         | 1690    | 0.3875          |
-| 50%   | 15 | 1335        | 7645    | 0.3818          |
-| 75%   | 22 | 1958        | 15703   | 0.3645          |
-| 100%  | 29 | 2581        | 24933   | 0.3331          |
+`--sweep` prints **Ratio, K, Toggles, Switching Activity**, plus **MaxStress**, **Stress Variance**, and **Stress Imbalance** (max / mean of full-scan `stress_score` over selected FFs).
+
+| Ratio | K  | Toggles | Switch Activity |
+|-------|----|---------|-----------------|
+| 25%   | 7  | 1690    | 0.3875          |
+| 50%   | 15 | 7645    | 0.3818          |
+| 75%   | 22 | 15703   | 0.3645          |
+| 100%  | 29 | 24933   | 0.3331          |
 
 ### Partial Scan Sweep — s5378 (179 FFs, SCOAP-CO)
 
-| Ratio | K   | Shift Cycles | Toggles   | Switch Activity |
-|-------|-----|-------------|-----------|-----------------|
-| 25%   | 45  | 5,265       | 109,220   | 0.4610          |
-| 50%   | 90  | 10,530      | 410,140   | 0.4328          |
-| 75%   | 134 | 15,678      | 945,111   | 0.4499          |
-| 100%  | 179 | 20,943      | 1,703,514 | 0.4544          |
+| Ratio | K   | Toggles   | Switch Activity |
+|-------|-----|-----------|-----------------|
+| 25%   | 45  | 109,220   | 0.4610          |
+| 50%   | 90  | 410,140   | 0.4328          |
+| 75%   | 134 | 945,111   | 0.4499          |
+| 100%  | 179 | 1,703,514 | 0.4544          |
 
 ---
 
