@@ -193,6 +193,13 @@ int main(int argc, char *argv[])
         std::cout << "Stress Imbalance: " << agg.imbalance << "\n";
 
         ScanForge::printReport(result, data, chain);
+        if (segmentWindow > 0 && !result.segments.empty()) {
+            std::cout << "  Max segment stress (avg over W=" << result.segment_window_used
+                      << "): " << std::fixed << std::setprecision(4)
+                      << result.max_segment_stress << "\n";
+            std::cout << "  Segment variance: " << result.segment_variance << "\n";
+            std::cout << "  Hotspot segments: " << result.hotspot_count << "\n";
+        }
         if (!stressCsvPath.empty()) {
             if (ScanForge::writeStressCsv(result, stressCsvPath))
                 std::cout << "  Stress CSV written to: " << stressCsvPath << "\n";
