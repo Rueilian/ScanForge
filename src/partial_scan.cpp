@@ -3,6 +3,7 @@
 
 #include "partial_scan.h"
 #include "scan_chain.h"
+#include "segment_stress.h"
 
 #include <algorithm>
 #include <cmath>
@@ -136,6 +137,8 @@ std::string modeTag(SelectionMode mode)
     case SelectionMode::SCOAP_COMBINED:     return "combined";
     case SelectionMode::SCOAP_CO_WEAR:      return "co_wear";
     case SelectionMode::SCOAP_COMBINED_WEAR: return "combined_wear";
+    case SelectionMode::SCOAP_CO_WEAR_LEVELING: return "co_wear_leveling";
+    case SelectionMode::SCOAP_COMBINED_WEAR_LEVELING: return "combined_wear_leveling";
     case SelectionMode::RANDOM:             return "random";
     }
     return "unknown";
@@ -185,14 +188,31 @@ CoverageProxyResult computeCoverageProxy(const ScanData &data,
     return out;
 }
 
+static std::vector<int> selectFFsWearLeveling(const ScanData &data, int k, bool useCo,
+                                               const std::vector<double> &stressByFF,
+                                               int segment_window, double lambda,
+                                               unsigned seed);
+
 std::vector<int> selectFFs(const ScanData &data, int k,
                             SelectionMode mode, unsigned seed,
                             const std::vector<double> *stressByFF,
-                            double lambda)
+                            double lambda,
+                            int segment_window)
 {
     int N = data.numFF;
     if (k <= 0) k = 0;
     if (k > N)  k = N;
+
+    if (mode == SelectionMode::SCOAP_CO_WEAR_LEVELING ||
+        mode == SelectionMode::SCOAP_COMBINED_WEAR_LEVELING) {
+        bool useCo = (mode == SelectionMode::SCOAP_CO_WEAR_LEVELING);
+        if (!stressByFF || (int)stressByFF->size() != N) {
+            return selectFFs(data, k,
+                             useCo ? SelectionMode::SCOAP_CO : SelectionMode::SCOAP_COMBINED,
+                             seed, nullptr, lambda, 0);
+        }
+        return selectFFsWearLeveling(data, k, useCo, *stressByFF, segment_window, lambda, seed);
+    }
 
     std::vector<int> indices(N);
     std::iota(indices.begin(), indices.end(), 0);
@@ -244,6 +264,76 @@ std::vector<int> selectFFs(const ScanData &data, int k,
     return indices;
 }
 
+// Greedy wear-leveling: chain order = ascending FF index among selected.
+// Score(candidate) = norm_testability(candidate) − λ × max_segment_avg_stress(temp_chain).
+std::vector<int> selectFFsWearLeveling(const ScanData &data, int k, bool useCo,
+                                               const std::vector<double> &stressByFF,
+                                               int segment_window, double lambda,
+                                               unsigned seed)
+{
+    int N = data.numFF;
+    if (k <= 0) return {};
+    if (k > N) k = N;
+    if ((int)stressByFF.size() != N || segment_window <= 0) {
+        return selectFFs(data, k,
+                         useCo ? SelectionMode::SCOAP_CO : SelectionMode::SCOAP_COMBINED,
+                         seed, nullptr, 0.5, 0);
+    }
+
+    std::vector<double> rawTest(N);
+    for (int i = 0; i < N; ++i) {
+        const auto &ff = data.ffs[i];
+        rawTest[i] = useCo ? (double)ff.co
+                           : (double)(ff.cc0 + ff.cc1 + 2 * ff.co);
+    }
+    double tMin, tMax;
+    minMaxRange(rawTest, tMin, tMax);
+    std::vector<double> nt(N);
+    for (int i = 0; i < N; ++i)
+        nt[i] = normalizeVal(rawTest[i], tMin, tMax);
+
+    std::vector<char> chosen(N, 0);
+    std::vector<int> selected;
+    selected.reserve(k);
+
+    for (int step = 0; step < k; ++step) {
+        int bestF = -1;
+        double bestScore = -1e300;
+        double bestNt = -1e300;
+
+        for (int f = 0; f < N; ++f) {
+            if (chosen[f]) continue;
+
+            std::vector<int> temp = selected;
+            temp.push_back(f);
+            std::sort(temp.begin(), temp.end());
+
+            std::vector<FFStress> perChain((int)temp.size());
+            for (int p = 0; p < (int)temp.size(); ++p)
+                perChain[p].stress_score = stressByFF[temp[p]];
+
+            SegmentSummary seg = summarizeSegmentStress(perChain, segment_window);
+            double penalty = seg.max_segment_stress;
+            double score = nt[f] - lambda * penalty;
+
+            if (score > bestScore + kEps
+                || (std::abs(score - bestScore) <= kEps && nt[f] > bestNt + kEps)
+                || (std::abs(score - bestScore) <= kEps && std::abs(nt[f] - bestNt) <= kEps
+                    && (bestF < 0 || f < bestF))) {
+                bestScore = score;
+                bestNt = nt[f];
+                bestF = f;
+            }
+        }
+        if (bestF < 0) break;
+        chosen[bestF] = 1;
+        selected.push_back(bestF);
+    }
+
+    std::sort(selected.begin(), selected.end());
+    return selected;
+}
+
 
 void sweepPartialScan(const ScanData &data,
                       const std::vector<double> &ratios,
@@ -256,11 +346,15 @@ void sweepPartialScan(const ScanData &data,
         (mode == SelectionMode::SCOAP_COMBINED)      ? "SCOAP-Combined" :
         (mode == SelectionMode::SCOAP_CO_WEAR)       ? "SCOAP-CO+Wear" :
         (mode == SelectionMode::SCOAP_COMBINED_WEAR) ? "SCOAP-Combined+Wear" :
+        (mode == SelectionMode::SCOAP_CO_WEAR_LEVELING) ? "SCOAP-CO+WearLeveling" :
+        (mode == SelectionMode::SCOAP_COMBINED_WEAR_LEVELING) ? "SCOAP-Combined+WearLeveling" :
                                                        "Random";
 
     std::vector<double> fullStress;
     if (mode == SelectionMode::SCOAP_CO_WEAR ||
-        mode == SelectionMode::SCOAP_COMBINED_WEAR)
+        mode == SelectionMode::SCOAP_COMBINED_WEAR ||
+        mode == SelectionMode::SCOAP_CO_WEAR_LEVELING ||
+        mode == SelectionMode::SCOAP_COMBINED_WEAR_LEVELING)
         fullStress = fullScanStressScores(data);
 
     std::vector<SweepRowRaw> rawRows;
@@ -270,9 +364,11 @@ void sweepPartialScan(const ScanData &data,
         int k = std::max(1, (int)std::round(r * N));
         const std::vector<double> *stressPtr =
             (mode == SelectionMode::SCOAP_CO_WEAR ||
-             mode == SelectionMode::SCOAP_COMBINED_WEAR) ? &fullStress : nullptr;
-        // NOTE: selectFFs param order: (data, k, mode, seed, stressByFF*, lambda)
-        auto chain = selectFFs(data, k, mode, cfg.random_seed, stressPtr, cfg.wear_lambda);
+             mode == SelectionMode::SCOAP_COMBINED_WEAR ||
+             mode == SelectionMode::SCOAP_CO_WEAR_LEVELING ||
+             mode == SelectionMode::SCOAP_COMBINED_WEAR_LEVELING) ? &fullStress : nullptr;
+        auto chain = selectFFs(data, k, mode, cfg.random_seed, stressPtr, cfg.wear_lambda,
+                              cfg.segment_window);
         auto res   = simulate(data, chain);
         if (cfg.segment_window > 0)
             applySegmentProfile(res, cfg.segment_window);
@@ -336,7 +432,9 @@ void sweepPartialScan(const ScanData &data,
         std::cout << "  Circuit FFs: " << N
                   << "   Patterns: " << data.patterns.size() << "\n";
         if (mode == SelectionMode::SCOAP_CO_WEAR ||
-            mode == SelectionMode::SCOAP_COMBINED_WEAR)
+            mode == SelectionMode::SCOAP_COMBINED_WEAR ||
+            mode == SelectionMode::SCOAP_CO_WEAR_LEVELING ||
+            mode == SelectionMode::SCOAP_COMBINED_WEAR_LEVELING)
             std::cout << "  Wear lambda: " << std::fixed << std::setprecision(4)
                       << cfg.wear_lambda << "\n";
         if (cfg.segment_window > 0)
@@ -464,9 +562,9 @@ void sweepCoverage(const ScanData &data,
     for (double r : ratios) {
         int k = std::max(1, (int)std::round(r * N));
 
-        auto chainCO   = selectFFs(data, k, SelectionMode::SCOAP_CO,      seed, nullptr, 0.5);
-        auto chainComb = selectFFs(data, k, SelectionMode::SCOAP_COMBINED, seed, nullptr, 0.5);
-        auto chainRand = selectFFs(data, k, SelectionMode::RANDOM,         seed, nullptr, 0.5);
+        auto chainCO   = selectFFs(data, k, SelectionMode::SCOAP_CO,      seed, nullptr, 0.5, 0);
+        auto chainComb = selectFFs(data, k, SelectionMode::SCOAP_COMBINED, seed, nullptr, 0.5, 0);
+        auto chainRand = selectFFs(data, k, SelectionMode::RANDOM,         seed, nullptr, 0.5, 0);
 
         auto covCO   = estimateCoverage(data, chainCO);
         auto covComb = estimateCoverage(data, chainComb);

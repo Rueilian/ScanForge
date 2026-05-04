@@ -12,7 +12,7 @@ It uses [FAN_ATPG](https://github.com/NTU-LaDS-II/FAN_ATPG) as a backend to expo
 | **Full scan analysis** | Simulate all FFs in scan chain, report switching activity |
 | **Per-FF stress CSV** | Optional `--stress-csv` export: toggles, duty, run-length, composite stress score |
 | **Segment stress CSV** | Sliding-window stress along the **current scan chain** (`--segment-window`, `--segment-csv`); hotspot flag from mean+1σ over segment averages |
-| **Partial scan selection** | SCOAP-CO, SCOAP-Combined, Random, or **wear-aware** variants (`co_wear`, `combined_wear`) using full-scan stress penalty |
+| **Partial scan selection** | SCOAP-CO, SCOAP-Combined, Random, **wear-aware** (`co_wear`, `combined_wear`), or **wear-leveling** (`co_wear_leveling`, `combined_wear_leveling`) greedy selection using segment max stress along the chain |
 | **Ratio sweep** | Sweep 25/50/75/100% ratios in one command (`--sweep`) |
 | **SCOAP export** | FAN_ATPG fork computes CC0/CC1/CO and exports them to `.sf` format |
 | **12 ISCAS'89 benchmarks** | Scripts and results for s27 through s38584 |
@@ -99,6 +99,13 @@ cd ..
 # Coverage–stress tradeoff sweep (SCOAP proxy + stress + segment metrics + Pareto flags) to CSV
 ./src/scanforge FAN_ATPG/results/s5378.sf --sweep --mode combined_wear --lambda 0.5 \
   --segment-window 16 --summary-csv sweep.csv
+
+# Wear-leveling partial scan (greedy; requires --segment-window; chain order = FF index order)
+./src/scanforge FAN_ATPG/results/s5378.sf \
+  --partial 0.5 \
+  --mode combined_wear_leveling \
+  --lambda 0.5 \
+  --segment-window 16
 ```
 
 ---
@@ -120,9 +127,10 @@ Options:
   --segment-csv <path>      Write segment stress CSV (needs --segment-window > 0; full/--partial only)
   --segment-window <n>      Sliding window along chain for segment metrics (0 = off; also used in --sweep CSV)
   --partial <ratio>         Partial scan at given ratio (0.0–1.0)
-  --mode <co|combined|random|co_wear|combined_wear>
+  --mode <co|combined|random|co_wear|combined_wear|
+                            co_wear_leveling|combined_wear_leveling>
                             FF selection strategy (default: co)
-  --lambda <x>              Stress penalty weight for *_wear modes (default: 0.5)
+  --lambda <x>              Penalty weight for *_wear and *_wear_leveling (default: 0.5)
   --coverage-proxy <co|combined|controllability>
                             Which SCOAP sums define coverage_proxy in sweep / --partial
   -h, --help                Print this help
@@ -160,8 +168,10 @@ ScanForge ranks FFs by their SCOAP testability metrics and selects the **K harde
 | `random`   | Random shuffle    | Baseline for comparison |
 | `co_wear`       | `norm(CO) − λ × norm(stress)` | Same priority as `co`, penalizing high **full-scan** per-FF stress |
 | `combined_wear` | `norm(CC0+CC1+2×CO) − λ × norm(stress)` | Same as `combined` with stress penalty |
+| `co_wear_leveling` | Greedy: each step adds the FF that maximizes `norm(CO) − λ × max_segment_avg_stress` on the tentative chain | Requires `--segment-window > 0`; uses **full-scan** `stress_score` per FF along the chain in **ascending FF index** order among selected FFs (same ordering rule as other modes for fair comparison) |
+| `combined_wear_leveling` | Same as `co_wear_leveling` with `norm(CC0+CC1+2×CO)` as the testability term | Same requirements as `co_wear_leveling` |
 
-Normalization uses min–max over all FFs per metric (`stress_score` matches `--stress-csv` full-scan simulation). Higher final score = higher priority for scan inclusion. With **`λ = 0`**, wear modes reduce to the same ranking as `co` / `combined`.
+Normalization uses min–max over all FFs per metric (`stress_score` matches `--stress-csv` full-scan simulation). For `*_wear`, higher final score = higher priority for scan inclusion. With **`λ = 0`**, wear modes reduce to the same ranking as `co` / `combined`. For `*_wear_leveling`, **`λ = 0`** recovers the same **selected FF set** as `co` / `combined` (greedy tie-break: higher normalized testability, then lower FF index). With **`segment_window = 1`**, the segment penalty equals the maximum selected per-FF stress, so behavior aligns closely with the corresponding `*_wear` mode at the same `λ`.
 
 ---
 

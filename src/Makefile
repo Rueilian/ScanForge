@@ -11,7 +11,7 @@ all: $(TARGET)
 $(TARGET): $(OBJS)
 	$(CXX) $(CXXFLAGS) -o $@ $^
 
-%.o: %.cpp scan_chain.h segment_stress.h
+%.o: %.cpp scan_chain.h segment_stress.h partial_scan.h
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 clean:
