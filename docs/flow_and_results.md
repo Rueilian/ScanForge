@@ -36,11 +36,10 @@ The tool is evaluated on all 12 ISCAS'89 benchmark circuits.
 │                                                                      │
 │  parseScanData(path)  → ScanData { numFF, ffs[], patterns[] }       │
 │                                                                      │
-│  selectFFs(data, K, mode):                                           │
-│    SCOAP_CO       → rank by CO  (observability)                     │
-│    SCOAP_COMBINED → rank by CC0+CC1+2×CO                            │
-│    RANDOM         → random shuffle                                   │
-│    → returns sorted chain[K] of FF indices                          │
+│  selectFFs(data, K, mode, …):                                        │
+│    SCOAP_CO / SCOAP_COMBINED / RANDOM / *_wear → global sort        │
+│    *_wear_leveling → greedy using full-scan stress + segment proxy  │
+│    → returns sorted chain[K] of FF indices (circuit order)          │
 │                                                                      │
 │  simulate(data, chain):                                              │
 │    for each pattern:                                                 │

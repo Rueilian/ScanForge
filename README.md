@@ -31,7 +31,7 @@ ScanForge/
 │   ├── main.cpp           — CLI entry point
 │   └── Makefile
 ├── scripts/           # run_all.sh batch runner + per-circuit atpg scripts
-├── results/           # Generated .sf files + sweep result tables
+├── results/           # Generated .sf files + sweep result tables (includes `leveling_demo.sf` for wear-leveling docs)
 ├── docs/              # Detailed flow, architecture, and results
 └── README.md
 ```
@@ -168,12 +168,28 @@ ScanForge ranks FFs by their SCOAP testability metrics and selects the **K harde
 | `random`   | Random shuffle    | Baseline for comparison |
 | `co_wear`       | `norm(CO) − λ × norm(stress)` | Same priority as `co`, penalizing high **full-scan** per-FF stress |
 | `combined_wear` | `norm(CC0+CC1+2×CO) − λ × norm(stress)` | Same as `combined` with stress penalty |
-| `co_wear_leveling` | Greedy: each step adds the FF that maximizes `norm(CO) − λ × max_segment_avg_stress` on the tentative chain | Requires `--segment-window > 0`; uses **full-scan** `stress_score` per FF along the chain in **ascending FF index** order among selected FFs (same ordering rule as other modes for fair comparison) |
-| `combined_wear_leveling` | Same as `co_wear_leveling` with `norm(CC0+CC1+2×CO)` as the testability term | Same requirements as `co_wear_leveling` |
+| `co_wear_leveling` | Greedy: maximize `norm(CO) − λ × (max_segment_avg_stress / max_full_scan_stress)` on the tentative chain | Segment term is **dimensionless** (0–1 scale when segment averages stay within full-scan per-FF range). Uses **full-scan** `stress_score` as a static wear proxy (not re-simulated each greedy step). Chain order = **ascending FF index** among selected FFs. |
+| `combined_wear_leveling` | Same with `norm(CC0+CC1+2×CO)` | Same as `co_wear_leveling`. |
 
-Normalization uses min–max over all FFs per metric (`stress_score` matches `--stress-csv` full-scan simulation). For `*_wear`, higher final score = higher priority for scan inclusion. With **`λ = 0`**, wear modes reduce to the same ranking as `co` / `combined`. For `*_wear_leveling`, **`λ = 0`** recovers the same **selected FF set** as `co` / `combined` (greedy tie-break: higher normalized testability, then lower FF index). With **`segment_window = 1`**, the segment penalty equals the maximum selected per-FF stress, so behavior aligns closely with the corresponding `*_wear` mode at the same `λ`.
+`max_full_scan_stress` is `max_i` full-scan `stress_score` over all FFs in the circuit (same vector as `*_wear` modes). Normalization uses min–max over all FFs for SCOAP-derived testability (`stress_score` for wear modes: `--stress-csv` full-scan simulation). For `*_wear`, higher score = higher priority. For `*_wear_leveling`, **`λ = 0`** yields the same **selected FF set** as `co` / `combined` (verified on `results/s27.sf` and synthetic `results/leveling_demo.sf`). With **`segment_window = 1`**, each segment’s average equals a single FF’s stress, so the penalty tracks **per-FF** stress along the index-ordered chain (related to `*_wear`, which penalizes normalized per-FF stress in a single global sort).
 
----
+**Scope note:** Selection optimizes the **proxy** above; reported `max_segment_stress` after `--partial` is from **simulated** partial-scan shift activity and may differ from the greedy objective.
+
+### Wear-leveling illustration (synthetic circuit)
+
+Small reproducible example `results/leveling_demo.sf` (8 FFs, 40 random patterns, fixed seed) shows how modes diverge under stress pressure. Partial scan **50%** (K=4), sliding window **W=2**, segment metrics from **post-simulation** partial chain:
+
+| Mode | λ | Coverage proxy (combined) | Max segment stress | Segment variance | Hotspot count |
+|------|---|---------------------------:|-------------------:|-----------------:|---------------:|
+| `combined` | — | 0.6577 | 0.3156 | 0.0001 | 1 |
+| `combined_wear` | 0.5 | 0.6538 | 0.3438 | 0.0000 | 1 |
+| `combined_wear_leveling` | 0.5 | 0.6577 | 0.3156 | 0.0001 | 1 |
+| `combined_wear` | 2.0 | 0.5500 | 0.3250 | 0.0000 | 1 |
+| `combined_wear_leveling` | 2.0 | 0.6538 | 0.3438 | 0.0000 | 1 |
+
+At **λ = 0.5**, wear-leveling keeps the same high-testability set as `combined` while **per-FF wear** (`combined_wear`) trades coverage for lower per-FF stress picks. At **λ = 2**, objectives differ: `combined_wear` lowers simulated max segment stress more aggressively at a larger coverage-proxy cost, while wear-leveling follows its **segment/full-scan** greedy objective and can report **higher** simulated max segment stress here — so always validate on your target benchmarks (`scripts/run_leveling_sweep.sh` once `FAN_ATPG/results/*.sf` exist).
+
+**Benchmark checklist:** After generating `FAN_ATPG/results/<circuit>.sf`, run `scripts/run_leveling_sweep.sh` and compare sweep CSVs. **`λ = 0`** parity for wear-leveling vs `combined` was checked on **`results/s27.sf`** (3 FFs) and on **`results/leveling_demo.sf`**; re-run the same `--partial` / `--segment-window` command on **s953** and **s5378** before publication tables (this workspace clone may not ship those `.sf` files).
 
 ## Results on ISCAS'89 Benchmarks
 

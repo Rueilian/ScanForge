@@ -292,6 +292,10 @@ std::vector<int> selectFFsWearLeveling(const ScanData &data, int k, bool useCo,
     for (int i = 0; i < N; ++i)
         nt[i] = normalizeVal(rawTest[i], tMin, tMax);
 
+    double stressMax = 0.0;
+    for (double s : stressByFF)
+        stressMax = std::max(stressMax, s);
+
     std::vector<char> chosen(N, 0);
     std::vector<int> selected;
     selected.reserve(k);
@@ -313,7 +317,8 @@ std::vector<int> selectFFsWearLeveling(const ScanData &data, int k, bool useCo,
                 perChain[p].stress_score = stressByFF[temp[p]];
 
             SegmentSummary seg = summarizeSegmentStress(perChain, segment_window);
-            double penalty = seg.max_segment_stress;
+            // Scale-free penalty vs min–max testability: divide by max full-scan stress.
+            double penalty = seg.max_segment_stress / (stressMax + kEps);
             double score = nt[f] - lambda * penalty;
 
             if (score > bestScore + kEps
