@@ -22,6 +22,14 @@ SegmentSummary profileSegments(const std::vector<FFStress> &perFF_chainOrder,
                                int                          window_size,
                                std::vector<SegmentStress>  *segments_out);
 
+// Convenience: segment metrics only (no segment vector allocation).
+inline SegmentSummary summarizeSegmentStress(
+    const std::vector<FFStress> &perFF_chainOrder,
+    int                          window_size)
+{
+    return profileSegments(perFF_chainOrder, window_size, nullptr);
+}
+
 bool writeSegmentCsv(const std::vector<SegmentStress> &segments,
                      const std::string                &path);
 

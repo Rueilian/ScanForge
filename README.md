@@ -12,7 +12,7 @@ It uses [FAN_ATPG](https://github.com/NTU-LaDS-II/FAN_ATPG) as a backend to expo
 | **Full scan analysis** | Simulate all FFs in scan chain, report switching activity |
 | **Per-FF stress CSV** | Optional `--stress-csv` export: toggles, duty, run-length, composite stress score |
 | **Segment stress CSV** | Sliding-window stress along the **current scan chain** (`--segment-window`, `--segment-csv`); hotspot flag from mean+1σ over segment averages |
-| **Partial scan selection** | SCOAP-CO, SCOAP-Combined, Random, or **wear-aware** variants (`co_wear`, `combined_wear`) using full-scan stress penalty |
+| **Partial scan selection** | SCOAP-CO, SCOAP-Combined, Random, **wear-aware** (`co_wear`, `combined_wear`), or **wear-leveling** (`co_wear_leveling`, `combined_wear_leveling`) greedy selection using segment max stress along the chain |
 | **Ratio sweep** | Sweep 25/50/75/100% ratios in one command (`--sweep`) |
 | **SCOAP export** | FAN_ATPG fork computes CC0/CC1/CO and exports them to `.sf` format |
 | **12 ISCAS'89 benchmarks** | Scripts and results for s27 through s38584 |
@@ -31,7 +31,7 @@ ScanForge/
 │   ├── main.cpp           — CLI entry point
 │   └── Makefile
 ├── scripts/           # run_all.sh batch runner + per-circuit atpg scripts
-├── results/           # Generated .sf files + sweep result tables
+├── results/           # Generated .sf files + sweep result tables (includes `leveling_demo.sf` for wear-leveling docs)
 ├── docs/              # Detailed flow, architecture, and results
 └── README.md
 ```
@@ -99,6 +99,13 @@ cd ..
 # Coverage–stress tradeoff sweep (SCOAP proxy + stress + segment metrics + Pareto flags) to CSV
 ./src/scanforge FAN_ATPG/results/s5378.sf --sweep --mode combined_wear --lambda 0.5 \
   --segment-window 16 --summary-csv sweep.csv
+
+# Wear-leveling partial scan (greedy; requires --segment-window; chain order = FF index order)
+./src/scanforge FAN_ATPG/results/s5378.sf \
+  --partial 0.5 \
+  --mode combined_wear_leveling \
+  --lambda 0.5 \
+  --segment-window 16
 ```
 
 ---
@@ -120,9 +127,10 @@ Options:
   --segment-csv <path>      Write segment stress CSV (needs --segment-window > 0; full/--partial only)
   --segment-window <n>      Sliding window along chain for segment metrics (0 = off; also used in --sweep CSV)
   --partial <ratio>         Partial scan at given ratio (0.0–1.0)
-  --mode <co|combined|random|co_wear|combined_wear>
+  --mode <co|combined|random|co_wear|combined_wear|
+                            co_wear_leveling|combined_wear_leveling>
                             FF selection strategy (default: co)
-  --lambda <x>              Stress penalty weight for *_wear modes (default: 0.5)
+  --lambda <x>              Penalty weight for *_wear and *_wear_leveling (default: 0.5)
   --coverage-proxy <co|combined|controllability>
                             Which SCOAP sums define coverage_proxy in sweep / --partial
   -h, --help                Print this help
@@ -160,10 +168,28 @@ ScanForge ranks FFs by their SCOAP testability metrics and selects the **K harde
 | `random`   | Random shuffle    | Baseline for comparison |
 | `co_wear`       | `norm(CO) − λ × norm(stress)` | Same priority as `co`, penalizing high **full-scan** per-FF stress |
 | `combined_wear` | `norm(CC0+CC1+2×CO) − λ × norm(stress)` | Same as `combined` with stress penalty |
+| `co_wear_leveling` | Greedy: maximize `norm(CO) − λ × (max_segment_avg_stress / max_full_scan_stress)` on the tentative chain | Segment term is **dimensionless** (0–1 scale when segment averages stay within full-scan per-FF range). Uses **full-scan** `stress_score` as a static wear proxy (not re-simulated each greedy step). Chain order = **ascending FF index** among selected FFs. |
+| `combined_wear_leveling` | Same with `norm(CC0+CC1+2×CO)` | Same as `co_wear_leveling`. |
 
-Normalization uses min–max over all FFs per metric (`stress_score` matches `--stress-csv` full-scan simulation). Higher final score = higher priority for scan inclusion. With **`λ = 0`**, wear modes reduce to the same ranking as `co` / `combined`.
+`max_full_scan_stress` is `max_i` full-scan `stress_score` over all FFs in the circuit (same vector as `*_wear` modes). Normalization uses min–max over all FFs for SCOAP-derived testability (`stress_score` for wear modes: `--stress-csv` full-scan simulation). For `*_wear`, higher score = higher priority. For `*_wear_leveling`, **`λ = 0`** yields the same **selected FF set** as `co` / `combined` (verified on `results/s27.sf` and synthetic `results/leveling_demo.sf`). With **`segment_window = 1`**, each segment’s average equals a single FF’s stress, so the penalty tracks **per-FF** stress along the index-ordered chain (related to `*_wear`, which penalizes normalized per-FF stress in a single global sort).
 
----
+**Scope note:** Selection optimizes the **proxy** above; reported `max_segment_stress` after `--partial` is from **simulated** partial-scan shift activity and may differ from the greedy objective.
+
+### Wear-leveling illustration (synthetic circuit)
+
+Small reproducible example `results/leveling_demo.sf` (8 FFs, 40 random patterns, fixed seed) shows how modes diverge under stress pressure. Partial scan **50%** (K=4), sliding window **W=2**, segment metrics from **post-simulation** partial chain:
+
+| Mode | λ | Coverage proxy (combined) | Max segment stress | Segment variance | Hotspot count |
+|------|---|---------------------------:|-------------------:|-----------------:|---------------:|
+| `combined` | — | 0.6577 | 0.3156 | 0.0001 | 1 |
+| `combined_wear` | 0.5 | 0.6538 | 0.3438 | 0.0000 | 1 |
+| `combined_wear_leveling` | 0.5 | 0.6577 | 0.3156 | 0.0001 | 1 |
+| `combined_wear` | 2.0 | 0.5500 | 0.3250 | 0.0000 | 1 |
+| `combined_wear_leveling` | 2.0 | 0.6538 | 0.3438 | 0.0000 | 1 |
+
+At **λ = 0.5**, wear-leveling keeps the same high-testability set as `combined` while **per-FF wear** (`combined_wear`) trades coverage for lower per-FF stress picks. At **λ = 2**, objectives differ: `combined_wear` lowers simulated max segment stress more aggressively at a larger coverage-proxy cost, while wear-leveling follows its **segment/full-scan** greedy objective and can report **higher** simulated max segment stress here — so always validate on your target benchmarks (`scripts/run_leveling_sweep.sh` once `FAN_ATPG/results/*.sf` exist).
+
+**Benchmark checklist:** After generating `FAN_ATPG/results/<circuit>.sf`, run `scripts/run_leveling_sweep.sh` and compare sweep CSVs. **`λ = 0`** parity for wear-leveling vs `combined` was checked on **`results/s27.sf`** (3 FFs) and on **`results/leveling_demo.sf`**; re-run the same `--partial` / `--segment-window` command on **s953** and **s5378** before publication tables (this workspace clone may not ship those `.sf` files).
 
 ## Results on ISCAS'89 Benchmarks
 
