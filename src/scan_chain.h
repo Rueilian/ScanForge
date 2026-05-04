@@ -49,6 +49,25 @@ struct FFStress {
     double stress_score    = 0.0;
 };
 
+struct SegmentStress {
+    int     segment_id = 0;
+    int     start_idx  = 0;  // position along current scan chain (inclusive)
+    int     end_idx    = 0;  // inclusive
+
+    double sum_stress = 0.0;
+    double avg_stress = 0.0;
+    double max_stress = 0.0;
+
+    bool is_hotspot = false;
+};
+
+struct SegmentSummary {
+    double max_segment_stress  = 0.0;  // max_j segment_avg[j]
+    double mean_segment_stress = 0.0;
+    double segment_variance    = 0.0;  // population Var(segment_avg[j])
+    int    hotspot_count       = 0;
+};
+
 struct ScanResult {
     int               numFF;
     int               numPatterns;
@@ -56,6 +75,13 @@ struct ScanResult {
     long long         totalToggles;
     double            switchingActivity;
     std::vector<FFStress> perFF;
+
+    // Segment-level stress (sliding window along chain order); filled by segment profiler
+    double                      max_segment_stress  = 0.0;
+    double                      segment_variance    = 0.0;
+    int                         hotspot_count       = 0;
+    int                         segment_window_used = 0;  // effective W = min(requested, K)
+    std::vector<SegmentStress>  segments;
 };
 
 // Parse a .sf file produced by FAN_ATPG's add_scan_chains command.
@@ -109,5 +135,8 @@ void printReport(const ScanResult &result, const ScanData &data,
 
 // Write per-FF stress metrics (after simulate). Returns false on I/O error.
 bool writeStressCsv(const ScanResult &result, const std::string &path);
+
+// Populate segment fields on `r` from `r.perFF` (chain order). `window` <= 0 clears segment data.
+void applySegmentProfile(ScanResult &r, int window);
 
 } // namespace ScanForge

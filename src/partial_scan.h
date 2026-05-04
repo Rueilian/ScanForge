@@ -49,6 +49,8 @@ struct SweepConfig {
     CoverageProxyMode coverage_proxy_mode = CoverageProxyMode::COMBINED;
     unsigned    random_seed = 42;
     std::string circuit_name;
+    // Sliding-window segment stress along selected chain (0 = disabled for sweep rows)
+    int         segment_window = 0;
 };
 
 // Sweep partial scan ratios and print a comparison table.

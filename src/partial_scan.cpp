@@ -98,6 +98,9 @@ struct SweepRowRaw {
     double max_stress = 0.0;
     double stress_var = 0.0;
     double stress_imbalance = 0.0;
+    double max_segment_stress = 0.0;
+    double segment_variance = 0.0;
+    int    hotspot_count = 0;
 };
 
 bool paretoMaxCovMinStress(const std::vector<SweepRowRaw> &rows, std::size_t i)
@@ -271,6 +274,8 @@ void sweepPartialScan(const ScanData &data,
         // NOTE: selectFFs param order: (data, k, mode, seed, stressByFF*, lambda)
         auto chain = selectFFs(data, k, mode, cfg.random_seed, stressPtr, cfg.wear_lambda);
         auto res   = simulate(data, chain);
+        if (cfg.segment_window > 0)
+            applySegmentProfile(res, cfg.segment_window);
 
         double maxs = 0.0, var = 0.0, imb = 0.0;
         stressAggFromResult(res, maxs, var, imb);
@@ -281,6 +286,9 @@ void sweepPartialScan(const ScanData &data,
         row.coverage_proxy = cov.proxy; row.coverage_loss = cov.loss;
         row.toggles = res.totalToggles; row.activity = res.switchingActivity;
         row.max_stress = maxs; row.stress_var = var; row.stress_imbalance = imb;
+        row.max_segment_stress = res.max_segment_stress;
+        row.segment_variance     = res.segment_variance;
+        row.hotspot_count        = res.hotspot_count;
         rawRows.push_back(row);
     }
 
@@ -310,9 +318,11 @@ void sweepPartialScan(const ScanData &data,
             csvOut = &std::cout;
         }
         if (csvOut) {
-            *csvOut << "circuit,mode,lambda,coverage_proxy_mode,ratio,k,"
+            *csvOut << "circuit,mode,lambda,coverage_proxy_mode,segment_window,ratio,k,"
                        "coverage_proxy,coverage_loss,toggles,activity,"
-                       "max_stress,stress_variance,stress_imbalance,tradeoff_score,"
+                       "max_stress,stress_variance,stress_imbalance,"
+                       "max_segment_stress,segment_variance,hotspot_count,"
+                       "tradeoff_score,"
                        "pareto_cov_maxstress,pareto_cov_activity\n";
         }
     }
@@ -329,6 +339,8 @@ void sweepPartialScan(const ScanData &data,
             mode == SelectionMode::SCOAP_COMBINED_WEAR)
             std::cout << "  Wear lambda: " << std::fixed << std::setprecision(4)
                       << cfg.wear_lambda << "\n";
+        if (cfg.segment_window > 0)
+            std::cout << "  Segment stress window W: " << cfg.segment_window << "\n";
         std::cout << "  Coverage proxy: SCOAP testability preservation "
                      "(not exact fault coverage)\n";
         std::cout << "====================================================\n";
@@ -341,10 +353,14 @@ void sweepPartialScan(const ScanData &data,
                   << std::setw(12) << "Activity"
                   << std::setw(10) << "MaxStr"
                   << std::setw(10) << "StrVar"
-                  << std::setw(10) << "StrImb"
-                  << std::setw(10) << "Score"
+                  << std::setw(10) << "StrImb";
+        if (cfg.segment_window > 0)
+            std::cout << std::setw(10) << "MaxSeg"
+                      << std::setw(10) << "SegVar"
+                      << std::setw(8)  << "HotSp";
+        std::cout << std::setw(10) << "Score"
                   << "Pareto(ms/act)\n";
-        std::cout << std::string(110, '-') << "\n";
+        std::cout << std::string(cfg.segment_window > 0 ? 138 : 110, '-') << "\n";
     }
 
     std::string circuit = cfg.circuit_name.empty() ? "circuit" : cfg.circuit_name;
@@ -371,6 +387,7 @@ void sweepPartialScan(const ScanData &data,
             *csvOut << std::fixed << std::setprecision(6)
                     << circuit << ',' << mtag << ','
                     << cfg.wear_lambda << ',' << cpTag << ','
+                    << cfg.segment_window << ','
                     << row.ratio << ',' << row.k << ','
                     << row.coverage_proxy << ',' << row.coverage_loss << ','
                     << row.toggles << ','
@@ -378,6 +395,9 @@ void sweepPartialScan(const ScanData &data,
                     << row.max_stress << ','
                     << row.stress_var << ','
                     << row.stress_imbalance << ','
+                    << row.max_segment_stress << ','
+                    << row.segment_variance << ','
+                    << row.hotspot_count << ','
                     << trade << ','
                     << p_ms << ',' << p_ac << '\n';
         }
@@ -393,8 +413,12 @@ void sweepPartialScan(const ScanData &data,
                       << std::left << std::setw(12) << row.activity
                       << std::left << std::setw(10) << row.max_stress
                       << std::left << std::setw(10) << row.stress_var
-                      << std::left << std::setw(10) << row.stress_imbalance
-                      << std::left << std::setw(10) << trade
+                      << std::left << std::setw(10) << row.stress_imbalance;
+            if (cfg.segment_window > 0)
+                std::cout << std::left << std::setw(10) << row.max_segment_stress
+                          << std::left << std::setw(10) << row.segment_variance
+                          << std::left << std::setw(8)  << row.hotspot_count;
+            std::cout << std::left << std::setw(10) << trade
                       << p_ms << '/' << p_ac << "\n";
         }
     }

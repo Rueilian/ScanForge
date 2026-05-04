@@ -11,6 +11,7 @@ It uses [FAN_ATPG](https://github.com/NTU-LaDS-II/FAN_ATPG) as a backend to expo
 |---------|-------------|
 | **Full scan analysis** | Simulate all FFs in scan chain, report switching activity |
 | **Per-FF stress CSV** | Optional `--stress-csv` export: toggles, duty, run-length, composite stress score |
+| **Segment stress CSV** | Sliding-window stress along the **current scan chain** (`--segment-window`, `--segment-csv`); hotspot flag from mean+1σ over segment averages |
 | **Partial scan selection** | SCOAP-CO, SCOAP-Combined, Random, or **wear-aware** variants (`co_wear`, `combined_wear`) using full-scan stress penalty |
 | **Ratio sweep** | Sweep 25/50/75/100% ratios in one command (`--sweep`) |
 | **SCOAP export** | FAN_ATPG fork computes CC0/CC1/CO and exports them to `.sf` format |
@@ -26,6 +27,7 @@ ScanForge/
 ├── src/               # ScanForge C++ engine
 │   ├── scan_chain.h/cpp   — .sf parser + scan shift simulator
 │   ├── partial_scan.h/cpp — SCOAP-based FF selection & sweep
+│   ├── segment_stress.h/cpp — segment-level / hotspot profiling
 │   ├── main.cpp           — CLI entry point
 │   └── Makefile
 ├── scripts/           # run_all.sh batch runner + per-circuit atpg scripts
@@ -78,8 +80,9 @@ cd ..
 # Full scan
 ./src/scanforge FAN_ATPG/results/s27.sf
 
-# Per-FF stress profile (CSV) + sanity lines on stdout
-./src/scanforge FAN_ATPG/results/s27.sf --stress-csv stress.csv
+# Per-FF stress profile (CSV) + segment-level sliding-window CSV (W=16)
+./src/scanforge FAN_ATPG/results/s27.sf --stress-csv stress.csv \
+  --segment-csv segment.csv --segment-window 16
 
 # Partial scan sweep (25/50/75/100%) using SCOAP-CO strategy
 ./src/scanforge FAN_ATPG/results/s953.sf --sweep
@@ -93,8 +96,9 @@ cd ..
 # Wear-aware combined metric (stress penalty λ=0.5)
 ./src/scanforge FAN_ATPG/results/s953.sf --partial 0.5 --mode combined_wear --lambda 0.5
 
-# Coverage–stress tradeoff sweep (SCOAP proxy + stress + Pareto flags) to CSV
-./src/scanforge FAN_ATPG/results/s5378.sf --sweep --mode combined_wear --lambda 0.5 --summary-csv sweep.csv
+# Coverage–stress tradeoff sweep (SCOAP proxy + stress + segment metrics + Pareto flags) to CSV
+./src/scanforge FAN_ATPG/results/s5378.sf --sweep --mode combined_wear --lambda 0.5 \
+  --segment-window 16 --summary-csv sweep.csv
 ```
 
 ---
@@ -113,6 +117,8 @@ Options:
                             unless --summary-csv is set
   --summary-csv <path>      With --sweep: write tradeoff sweep CSV (coverage proxy, stress, score)
   --stress-csv <path>       Write per-FF scan stress metrics (full or --partial run)
+  --segment-csv <path>      Write segment stress CSV (needs --segment-window > 0; full/--partial only)
+  --segment-window <n>      Sliding window along chain for segment metrics (0 = off; also used in --sweep CSV)
   --partial <ratio>         Partial scan at given ratio (0.0–1.0)
   --mode <co|combined|random|co_wear|combined_wear>
                             FF selection strategy (default: co)
