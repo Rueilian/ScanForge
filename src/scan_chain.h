@@ -31,7 +31,8 @@ struct ScanData {
     int                   numFF;
     std::vector<FFInfo>   ffs;
     std::vector<Pattern>  patterns;
-    // Sequential FF dependency edges (direct Q→D FF links from mergeSequentialEdgesFromVerilog()).
+    // Sequential FF graph: reachability along direct Q→D links (transitive closure), filled
+    // by mergeSequentialEdgesFromVerilog().
     std::vector<SeqEdge>  seq_edges;
     bool                  seq_netlist_loaded = false;
 };
@@ -100,9 +101,11 @@ bool parseScanData(const std::string &path, ScanData &out);
 // sequential-graph-only workflows.
 bool parseScanDataHeader(const std::string &path, ScanData &out);
 
-// Populate data.seq_edges from a structural Verilog netlist: flip-flop instances whose
-// cell names match common *_dff* patterns; edges added when another FF's Q net drives
-// this FF's D net (direct connection only). FF instance names must match .sf FF_NAMES.
+// Populate data.seq_edges with the FF reachability graph from a structural Verilog netlist:
+// flip-flop instances whose cell names match common *_dff* patterns; direct Q→D links are
+// inferred when another FF's Q net drives this FF's D net, then transitive closure is applied
+// so seq_edges holds every pair (from,to) with a directed path of ≥1 direct link. FF instance
+// names should match .sf FF_NAMES when possible.
 bool mergeSequentialEdgesFromVerilog(ScanData &data, const std::string &verilog_path);
 
 // Simulate scan-shift sequence for a given ordered subset of FF indices.

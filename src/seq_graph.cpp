@@ -176,42 +176,6 @@ std::vector<std::vector<int>> buildAdj(int n, const std::vector<SeqEdge> &edges)
     return adj;
 }
 
-// Reachability in the directed graph: (s,t) iff t reachable from s via ≥1 edge.
-// Seeds BFS from s's out-neighbors only so we do not add self-loops when s has a self-edge.
-std::vector<std::vector<int>> transitiveClosureAdj(
-    int n, const std::vector<std::vector<int>> &adj)
-{
-    std::vector<std::vector<int>> out(static_cast<std::size_t>(n));
-    std::vector<char> vis(static_cast<std::size_t>(n), 0);
-
-    for (int s = 0; s < n; ++s) {
-        std::fill(vis.begin(), vis.end(), 0);
-        std::queue<int> q;
-        for (int v : adj[static_cast<std::size_t>(s)]) {
-            if (!vis[static_cast<std::size_t>(v)]) {
-                vis[static_cast<std::size_t>(v)] = 1;
-                q.push(v);
-            }
-        }
-        while (!q.empty()) {
-            int u = q.front();
-            q.pop();
-            for (int v : adj[static_cast<std::size_t>(u)]) {
-                if (!vis[static_cast<std::size_t>(v)]) {
-                    vis[static_cast<std::size_t>(v)] = 1;
-                    q.push(v);
-                }
-            }
-        }
-        for (int t = 0; t < n; ++t) {
-            if (t == s || !vis[static_cast<std::size_t>(t)])
-                continue;
-            out[static_cast<std::size_t>(s)].push_back(t);
-        }
-    }
-    return out;
-}
-
 bool graphIsDAG(int n, const std::vector<std::vector<int>> &adj,
                 const std::unordered_set<int> &removed)
 {
@@ -345,11 +309,10 @@ SeqGraphSelection selectSequentialGraphFFs(const ScanData &data,
         return out;
     }
 
-    auto adj_direct = buildAdj(n, data.seq_edges);
-    auto adj_cycles = transitiveClosureAdj(n, adj_direct);
+    auto adj = buildAdj(n, data.seq_edges);
 
     const int cycleCap = 100000;
-    auto rawCycles = enumerateElementaryCycles(n, adj_cycles, cycleCap);
+    auto rawCycles = enumerateElementaryCycles(n, adj, cycleCap);
     out.cycle_count_raw = (int)rawCycles.size();
 
     auto minimal = minimalCyclesByVertexInclusion(std::move(rawCycles));
@@ -361,18 +324,18 @@ SeqGraphSelection selectSequentialGraphFFs(const ScanData &data,
     for (int v : out.cycle_break_ffs)
         removed.insert(v);
 
-    if (!graphIsDAG(n, adj_cycles, removed)) {
+    if (!graphIsDAG(n, adj, removed)) {
         std::cerr << "Warning: sequential graph still has directed cycles after cycle-breaking "
                      "heuristic; depth reduction uses bounded path enumeration anyway.\n";
     }
 
     std::vector<std::vector<int>> longPaths;
     out.path_enum_cap_used = path_enum_cap;
-    enumerateLongPaths(n, adj_direct, removed, depth_threshold, path_enum_cap, longPaths);
+    enumerateLongPaths(n, adj, removed, depth_threshold, path_enum_cap, longPaths);
     out.paths_long_recorded = (int)longPaths.size();
 
     out.depth_reduction_ffs =
-        depthReductionGreedy(adj_direct, n, std::move(removed), depth_threshold, path_enum_cap);
+        depthReductionGreedy(adj, n, std::move(removed), depth_threshold, path_enum_cap);
 
     std::set<int> uni(out.cycle_break_ffs.begin(), out.cycle_break_ffs.end());
     for (int v : out.depth_reduction_ffs)
@@ -383,9 +346,8 @@ SeqGraphSelection selectSequentialGraphFFs(const ScanData &data,
 
 void printSeqGraphReport(const ScanData &data, const SeqGraphSelection &sel)
 {
-    std::cout << "Sequential FF graph analysis\n";
-    std::cout << "  Cycle pass uses transitive closure of direct Q→D edges (indirect FF "
-                 "chains); depth pass uses direct edges only.\n";
+    std::cout << "Sequential FF graph analysis (reachability graph: F1→F2 if F2 is reachable "
+                 "from F1 along one or more direct Q→D links)\n";
     if (sel.edges_missing) {
         if (!data.seq_netlist_loaded) {
             std::cout << "  No sequential edges — --seq-netlist <circuit.v> is required (FF "
