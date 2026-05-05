@@ -1,6 +1,6 @@
 // ScanForge — verilog_netlist.cpp
-// Lightweight structural Verilog: flip-flop instances → one combinational-stage FF edge
-// per inferred Q→D link (no transitive edges across intermediate FFs).
+// Structural Verilog: flip-flop instances + combinational fanout → one FF→FF edge per
+// Q-to-D path through non-FF logic (paths do not traverse other FFs' Q outputs).
 
 #include "scan_chain.h"
 
@@ -8,8 +8,10 @@
 #include <cctype>
 #include <fstream>
 #include <iostream>
+#include <queue>
 #include <sstream>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace ScanForge {
@@ -64,7 +66,6 @@ bool isLikelyFFCell(const std::string &cell)
     std::string l = lowerCopy(cell);
     if (l == "dff")
         return true;
-    // Match DFF_X1, DFFB, etc.
     if (l.find("dff") != std::string::npos)
         return true;
     static const char *frag[] = {"_dff", "_dfxtp", "_dff_", "dffsr", "sdff", "_sdlatch"};
@@ -109,7 +110,6 @@ std::string trimWs(std::string s)
     return s;
 }
 
-// Split port list at commas not inside (), [], {}.
 std::vector<std::string> splitTopLevelCommas(const std::string &blob)
 {
     std::vector<std::string> parts;
@@ -167,7 +167,7 @@ struct Parser {
                 s[pos] == '$'))
             ++pos;
         out = s.substr(start, pos - start);
-        return true;
+        return !out.empty();
     }
 
     bool consume(char c)
@@ -180,7 +180,6 @@ struct Parser {
         return false;
     }
 
-    // Parse from current '(' including nested parens; leaves pos after ')'.
     bool parseParenGroup(std::string &inner)
     {
         skipWs();
@@ -202,7 +201,7 @@ struct Parser {
         if (depth != 0 || pos >= s.size())
             return false;
         inner = s.substr(start, pos - start);
-        ++pos; // skip ')'
+        ++pos;
         return true;
     }
 
@@ -256,7 +255,6 @@ struct Parser {
         return true;
     }
 
-    // First hierarchical identifier token in an expression (skip constants).
     bool firstNetToken(std::string expr, std::string &net)
     {
         Parser sub{expr, 0};
@@ -283,9 +281,35 @@ struct Parser {
         }
         return false;
     }
+
+    // Collect hierarchical identifiers (skip numbers, keywords noise).
+    void collectIdents(std::string expr, std::vector<std::string> &out)
+    {
+        Parser sub{expr, 0};
+        sub.skipWs();
+        while (!sub.eof()) {
+            std::string id;
+            std::string num;
+            if (sub.parseVerilogNumber(num))
+                continue;
+            if (sub.consume('(') || sub.consume('{') || sub.consume('['))
+                continue;
+            if (sub.consume(')') || sub.consume('}') || sub.consume(']') ||
+                sub.consume(',') || sub.consume(';') || sub.consume(':'))
+                continue;
+            if (sub.parseIdent(id)) {
+                std::string low = lowerCopy(id);
+                if (low == "posedge" || low == "negedge" || low == "or" ||
+                    low == "and" || low == "buf" || low == "wire" || low == "input" ||
+                    low == "output" || low == "assign")
+                    continue;
+                out.push_back(id);
+            } else
+                ++sub.pos;
+        }
+    }
 };
 
-// Positional ports: ISCAS dff (CK, reset, Q, D) or (clk, D, Q).
 void inferPortsPositional(const std::string &portsBlob, std::string &dnet, std::string &qnet)
 {
     auto parts = splitTopLevelCommas(portsBlob);
@@ -401,6 +425,331 @@ void scanFfInstances(const std::string &body, std::vector<FFInst> &out)
     }
 }
 
+bool portNameIsLikelyOutput(const std::string &port)
+{
+    std::string l = lowerCopy(port);
+    if (l == "y" || l == "z" || l == "zn" || l == "o" || l == "out" || l == "q" ||
+        l == "s" || l == "so" || l == "co" || l == "sum" || l == "cout" || l == "y1" ||
+        l == "f")
+        return true;
+    if (!l.empty() && l[0] == 'y' && l.size() <= 3)
+        return true;
+    return false;
+}
+
+bool portNameIsLikelyInput(const std::string &port)
+{
+    std::string l = lowerCopy(port);
+    if (l == "a" || l == "b" || l == "c" || l == "d" || l == "e" || l == "in" || l == "i" ||
+        l == "i0" || l == "i1" || l == "a1" || l == "a2" || l == "b1" || l == "b2" ||
+        l == "dat" || l == "d0" || l == "d1" || l == "s" || l == "sel" || l == "ci" ||
+        l == "cin" || l == "a0" || l == "b0")
+        return true;
+    if (l.size() == 2 && l[0] == 'a' && std::isdigit(static_cast<unsigned char>(l[1])))
+        return true;
+    if (l.size() == 2 && l[0] == 'b' && std::isdigit(static_cast<unsigned char>(l[1])))
+        return true;
+    return false;
+}
+
+// Fanout[u]: nets reachable in one combinational step from net u (u drives gate inputs →
+// gate outputs). Uses OR-semantics: if any input of a multi-input gate is u, output is listed
+// (over-approx for AND/OR; common for “may affect” reachability).
+void addCombFanoutEdge(std::unordered_map<std::string, std::vector<std::string>> &fanout,
+                       const std::string &from,
+                       const std::string &to)
+{
+    if (from.empty() || to.empty() || from == to)
+        return;
+    auto &v = fanout[from];
+    v.push_back(to);
+}
+
+void dedupeFanout(std::unordered_map<std::string, std::vector<std::string>> &fanout)
+{
+    for (auto &kv : fanout) {
+        auto &v = kv.second;
+        std::sort(v.begin(), v.end());
+        v.erase(std::unique(v.begin(), v.end()), v.end());
+    }
+}
+
+// Parse primitive or generic gate: cell inst ( .p(expr), ... ) or cell inst (a,b,y);
+// Returns false if not a gate instance (caller skips).
+bool parseGateInstance(Parser &p, std::string &cellLower,
+                       std::vector<std::pair<std::string, std::string>> &namedNets,
+                       std::vector<std::string> &positionalNets)
+{
+    std::size_t save = p.pos;
+    std::string cell;
+    if (!p.parseIdent(cell))
+        return false;
+    if (isLikelyFFCell(cell)) {
+        p.pos = save;
+        return false;
+    }
+    cellLower = lowerCopy(cell);
+
+    p.skipWs();
+    if (!p.eof() && p.s[p.pos] == '#') {
+        ++p.pos;
+        p.skipWs();
+        std::string junk;
+        if (!p.parseParenGroup(junk)) {
+            p.pos = save;
+            return false;
+        }
+    }
+
+    std::string inst;
+    if (!p.parseIdent(inst)) {
+        p.pos = save;
+        return false;
+    }
+
+    std::string portsBlob;
+    if (!p.parseParenGroup(portsBlob)) {
+        p.pos = save;
+        return false;
+    }
+
+    namedNets.clear();
+    positionalNets.clear();
+
+    if (portsBlob.find('.') != std::string::npos) {
+        Parser pp{portsBlob, 0};
+        while (true) {
+            pp.skipWs();
+            if (pp.eof())
+                break;
+            if (!pp.consume('.')) {
+                ++pp.pos;
+                continue;
+            }
+            std::string pname;
+            if (!pp.parseIdent(pname))
+                break;
+            std::string inner;
+            if (!pp.parseParenGroup(inner))
+                break;
+            std::string sig;
+            if (Parser{inner, 0}.firstNetToken(inner, sig))
+                namedNets.push_back({pname, sig});
+            pp.skipWs();
+            pp.consume(',');
+        }
+        return true;
+    }
+
+    for (const auto &part : splitTopLevelCommas(portsBlob)) {
+        std::string sig;
+        if (Parser{part, 0}.firstNetToken(part, sig))
+            positionalNets.push_back(sig);
+    }
+    return true;
+}
+
+void registerGateFanout(const std::string &cellLower,
+                        const std::vector<std::pair<std::string, std::string>> &namedNets,
+                        const std::vector<std::string> &positionalNets,
+                        std::unordered_map<std::string, std::vector<std::string>> &fanout)
+{
+    std::vector<std::string> ins;
+    std::vector<std::string> outs;
+
+    if (!namedNets.empty()) {
+        for (const auto &pr : namedNets) {
+            const std::string &pn = pr.first;
+            const std::string &nt = pr.second;
+            if (portNameIsLikelyOutput(pn))
+                outs.push_back(nt);
+            else if (portNameIsLikelyInput(pn) || !portNameIsLikelyOutput(pn))
+                ins.push_back(nt);
+        }
+        // Re-classify: if nothing marked output, guess from cell arity
+        if (outs.empty() && !ins.empty()) {
+            if (cellLower == "not" || cellLower == "buf" || cellLower == "inv") {
+                if (namedNets.size() >= 2) {
+                    ins.clear();
+                    outs.clear();
+                    for (const auto &pr : namedNets) {
+                        std::string l = lowerCopy(pr.first);
+                        if (l == "a" || l == "in" || l == "i" || l == "d")
+                            ins.push_back(pr.second);
+                        else if (l == "y" || l == "z" || l == "zn" || l == "o" || l == "q")
+                            outs.push_back(pr.second);
+                    }
+                }
+            }
+        }
+    } else if (!positionalNets.empty()) {
+        // Verilog built-in primitives: (output, input, ...) e.g. buf(y,a), and(y,a,b).
+        if (positionalNets.size() < 2)
+            return;
+        outs.push_back(positionalNets[0]);
+        for (std::size_t i = 1; i < positionalNets.size(); ++i)
+            ins.push_back(positionalNets[i]);
+    }
+
+    if (outs.empty() || ins.empty())
+        return;
+
+    for (const std::string &inNet : ins) {
+        for (const std::string &outNet : outs)
+            addCombFanoutEdge(fanout, inNet, outNet);
+    }
+}
+
+void scanCombInstances(const std::string &body,
+                       std::unordered_map<std::string, std::vector<std::string>> &fanout)
+{
+    Parser p{body, 0};
+    while (!p.eof()) {
+        std::string cellLower;
+        std::vector<std::pair<std::string, std::string>> named;
+        std::vector<std::string> pos;
+        std::size_t save = p.pos;
+        if (parseGateInstance(p, cellLower, named, pos)) {
+            registerGateFanout(cellLower, named, pos, fanout);
+            continue;
+        }
+        p.pos = save;
+        ++p.pos;
+    }
+}
+
+// assign lhs = rhs ;
+bool parseAssignStatement(Parser &p, std::string &lhsNet, std::string &rhsBlob)
+{
+    std::size_t save = p.pos;
+    std::string kw;
+    if (!p.parseIdent(kw) || lowerCopy(kw) != "assign") {
+        p.pos = save;
+        return false;
+    }
+    p.skipWs();
+    std::size_t start = p.pos;
+    int depth = 0;
+    while (!p.eof()) {
+        if (p.s[p.pos] == '(' || p.s[p.pos] == '[' || p.s[p.pos] == '{')
+            ++depth;
+        else if (p.s[p.pos] == ')' || p.s[p.pos] == ']' || p.s[p.pos] == '}')
+            depth = std::max(0, depth - 1);
+        else if (depth == 0 && p.s[p.pos] == '=') {
+            std::string lhs = trimWs(p.s.substr(start, p.pos - start));
+            ++p.pos;
+            std::size_t rstart = p.pos;
+            while (!p.eof() && p.s[p.pos] != ';')
+                ++p.pos;
+            rhsBlob = trimWs(p.s.substr(rstart, p.pos - rstart));
+            if (!Parser{lhs, 0}.firstNetToken(lhs, lhsNet)) {
+                p.pos = save;
+                return false;
+            }
+            if (p.eof() || p.s[p.pos] != ';') {
+                p.pos = save;
+                return false;
+            }
+            ++p.pos;
+            return true;
+        }
+        ++p.pos;
+    }
+    p.pos = save;
+    return false;
+}
+
+void scanAssigns(const std::string &body,
+                 std::unordered_map<std::string, std::vector<std::string>> &fanout)
+{
+    Parser p{body, 0};
+    while (!p.eof()) {
+        std::string lhs, rhs;
+        if (parseAssignStatement(p, lhs, rhs)) {
+            std::vector<std::string> ids;
+            Parser{rhs, 0}.collectIdents(rhs, ids);
+            for (const std::string &id : ids)
+                addCombFanoutEdge(fanout, id, lhs);
+            continue;
+        }
+        ++p.pos;
+    }
+}
+
+std::vector<SeqEdge> combReachableFfEdges(
+    int numFF,
+    const std::unordered_map<std::string, int> &ff_by_name,
+    const std::vector<FFInst> &insts,
+    const std::unordered_map<std::string, std::vector<std::string>> &fanout)
+{
+    std::unordered_map<std::string, int> net_to_q_ff; // net is some matched FF's Q
+    std::unordered_map<std::string, int> net_to_d_ff; // net is some matched FF's D
+    std::vector<std::string> ff_q_net(static_cast<std::size_t>(numFF));
+    std::vector<std::string> ff_d_net(static_cast<std::size_t>(numFF));
+
+    for (const auto &fi : insts) {
+        auto it = ff_by_name.find(fi.inst);
+        if (it == ff_by_name.end())
+            continue;
+        int idx = it->second;
+        if (!fi.q_net.empty()) {
+            net_to_q_ff[fi.q_net] = idx;
+            ff_q_net[static_cast<std::size_t>(idx)] = fi.q_net;
+        }
+        if (!fi.d_net.empty()) {
+            net_to_d_ff[fi.d_net] = idx;
+            ff_d_net[static_cast<std::size_t>(idx)] = fi.d_net;
+        }
+    }
+
+    std::vector<SeqEdge> edges;
+
+    for (int src = 0; src < numFF; ++src) {
+        const std::string &start = ff_q_net[static_cast<std::size_t>(src)];
+        if (start.empty())
+            continue;
+
+        std::queue<std::string> q;
+        std::unordered_set<std::string> vis;
+        q.push(start);
+        vis.insert(start);
+
+        while (!q.empty()) {
+            std::string u = q.front();
+            q.pop();
+
+            auto dit = net_to_d_ff.find(u);
+            if (dit != net_to_d_ff.end() && dit->second != src)
+                edges.push_back(SeqEdge{src, dit->second});
+
+            auto fit = fanout.find(u);
+            if (fit == fanout.end())
+                continue;
+            for (const std::string &v : fit->second) {
+                if (vis.count(v))
+                    continue;
+                // Do not expand through another FF's Q output net (sequential boundary).
+                auto qit = net_to_q_ff.find(v);
+                if (qit != net_to_q_ff.end() && qit->second != src)
+                    continue;
+                vis.insert(v);
+                q.push(v);
+            }
+        }
+    }
+
+    std::sort(edges.begin(), edges.end(), [](const SeqEdge &a, const SeqEdge &b) {
+        if (a.from != b.from) return a.from < b.from;
+        return a.to < b.to;
+    });
+    edges.erase(std::unique(edges.begin(), edges.end(),
+                            [](const SeqEdge &a, const SeqEdge &b) {
+                                return a.from == b.from && a.to == b.to;
+                            }),
+                edges.end());
+    return edges;
+}
+
 } // namespace
 
 bool mergeSequentialEdgesFromVerilog(ScanData &data, const std::string &path)
@@ -420,82 +769,32 @@ bool mergeSequentialEdgesFromVerilog(ScanData &data, const std::string &path)
     for (int i = 0; i < data.numFF; ++i)
         ff_by_name[data.ffs[i].name] = i;
 
-    std::unordered_map<std::string, int> net_q_driver;
+    std::unordered_map<std::string, std::vector<std::string>> fanout;
+    scanCombInstances(src, fanout);
+    scanAssigns(src, fanout);
+    dedupeFanout(fanout);
+
+    std::vector<SeqEdge> new_edges = combReachableFfEdges(data.numFF, ff_by_name, insts, fanout);
+
     int unmatched_inst = 0;
     int matched_by_name = 0;
-
-    for (const auto &fi : insts) {
-        auto it = ff_by_name.find(fi.inst);
-        if (it == ff_by_name.end()) {
-            ++unmatched_inst;
-            continue;
-        }
-        ++matched_by_name;
-        int idx = it->second;
-        if (!fi.q_net.empty())
-            net_q_driver[fi.q_net] = idx;
-    }
-
-    std::vector<SeqEdge> new_edges;
     for (const auto &fi : insts) {
         auto it = ff_by_name.find(fi.inst);
         if (it == ff_by_name.end())
-            continue;
-        int to = it->second;
-        if (fi.d_net.empty())
-            continue;
-        auto dit = net_q_driver.find(fi.d_net);
-        if (dit == net_q_driver.end())
-            continue;
-        int from = dit->second;
-        if (from == to)
-            continue;
-        new_edges.push_back(SeqEdge{from, to});
+            ++unmatched_inst;
+        else
+            ++matched_by_name;
     }
 
-    std::sort(new_edges.begin(), new_edges.end(),
-              [](const SeqEdge &a, const SeqEdge &b) {
-                  if (a.from != b.from) return a.from < b.from;
-                  return a.to < b.to;
-              });
-    new_edges.erase(std::unique(new_edges.begin(), new_edges.end(),
-                                [](const SeqEdge &a, const SeqEdge &b) {
-                                    return a.from == b.from && a.to == b.to;
-                                }),
-                     new_edges.end());
-
-    if (new_edges.empty() && data.numFF > 0 &&
-        (int)insts.size() == data.numFF && matched_by_name == 0) {
+    if (new_edges.empty() && data.numFF > 0 && (int)insts.size() == data.numFF &&
+        matched_by_name == 0) {
         std::cerr << "Note: flip-flop instance names in the netlist do not match .sf FF_NAMES; "
                      "mapping the first " << data.numFF
                   << " dff-like instances to FF_NAMES in file order.\n";
-        net_q_driver.clear();
-        for (int j = 0; j < data.numFF; ++j) {
-            if (!insts[static_cast<std::size_t>(j)].q_net.empty())
-                net_q_driver[insts[static_cast<std::size_t>(j)].q_net] = j;
-        }
-        for (int j = 0; j < data.numFF; ++j) {
-            const auto &fi = insts[static_cast<std::size_t>(j)];
-            if (fi.d_net.empty())
-                continue;
-            auto dit = net_q_driver.find(fi.d_net);
-            if (dit == net_q_driver.end())
-                continue;
-            int from = dit->second;
-            if (from == j)
-                continue;
-            new_edges.push_back(SeqEdge{from, j});
-        }
-        std::sort(new_edges.begin(), new_edges.end(),
-                  [](const SeqEdge &a, const SeqEdge &b) {
-                      if (a.from != b.from) return a.from < b.from;
-                      return a.to < b.to;
-                  });
-        new_edges.erase(std::unique(new_edges.begin(), new_edges.end(),
-                                    [](const SeqEdge &a, const SeqEdge &b) {
-                                        return a.from == b.from && a.to == b.to;
-                                    }),
-                          new_edges.end());
+        ff_by_name.clear();
+        for (int j = 0; j < data.numFF; ++j)
+            ff_by_name[insts[static_cast<std::size_t>(j)].inst] = j;
+        new_edges = combReachableFfEdges(data.numFF, ff_by_name, insts, fanout);
     }
 
     const std::size_t edges_from_this_netlist = new_edges.size();
@@ -514,7 +813,7 @@ bool mergeSequentialEdgesFromVerilog(ScanData &data, const std::string &path)
                              }),
                  merged.end());
 
-    data.seq_edges      = std::move(merged);
+    data.seq_edges          = std::move(merged);
     data.seq_netlist_loaded = true;
 
     if (unmatched_inst > 0 && matched_by_name > 0) {
@@ -523,13 +822,12 @@ bool mergeSequentialEdgesFromVerilog(ScanData &data, const std::string &path)
                      "(ignored).\n";
     }
     std::cerr << "Sequential FF graph: " << data.seq_edges.size()
-              << " directed edge(s) (one per inferred Q→D link through combinational logic "
-                 "only; " << edges_from_this_netlist << " from this netlist).\n";
+              << " directed edge(s) (combinational reachability from each FF's Q to others' "
+                 "D; " << edges_from_this_netlist << " from this netlist).\n";
     if (data.seq_edges.empty() && !insts.empty()) {
-        std::cerr << "Hint: many gate-level netlists (e.g. ISCAS s27) connect each FF D pin "
-                     "through combinational logic, so there are no FF-to-FF wires and this "
-                     "count is zero. Use a netlist with explicit FF-to-FF nets, or a "
-                     "structural flow where Q and D share the same net name.\n";
+        std::cerr << "Hint: no Q→D paths found through parsed assign/primitive fanout. "
+                     "Unsupported cells, complex port expressions, or missing gate instances "
+                     "will yield zero edges.\n";
     }
     return true;
 }

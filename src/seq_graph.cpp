@@ -346,15 +346,15 @@ SeqGraphSelection selectSequentialGraphFFs(const ScanData &data,
 
 void printSeqGraphReport(const ScanData &data, const SeqGraphSelection &sel)
 {
-    std::cout << "Sequential FF graph analysis (edges: one combinational-stage Q→D link per "
-                 "pair; F0→F2 is not inferred from F0→F1→F2)\n";
+    std::cout << "Sequential FF graph analysis (edges: combinational reachability from each "
+                 "FF's Q to another's D; no F0→F2 shortcut across intermediate FFs)\n";
     if (sel.edges_missing) {
         if (!data.seq_netlist_loaded) {
             std::cout << "  No sequential edges — --seq-netlist <circuit.v> is required (FF "
                          "instance names should match FF_NAMES when possible).\n";
         } else {
             std::cout << "  No sequential edges after parsing the netlist — see stderr hints "
-                         "above (direct Q→D nets only).\n";
+                         "above.\n";
         }
         return;
     }

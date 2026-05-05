@@ -31,9 +31,7 @@ struct ScanData {
     int                   numFF;
     std::vector<FFInfo>   ffs;
     std::vector<Pattern>  patterns;
-    // Sequential FF graph: one directed edge per inferred Q→D link (combinational-only
-    // reachability between FFs; paths do not hop through other FFs), filled by
-    // mergeSequentialEdgesFromVerilog().
+    // Sequential FF graph: combinational Q→D reachability edges from mergeSequentialEdgesFromVerilog().
     std::vector<SeqEdge>  seq_edges;
     bool                  seq_netlist_loaded = false;
 };
@@ -102,10 +100,10 @@ bool parseScanData(const std::string &path, ScanData &out);
 // sequential-graph-only workflows.
 bool parseScanDataHeader(const std::string &path, ScanData &out);
 
-// Populate data.seq_edges from a structural Verilog netlist: flip-flop instances whose
-// cell names match common *_dff* patterns; one edge FF_a→FF_b when FF_a's Q net drives FF_b's
-// D net (interpreted as influence through combinational logic only—no edge FF0→FF2 from a
-// chain F0→F1→F2). FF instance names should match .sf FF_NAMES when possible.
+// Populate data.seq_edges from structural Verilog: for each FF pair (a,b), add edge a→b if
+// b's D net is reachable from a's Q net by walking assign/primitive fanout without entering
+// another FF's Q output net (combinational reachability only; no transitive F0→F2 when only
+// F0→F1 and F1→F2 exist as separate FF stages). FF instance names should match .sf FF_NAMES.
 bool mergeSequentialEdgesFromVerilog(ScanData &data, const std::string &verilog_path);
 
 // Simulate scan-shift sequence for a given ordered subset of FF indices.
