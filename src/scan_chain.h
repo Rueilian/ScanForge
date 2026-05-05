@@ -95,6 +95,16 @@ struct ScanResult {
 // Parse a .sf file produced by FAN_ATPG's add_scan_chains command.
 bool parseScanData(const std::string &path, ScanData &out);
 
+// Parse only header through FF metadata (NUM_FF, FF_NAMES, SCOAP, EDGE); stops at
+// PATTERNS without loading PPI/PPO. SCOAP line optional (defaults to zeros). For fast
+// sequential-graph-only workflows.
+bool parseScanDataHeader(const std::string &path, ScanData &out);
+
+// Populate data.seq_edges from a structural Verilog netlist: flip-flop instances whose
+// cell names match common *_dff* patterns; edges added when another FF's Q net drives
+// this FF's D net (direct connection only). FF instance names must match .sf FF_NAMES.
+bool mergeSequentialEdgesFromVerilog(ScanData &data, const std::string &verilog_path);
+
 // Simulate scan-shift sequence for a given ordered subset of FF indices.
 // Chain order: SI → chain[0] → chain[1] → ... → chain[K-1] → SO
 ScanResult simulate(const ScanData &data, const std::vector<int> &chain);

@@ -24,7 +24,7 @@ struct SeqGraphSelection {
     bool        edges_missing        = false;
 };
 
-// Requires ScanData::seq_edges populated (see parseScanData / EDGE lines in .sf).
+// Requires ScanData::seq_edges from EDGE lines in .sf and/or mergeSequentialEdgesFromVerilog().
 // depth_threshold: maximum allowed path length in edges between FFs; paths with
 // length strictly greater than this trigger the depth-reduction greedy loop.
 // path_enum_cap: safety limit on how many long paths are scored per run.

@@ -347,8 +347,8 @@ void printSeqGraphReport(const ScanData &data, const SeqGraphSelection &sel)
 {
     std::cout << "Sequential FF graph analysis\n";
     if (sel.edges_missing) {
-        std::cout << "  No EDGE records in .sf — add lines \"EDGE <from> <to>\" (FF indices) "
-                     "after SCOAP to define the sequential dependency graph.\n";
+        std::cout << "  No sequential edges — use --seq-netlist <circuit.v> (FF instance names "
+                     "must match FF_NAMES) or add EDGE lines to the .sf after SCOAP.\n";
         return;
     }
 
