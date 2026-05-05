@@ -4,12 +4,14 @@
 #include "scan_chain.h"
 #include "partial_scan.h"
 #include "segment_stress.h"
+#include "seq_graph.h"
 #include <iostream>
 #include <iomanip>
 #include <string>
 #include <vector>
 #include <cstdlib>
 #include <cmath>
+#include <cstddef>
 
 static std::string basenameSf(const std::string &path)
 {
@@ -45,6 +47,13 @@ static void usage(const char *prog)
         "                        (default: 0.5)\n"
         "  --coverage-proxy <co|combined|controllability>\n"
         "                        SCOAP proxy for sweep CSV (default: combined)\n"
+        "  --seq-graph           Sequential FF graph: heuristic cycle breaking (FVS) +\n"
+        "                        depth reduction (needs EDGE lines in .sf)\n"
+        "  --seq-graph-only      Same as --seq-graph then exit (no scan simulation)\n"
+        "  --seq-depth <n>       Max sequential path length in edges before depth pass\n"
+        "                        flags longer paths (default: 4)\n"
+        "  --seq-path-cap <n>    Cap on enumerated long paths per greedy step (default:\n"
+        "                        500000)\n"
         "  -h, --help            Print this help\n"
         "\n"
         "  <scan_data.sf>  Data file exported by FAN_ATPG's 'add_scan_chains -o' command.\n";
@@ -81,6 +90,10 @@ int main(int argc, char *argv[])
     ScanForge::SelectionMode mode = ScanForge::SelectionMode::SCOAP_CO;
     ScanForge::CoverageProxyMode proxyMode = ScanForge::CoverageProxyMode::COMBINED;
     int         segmentWindow = 0;
+    bool        doSeqGraph    = false;
+    bool        seqGraphOnly  = false;
+    int         seqDepth      = 4;
+    std::size_t seqPathCap    = 500000;
 
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
@@ -92,6 +105,12 @@ int main(int argc, char *argv[])
         else if (a == "--stress-csv" && i+1 < argc) { stressCsvPath = argv[++i]; }
         else if (a == "--segment-csv" && i+1 < argc) { segmentCsvPath = argv[++i]; }
         else if (a == "--segment-window" && i+1 < argc) { segmentWindow = std::atoi(argv[++i]); }
+        else if (a == "--seq-graph") { doSeqGraph = true; }
+        else if (a == "--seq-graph-only") { doSeqGraph = true; seqGraphOnly = true; }
+        else if (a == "--seq-depth" && i+1 < argc) { seqDepth = std::atoi(argv[++i]); }
+        else if (a == "--seq-path-cap" && i+1 < argc) {
+            seqPathCap = static_cast<std::size_t>(std::strtoull(argv[++i], nullptr, 10));
+        }
         else if (a == "--summary-csv" && i+1 < argc) { summaryCsvPath = argv[++i]; }
         else if (a == "--partial" && i+1 < argc) { partialR = std::atof(argv[++i]); }
         else if (a == "--lambda" && i+1 < argc) { lambda = std::atof(argv[++i]); }
@@ -126,6 +145,15 @@ int main(int argc, char *argv[])
     }
 
     if (sfPath.empty()) { std::cerr << "Error: no .sf file specified\n"; return 1; }
+    if (seqDepth < 0) {
+        std::cerr << "Error: --seq-depth must be >= 0\n";
+        return 1;
+    }
+    if (seqGraphOnly && (doSweep || doCoverage || (partialR > 0.0 && partialR < 1.0))) {
+        std::cerr << "Error: --seq-graph-only cannot be combined with --sweep, --coverage, "
+                     "or --partial\n";
+        return 1;
+    }
     if (!segmentCsvPath.empty() && segmentWindow <= 0) {
         std::cerr << "Error: --segment-csv requires --segment-window > 0\n";
         return 1;
@@ -139,6 +167,14 @@ int main(int argc, char *argv[])
 
     ScanForge::ScanData data;
     if (!ScanForge::parseScanData(sfPath, data)) return 1;
+
+    if (doSeqGraph) {
+        auto seqSel =
+            ScanForge::selectSequentialGraphFFs(data, seqDepth, seqPathCap);
+        ScanForge::printSeqGraphReport(data, seqSel);
+        if (seqGraphOnly)
+            return 0;
+    }
 
     // Build ratio list
     std::vector<double> ratios;

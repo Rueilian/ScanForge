@@ -22,10 +22,18 @@ struct Pattern {
     std::vector<Value> ppo; // captured values (FF next state after test)
 };
 
+struct SeqEdge {
+    int from = 0; // FF index [0, numFF)
+    int to   = 0;
+};
+
 struct ScanData {
     int                   numFF;
     std::vector<FFInfo>   ffs;
     std::vector<Pattern>  patterns;
+    // Optional sequential dependency edges (FF Q → FF D), from extended .sf lines:
+    //   EDGE <from_idx> <to_idx>
+    std::vector<SeqEdge>  seq_edges;
 };
 
 struct FFStress {
