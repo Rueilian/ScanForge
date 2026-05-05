@@ -1,5 +1,6 @@
 // ScanForge — verilog_netlist.cpp
-// Lightweight structural Verilog: flip-flop instances → sequential FF edges (Q → D).
+// Lightweight structural Verilog: flip-flop instances → one combinational-stage FF edge
+// per inferred Q→D link (no transitive edges across intermediate FFs).
 
 #include "scan_chain.h"
 
@@ -7,7 +8,6 @@
 #include <cctype>
 #include <fstream>
 #include <iostream>
-#include <queue>
 #include <sstream>
 #include <unordered_map>
 #include <vector>
@@ -401,66 +401,6 @@ void scanFfInstances(const std::string &body, std::vector<FFInst> &out)
     }
 }
 
-// Transitive closure: edge (a,b) iff b reachable from a via ≥1 hop in `direct`.
-// BFS seeds from a's out-neighbors only so we never add self-loops from a lone self-edge.
-std::vector<SeqEdge> reachabilityClosureFromDirect(int n, const std::vector<SeqEdge> &direct)
-{
-    if (n <= 0)
-        return {};
-    std::vector<std::vector<int>> adj(static_cast<std::size_t>(n));
-    for (const auto &e : direct) {
-        if (e.from == e.to)
-            continue;
-        if (e.from < 0 || e.from >= n || e.to < 0 || e.to >= n)
-            continue;
-        adj[static_cast<std::size_t>(e.from)].push_back(e.to);
-    }
-    for (auto &row : adj) {
-        std::sort(row.begin(), row.end());
-        row.erase(std::unique(row.begin(), row.end()), row.end());
-    }
-
-    std::vector<SeqEdge> out;
-    std::vector<char> vis(static_cast<std::size_t>(n), 0);
-
-    for (int s = 0; s < n; ++s) {
-        std::fill(vis.begin(), vis.end(), 0);
-        std::queue<int> q;
-        for (int v : adj[static_cast<std::size_t>(s)]) {
-            if (!vis[static_cast<std::size_t>(v)]) {
-                vis[static_cast<std::size_t>(v)] = 1;
-                q.push(v);
-            }
-        }
-        while (!q.empty()) {
-            int u = q.front();
-            q.pop();
-            for (int v : adj[static_cast<std::size_t>(u)]) {
-                if (!vis[static_cast<std::size_t>(v)]) {
-                    vis[static_cast<std::size_t>(v)] = 1;
-                    q.push(v);
-                }
-            }
-        }
-        for (int t = 0; t < n; ++t) {
-            if (!vis[static_cast<std::size_t>(t)] || t == s)
-                continue;
-            out.push_back(SeqEdge{s, t});
-        }
-    }
-
-    std::sort(out.begin(), out.end(), [](const SeqEdge &a, const SeqEdge &b) {
-        if (a.from != b.from) return a.from < b.from;
-        return a.to < b.to;
-    });
-    out.erase(std::unique(out.begin(), out.end(),
-                          [](const SeqEdge &a, const SeqEdge &b) {
-                              return a.from == b.from && a.to == b.to;
-                          }),
-              out.end());
-    return out;
-}
-
 } // namespace
 
 bool mergeSequentialEdgesFromVerilog(ScanData &data, const std::string &path)
@@ -574,10 +514,7 @@ bool mergeSequentialEdgesFromVerilog(ScanData &data, const std::string &path)
                              }),
                  merged.end());
 
-    const std::size_t direct_merged = merged.size();
-    merged = reachabilityClosureFromDirect(data.numFF, merged);
-
-    data.seq_edges          = std::move(merged);
+    data.seq_edges      = std::move(merged);
     data.seq_netlist_loaded = true;
 
     if (unmatched_inst > 0 && matched_by_name > 0) {
@@ -585,10 +522,9 @@ bool mergeSequentialEdgesFromVerilog(ScanData &data, const std::string &path)
                   << " flip-flop-like cell(s) had instance names not in .sf FF_NAMES "
                      "(ignored).\n";
     }
-    std::cerr << "Sequential FF reachability graph: " << data.seq_edges.size()
-              << " directed edges (closure of " << direct_merged
-              << " merged direct Q→D links; " << edges_from_this_netlist
-              << " direct from this netlist).\n";
+    std::cerr << "Sequential FF graph: " << data.seq_edges.size()
+              << " directed edge(s) (one per inferred Q→D link through combinational logic "
+                 "only; " << edges_from_this_netlist << " from this netlist).\n";
     if (data.seq_edges.empty() && !insts.empty()) {
         std::cerr << "Hint: many gate-level netlists (e.g. ISCAS s27) connect each FF D pin "
                      "through combinational logic, so there are no FF-to-FF wires and this "

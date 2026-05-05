@@ -24,7 +24,9 @@ struct SeqGraphSelection {
     bool        edges_missing        = false;
 };
 
-// Requires ScanData::seq_edges from mergeSequentialEdgesFromVerilog() (reachability graph).
+// Requires ScanData::seq_edges from mergeSequentialEdgesFromVerilog(): one edge per
+// combinational-stage Q→D link (no transitive closure in seq_edges). Cycle and depth
+// analysis walk this FF graph (multi-hop paths visit intermediate FFs as vertices).
 // depth_threshold: maximum allowed path length in edges between FFs; paths with
 // length strictly greater than this trigger the depth-reduction greedy loop.
 // path_enum_cap: safety limit on how many long paths are scored per run.
