@@ -14,6 +14,8 @@ It uses [FAN_ATPG](https://github.com/NTU-LaDS-II/FAN_ATPG) as a backend to expo
 | **Segment stress CSV** | Sliding-window stress along the **current scan chain** (`--segment-window`, `--segment-csv`); hotspot flag from mean+1σ over segment averages |
 | **Partial scan selection** | SCOAP-CO, SCOAP-Combined, Random, **wear-aware** (`co_wear`, `combined_wear`), or **wear-leveling** (`co_wear_leveling`, `combined_wear_leveling`) greedy selection using segment max stress along the chain |
 | **Ratio sweep** | Sweep 25/50/75/100% ratios in one command (`--sweep`) |
+| **Sequential graph — cycle breaking** | Parse a gate-level Verilog netlist, build the FF-to-FF dependency graph, and select the **minimum set of FFs** (heuristic FVS) needed to break all directed cycles (self-loops excluded) |
+| **Sequential graph — depth reduction** | After cycle breaking, greedily remove additional FFs to reduce the longest sequential path to a user-defined maximum (`--seq-depth`) |
 | **SCOAP export** | FAN_ATPG fork computes CC0/CC1/CO and exports them to `.sf` format |
 | **12 ISCAS'89 benchmarks** | Scripts and results for s27 through s38584 |
 
@@ -25,10 +27,12 @@ It uses [FAN_ATPG](https://github.com/NTU-LaDS-II/FAN_ATPG) as a backend to expo
 ScanForge/
 ├── FAN_ATPG/          # git submodule — Rueilian/FAN_ATPG (minimal fork: SCOAP export only)
 ├── src/               # ScanForge C++ engine
-│   ├── scan_chain.h/cpp   — .sf parser + scan shift simulator
-│   ├── partial_scan.h/cpp — SCOAP-based FF selection & sweep
-│   ├── segment_stress.h/cpp — segment-level / hotspot profiling
-│   ├── main.cpp           — CLI entry point
+│   ├── scan_chain.h/cpp       — .sf parser + scan-shift simulator
+│   ├── partial_scan.h/cpp     — SCOAP-based FF selection & sweep
+│   ├── segment_stress.h/cpp   — segment-level / hotspot profiling
+│   ├── seq_graph.h/cpp        — sequential FF graph: cycle breaking + depth reduction
+│   ├── verilog_netlist.cpp    — lightweight structural Verilog parser (Q→D FF edges)
+│   ├── main.cpp               — CLI entry point
 │   └── Makefile
 ├── scripts/           # run_all.sh batch runner + per-circuit atpg scripts
 ├── results/           # Generated .sf files + sweep result tables (includes `leveling_demo.sf` for wear-leveling docs)
@@ -106,6 +110,15 @@ cd ..
   --mode combined_wear_leveling \
   --lambda 0.5 \
   --segment-window 16
+
+# Sequential graph: find FFs that break all cycles (requires a Verilog netlist)
+./src/scanforge circuit.sf --seq-graph --seq-netlist circuit.v
+
+# Sequential graph: break cycles AND reduce sequential depth to ≤3 edges, no simulation
+./src/scanforge circuit.sf --seq-graph --seq-netlist circuit.v --seq-depth 3
+
+# Partial seq-graph: break cycles + depth reduction, then simulate selected partial chain
+./src/scanforge circuit.sf --partial-seq-graph --seq-netlist circuit.v --seq-depth 3
 ```
 
 ---
@@ -133,6 +146,17 @@ Options:
   --lambda <x>              Penalty weight for *_wear and *_wear_leveling (default: 0.5)
   --coverage-proxy <co|combined|controllability>
                             Which SCOAP sums define coverage_proxy in sweep / --partial
+  --seq-graph               Parse .sf header + Verilog netlist, print sequential-graph FF
+                            selection (cycle-break + depth FFs); no scan simulation
+  --seq-graph-only          Alias for --seq-graph
+  --partial-seq-graph       Same selection as --seq-graph on the full .sf, then simulate
+                            the selected partial chain (cycle-break + depth heuristic)
+  --seq-netlist <path>      Required with --seq-graph / --partial-seq-graph: gate-level
+                            Verilog netlist (.v); FF instance names should match FF_NAMES
+  --seq-depth <n>           Maximum allowed sequential path length in edges; paths strictly
+                            longer trigger the depth-reduction greedy pass (default: 4)
+  --seq-path-cap <n>        Safety cap on long paths enumerated per greedy step
+                            (default: 500000)
   -h, --help                Print this help
 ```
 
@@ -191,6 +215,171 @@ At **λ = 0.5**, wear-leveling keeps the same high-testability set as `combined`
 
 **Benchmark checklist:** After generating `FAN_ATPG/results/<circuit>.sf`, run `scripts/run_leveling_sweep.sh` and compare sweep CSVs. **`λ = 0`** parity for wear-leveling vs `combined` was checked on **`results/s27.sf`** (3 FFs) and on **`results/leveling_demo.sf`**; re-run the same `--partial` / `--segment-window` command on **s953** and **s5378** before publication tables (this workspace clone may not ship those `.sf` files).
 
+---
+
+## Sequential Graph Analysis
+
+### Overview
+
+The sequential graph features let you analyze and break unwanted **feedback loops** in the FF dependency graph of a circuit, and **reduce the sequential depth** (maximum path length between FFs).
+
+The two analyses are driven by two new CLI modes:
+
+| Mode | What it does |
+|------|-------------|
+| `--seq-graph` | Parse `.sf` header + Verilog netlist only; print cycle-break and depth-reduction FFs; **no scan simulation** |
+| `--partial-seq-graph` | Same selection, then simulate the selected FFs as a partial scan chain and print full statistics |
+
+Both modes require `--seq-netlist <circuit.v>`: a structural gate-level Verilog file whose DFF instance names match the `FF_NAMES` in the `.sf` file.
+
+### Verilog Netlist Parsing
+
+ScanForge parses the netlist to build the **FF-to-FF dependency graph**: an edge `FF_i → FF_j` is added when FF_i's Q net directly drives FF_j's D net (no intervening combinational logic).  Named-port (`.d(net)`, `.q(net)`) and positional (`clk, d, q`) DFF instantiation styles are both supported.
+
+> **Note:** Many standard ISCAS'89 gate-level netlists connect each FF's D pin through combinational gates, so there are **no direct FF-to-FF wires** and the edge count will be zero. Use netlists with explicit sequential connections (e.g., RTL-synthesised with preserved register names), or ones where FF Q and D nets share the same wire name.
+
+### Cycle Breaking (Heuristic FVS)
+
+ScanForge enumerates all simple directed cycles in the FF graph (capped at 100 000 for large circuits), prunes **inclusion-non-minimal** cycle vertex sets, then applies a **greedy feedback vertex set (FVS) heuristic**: at each step it removes the FF that appears in the largest number of remaining minimal cycles. Self-loops are excluded from the cycle enumeration.
+
+The selected FFs are the **smallest set found by this heuristic** that breaks all detected cycles.
+
+### Depth Reduction
+
+After the cycle-breaking FFs are removed from the graph, ScanForge enumerates simple paths whose **edge count exceeds `--seq-depth`** (default: 4). A **greedy vertex-removal pass** picks FFs that appear most frequently near the **center** of long paths (center-weighted scoring), ensuring that removing one FF breaks the maximum number of oversized paths.
+
+The two passes are independent and their results are **unioned** into `all_selected_ffs` — the final partial-scan chain used for simulation under `--partial-seq-graph`.
+
+### Command Usage
+
+```bash
+# Analysis only — print which FFs to scan (no simulation)
+./src/scanforge circuit.sf \
+    --seq-graph \
+    --seq-netlist circuit.v
+
+# Also reduce sequential depth to ≤3 edges between FFs
+./src/scanforge circuit.sf \
+    --seq-graph \
+    --seq-netlist circuit.v \
+    --seq-depth 3
+
+# Simulate selected FFs as a partial scan chain
+./src/scanforge circuit.sf \
+    --partial-seq-graph \
+    --seq-netlist circuit.v \
+    --seq-depth 3
+
+# Combine with stress and segment CSV exports
+./src/scanforge circuit.sf \
+    --partial-seq-graph \
+    --seq-netlist circuit.v \
+    --seq-depth 3 \
+    --stress-csv stress.csv \
+    --segment-csv seg.csv \
+    --segment-window 8
+```
+
+### Demo: `results/demo_seq.sf` + `results/demo_seq.v`
+
+An 8-FF synthetic circuit (`results/demo_seq.sf` / `results/demo_seq.v`) is included to demonstrate both features.  
+Topology (7 direct Q→D edges):
+
+```
+FF0 ─────────────────── FF4 → FF5 → FF6 → FF7
+     FF1 ⇄ FF2 → FF3 ──┘
+      (cycle)
+```
+
+Specifically: FF1↔FF2 form a 2-node cycle via back-edge FF2→FF1; FF2→FF3→FF4→FF5→FF6→FF7 is a forward chain. After removing FF1 (cycle break), the longest remaining path is FF4→FF5→FF6→FF7 (depth 4 edges).
+
+**`--seq-depth 4` (default) — cycle-breaking only:**
+
+```
+$ ./src/scanforge results/demo_seq.sf \
+    --seq-graph --seq-netlist results/demo_seq.v
+
+Sequential FF graph analysis
+  Elementary cycles (enumerated): 1
+  Minimal cycles (non-embedded vertex sets): 1
+  Cycle-breaking FFs (heuristic FVS): 1
+    Indices: 1
+    Names: U_FF1
+  Depth-reduction FFs: 0
+  Combined selected FFs: 1
+    Indices: 1
+    Names: U_FF1
+  Long paths enumerated for depth pass (≤ cap): 0 / cap 500000
+```
+
+**`--seq-depth 3` — cycle-breaking + depth reduction:**
+
+```
+$ ./src/scanforge results/demo_seq.sf \
+    --seq-graph --seq-netlist results/demo_seq.v --seq-depth 3
+
+Sequential FF graph analysis
+  Elementary cycles (enumerated): 1
+  Minimal cycles (non-embedded vertex sets): 1
+  Cycle-breaking FFs (heuristic FVS): 1
+    Indices: 1
+    Names: U_FF1
+  Depth-reduction FFs: 1
+    Indices: 5
+    Names: U_FF5
+  Combined selected FFs: 2
+    Indices: 1 5
+    Names: U_FF1 U_FF5
+  Long paths enumerated for depth pass (≤ cap): 1 / cap 500000
+```
+
+**`--partial-seq-graph --seq-depth 3` — simulate selected chain:**
+
+```
+$ ./src/scanforge results/demo_seq.sf \
+    --partial-seq-graph --seq-netlist results/demo_seq.v --seq-depth 3
+
+Sequential FF graph analysis
+  ...  (same selection as above)
+Partial scan (seq-graph): selected FFs 2 / 8
+Switching Activity: 0.1250
+Max Stress: 0.6719
+...
+  Coverage proxy (combined): 0.2250  (loss 0.7750)
+```
+
+### Demo: `results/demo_seq_cycles.sf` + `results/demo_seq_cycles.v`
+
+A 10-FF circuit with **three independent cycles** (one 2-node, two 3-node):
+
+```
+$ ./src/scanforge results/demo_seq_cycles.sf \
+    --seq-graph --seq-netlist results/demo_seq_cycles.v
+
+Sequential FF graph analysis
+  Elementary cycles (enumerated): 3
+  Minimal cycles (non-embedded vertex sets): 3
+  Cycle-breaking FFs (heuristic FVS): 3
+    Indices: 1 3 6
+    Names: FF1 FF3 FF6
+  Depth-reduction FFs: 0
+  Combined selected FFs: 3
+```
+
+All three cycles are broken by selecting exactly one FF per cycle — the heuristic finds the minimum-size hitting set in this case.
+
+### Effect of `--seq-depth` on Selected FF Count
+
+The table below shows results on the 8-FF demo (`results/demo_seq.sf`):
+
+| `--seq-depth` | Cycle-break FFs | Depth-reduction FFs | Total selected | Long paths before depth pass |
+|:---:|:---:|:---:|:---:|:---:|
+| 4 (default) | 1 (U_FF1) | 0 | 1 | 0 |
+| 3 | 1 (U_FF1) | 1 (U_FF5) | 2 | 1 |
+| 2 | 1 (U_FF1) | 1 (U_FF5) | 2 | 3 |
+
+---
+
 ## Results on ISCAS'89 Benchmarks
 
 ### Full Scan Switching Activity
@@ -243,12 +432,25 @@ At **λ = 0.5**, wear-leveling keeps the same high-testability set as `combined`
 │      • exports FF names, SCOAP values, PPI/PPO patterns         │
 └────────────────────────────┬────────────────────────────────────┘
                              │  .sf file
-┌────────────────────────────▼────────────────────────────────────┐
+               ┌─────────────┤  (optional) gate-level .v netlist
+               │             │
+┌──────────────▼─────────────▼────────────────────────────────────┐
 │  ScanForge Engine (src/)                                        │
-│   parseScanData()   — reads .sf, builds ScanData struct         │
-│   selectFFs()       — ranks FFs by SCOAP, returns chain[K]      │
-│   simulate()        — scan-shift simulation on chain            │
-│   sweepPartialScan()— iterates over ratios, prints table        │
+│                                                                 │
+│  ── SCOAP-based partial scan ──────────────────────────────     │
+│   parseScanData()         — reads .sf, builds ScanData struct   │
+│   selectFFs()             — ranks FFs by SCOAP, returns chain[K]│
+│   simulate()              — scan-shift simulation on chain      │
+│   sweepPartialScan()      — iterates over ratios, prints table  │
+│                                                                 │
+│  ── Sequential graph analysis ─────────────────────────────     │
+│   mergeSequentialEdgesFromVerilog()                             │
+│                           — parses .v; adds Q→D FF edges        │
+│   selectSequentialGraphFFs()                                    │
+│                           — heuristic FVS (cycle break)         │
+│                           — greedy depth-reduction pass         │
+│   simulate() on all_selected_ffs                                │
+│                           — scan simulation of seq-graph chain  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
