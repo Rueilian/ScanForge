@@ -80,6 +80,12 @@ bool isClockPort(const std::string &port)
     return l == "clk" || l == "clock" || l == "cp" || l == "ck" || l == "c";
 }
 
+bool isResetPort(const std::string &port)
+{
+    std::string l = lowerCopy(port);
+    return l == "reset" || l == "rst" || l == "rn" || l == "cdn" || l == "sdn";
+}
+
 bool isDataPort(const std::string &port)
 {
     std::string l = lowerCopy(port);
@@ -358,7 +364,7 @@ bool parseFfInstance(Parser &p, FFInst &out)
         std::string sig;
         if (!Parser{inner, 0}.firstNetToken(inner, sig))
             continue;
-        if (isClockPort(pname))
+        if (isClockPort(pname) || isResetPort(pname))
             continue;
         if (isDataPort(pname))
             dnet = sig;
@@ -369,8 +375,12 @@ bool parseFfInstance(Parser &p, FFInst &out)
         pp.consume(',');
     }
 
-    if (dnet.empty() || qnet.empty())
-        inferPortsPositional(portsBlob, dnet, qnet);
+    std::string pq, pd;
+    inferPortsPositional(portsBlob, pd, pq);
+    if (dnet.empty())
+        dnet = pd;
+    if (qnet.empty())
+        qnet = pq;
 
     out.inst  = inst;
     out.d_net = dnet;
@@ -442,6 +452,17 @@ bool mergeSequentialEdgesFromVerilog(ScanData &data, const std::string &path)
         new_edges.push_back(SeqEdge{from, to});
     }
 
+    std::sort(new_edges.begin(), new_edges.end(),
+              [](const SeqEdge &a, const SeqEdge &b) {
+                  if (a.from != b.from) return a.from < b.from;
+                  return a.to < b.to;
+              });
+    new_edges.erase(std::unique(new_edges.begin(), new_edges.end(),
+                                [](const SeqEdge &a, const SeqEdge &b) {
+                                    return a.from == b.from && a.to == b.to;
+                                }),
+                     new_edges.end());
+
     if (new_edges.empty() && data.numFF > 0 &&
         (int)insts.size() == data.numFF && matched_by_name == 0) {
         std::cerr << "Note: flip-flop instance names in the netlist do not match .sf FF_NAMES; "
@@ -476,6 +497,8 @@ bool mergeSequentialEdgesFromVerilog(ScanData &data, const std::string &path)
                           new_edges.end());
     }
 
+    const std::size_t edges_from_this_netlist = new_edges.size();
+
     std::vector<SeqEdge> merged = data.seq_edges;
     merged.insert(merged.end(), new_edges.begin(), new_edges.end());
 
@@ -498,7 +521,7 @@ bool mergeSequentialEdgesFromVerilog(ScanData &data, const std::string &path)
                   << " flip-flop-like cell(s) had instance names not in .sf FF_NAMES "
                      "(ignored).\n";
     }
-    std::cerr << "Sequential edges from netlist: " << data.seq_edges.size()
+    std::cerr << "Sequential edges from netlist: " << edges_from_this_netlist
               << " (direct Q→D connections only).\n";
     if (data.seq_edges.empty() && !insts.empty()) {
         std::cerr << "Hint: many gate-level netlists (e.g. ISCAS s27) connect each FF D pin "
