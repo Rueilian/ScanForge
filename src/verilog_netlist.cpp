@@ -282,33 +282,161 @@ struct Parser {
         return false;
     }
 
-    // Collect hierarchical identifiers (skip numbers, keywords noise).
-    void collectIdents(std::string expr, std::vector<std::string> &out)
+    static bool isKeywordNoise(const std::string &low)
     {
-        Parser sub{expr, 0};
-        sub.skipWs();
-        while (!sub.eof()) {
-            std::string id;
-            std::string num;
-            if (sub.parseVerilogNumber(num))
-                continue;
-            if (sub.consume('(') || sub.consume('{') || sub.consume('['))
-                continue;
-            if (sub.consume(')') || sub.consume('}') || sub.consume(']') ||
-                sub.consume(',') || sub.consume(';') || sub.consume(':'))
-                continue;
-            if (sub.parseIdent(id)) {
-                std::string low = lowerCopy(id);
-                if (low == "posedge" || low == "negedge" || low == "or" ||
-                    low == "and" || low == "buf" || low == "wire" || low == "input" ||
-                    low == "output" || low == "assign")
-                    continue;
-                out.push_back(id);
-            } else
-                ++sub.pos;
-        }
+        return low == "posedge" || low == "negedge" || low == "or" || low == "and" ||
+               low == "buf" || low == "wire" || low == "input" || low == "output" ||
+               low == "assign" || low == "reg" || low == "logic" || low == "function" ||
+               low == "nand" || low == "nor" || low == "xor" || low == "xnor" || low == "not";
     }
 };
+
+// Nets referenced in an expression: recurse into {…} and (…) so assign RHS/LHS
+// concatenations contribute fanout (e.g. assign {y_hi,y_lo} = {a,b}).
+void collectNetIdsFromExpr(const std::string &expr, std::vector<std::string> &out)
+{
+    Parser p{expr, 0};
+    while (!p.eof()) {
+        std::string num;
+        if (p.parseVerilogNumber(num))
+            continue;
+        p.skipWs();
+        if (p.eof())
+            break;
+        char c = p.s[p.pos];
+        if (c == '{') {
+            ++p.pos;
+            int depth = 1;
+            std::size_t start = p.pos;
+            while (p.pos < p.s.size() && depth > 0) {
+                if (p.s[p.pos] == '{')
+                    ++depth;
+                else if (p.s[p.pos] == '}')
+                    --depth;
+                if (depth > 0)
+                    ++p.pos;
+                else
+                    break;
+            }
+            std::string inner = p.s.substr(start, p.pos - start);
+            if (p.pos < p.s.size() && p.s[p.pos] == '}')
+                ++p.pos;
+            for (const auto &part : splitTopLevelCommas(inner))
+                collectNetIdsFromExpr(trimWs(part), out);
+            continue;
+        }
+        if (c == '(') {
+            ++p.pos;
+            int depth = 1;
+            std::size_t start = p.pos;
+            while (p.pos < p.s.size() && depth > 0) {
+                if (p.s[p.pos] == '(')
+                    ++depth;
+                else if (p.s[p.pos] == ')')
+                    --depth;
+                if (depth > 0)
+                    ++p.pos;
+                else
+                    break;
+            }
+            std::string inner = p.s.substr(start, p.pos - start);
+            if (p.pos < p.s.size() && p.s[p.pos] == ')')
+                ++p.pos;
+            collectNetIdsFromExpr(inner, out);
+            continue;
+        }
+        if (c == '[') {
+            ++p.pos;
+            int depth = 1;
+            while (p.pos < p.s.size() && depth > 0) {
+                if (p.s[p.pos] == '[')
+                    ++depth;
+                else if (p.s[p.pos] == ']')
+                    --depth;
+                ++p.pos;
+            }
+            continue;
+        }
+        if (c == '~' || c == '^' || c == '+' || c == '-' || c == '*' || c == '/' || c == '?' ||
+            c == ':') {
+            ++p.pos;
+            continue;
+        }
+        if (c == '!') {
+            if (p.pos + 1 < p.s.size() && p.s[p.pos + 1] == '=')
+                p.pos += 2;
+            else
+                ++p.pos;
+            continue;
+        }
+        if (c == '&') {
+            if (p.pos + 1 < p.s.size() && p.s[p.pos + 1] == '&')
+                p.pos += 2;
+            else
+                ++p.pos;
+            continue;
+        }
+        if (c == '|') {
+            if (p.pos + 1 < p.s.size() && p.s[p.pos + 1] == '|')
+                p.pos += 2;
+            else
+                ++p.pos;
+            continue;
+        }
+        if (c == '<') {
+            if (p.pos + 1 < p.s.size() &&
+                (p.s[p.pos + 1] == '=' || p.s[p.pos + 1] == '<'))
+                p.pos += 2;
+            else
+                ++p.pos;
+            continue;
+        }
+        if (c == '>') {
+            if (p.pos + 1 < p.s.size() && p.s[p.pos + 1] == '=')
+                p.pos += 2;
+            else
+                ++p.pos;
+            continue;
+        }
+        if (c == '=') {
+            if (p.pos + 1 < p.s.size() && p.s[p.pos + 1] == '=')
+                p.pos += 2;
+            else
+                ++p.pos;
+            continue;
+        }
+        std::string id;
+        if (p.parseIdent(id)) {
+            std::string low = lowerCopy(id);
+            if (Parser::isKeywordNoise(low))
+                continue;
+            out.push_back(id);
+        } else
+            ++p.pos;
+    }
+}
+
+// LHS nets for assign: single net or concatenation {n1,n2,...}.
+std::vector<std::string> assignLhsNetList(const std::string &lhsTrimmed)
+{
+    std::string lhs = trimWs(lhsTrimmed);
+    std::vector<std::string> nets;
+    if (!lhs.empty() && lhs.front() == '{') {
+        if (lhs.size() < 2 || lhs.back() != '}')
+            return nets;
+        std::string inner = trimWs(lhs.substr(1, lhs.size() - 2));
+        for (const auto &part : splitTopLevelCommas(inner)) {
+            std::string one;
+            if (Parser{part, 0}.firstNetToken(part, one))
+                nets.push_back(one);
+        }
+        return nets;
+    }
+    std::string one;
+    if (Parser{lhs, 0}.firstNetToken(lhs, one))
+        nets.push_back(one);
+    return nets;
+}
 
 void inferPortsPositional(const std::string &portsBlob, std::string &dnet, std::string &qnet)
 {
@@ -549,6 +677,39 @@ bool parseGateInstance(Parser &p, std::string &cellLower,
     return true;
 }
 
+bool isBuiltinVerilogPrimitive(const std::string &cellLower)
+{
+    static const char *builtins[] = {
+        "and",  "nand", "or",   "nor",  "xor", "xnor", "not", "buf",  "bufif0", "bufif1",
+        "nmos", "pmos", "tran", "rtran", "pullup", "pulldown", "tranif0", "tranif1"};
+    for (const char *b : builtins) {
+        if (cellLower == b)
+            return true;
+    }
+    return false;
+}
+
+// User-defined module: unknown port direction — connect every parsed net to every other
+// (may-affect over-approx for combinational black boxes).
+void registerBlackBoxFanout(const std::vector<std::pair<std::string, std::string>> &namedNets,
+                            std::unordered_map<std::string, std::vector<std::string>> &fanout)
+{
+    std::vector<std::string> nets;
+    nets.reserve(namedNets.size());
+    for (const auto &pr : namedNets) {
+        if (!pr.second.empty())
+            nets.push_back(pr.second);
+    }
+    std::sort(nets.begin(), nets.end());
+    nets.erase(std::unique(nets.begin(), nets.end()), nets.end());
+    for (std::size_t i = 0; i < nets.size(); ++i) {
+        for (std::size_t j = 0; j < nets.size(); ++j) {
+            if (i == j) continue;
+            addCombFanoutEdge(fanout, nets[i], nets[j]);
+        }
+    }
+}
+
 void registerGateFanout(const std::string &cellLower,
                         const std::vector<std::pair<std::string, std::string>> &namedNets,
                         const std::vector<std::string> &positionalNets,
@@ -566,7 +727,10 @@ void registerGateFanout(const std::string &cellLower,
             else if (portNameIsLikelyInput(pn) || !portNameIsLikelyOutput(pn))
                 ins.push_back(nt);
         }
-        // Re-classify: if nothing marked output, guess from cell arity
+        if (outs.empty() && !isBuiltinVerilogPrimitive(cellLower)) {
+            registerBlackBoxFanout(namedNets, fanout);
+            return;
+        }
         if (outs.empty() && !ins.empty()) {
             if (cellLower == "not" || cellLower == "buf" || cellLower == "inv") {
                 if (namedNets.size() >= 2) {
@@ -618,8 +782,8 @@ void scanCombInstances(const std::string &body,
     }
 }
 
-// assign lhs = rhs ;
-bool parseAssignStatement(Parser &p, std::string &lhsNet, std::string &rhsBlob)
+// assign lhs = rhs ;  (lhs may be concatenation {a,b})
+bool parseAssignStatement(Parser &p, std::string &lhsBlob, std::string &rhsBlob)
 {
     std::size_t save = p.pos;
     std::string kw;
@@ -636,13 +800,13 @@ bool parseAssignStatement(Parser &p, std::string &lhsNet, std::string &rhsBlob)
         else if (p.s[p.pos] == ')' || p.s[p.pos] == ']' || p.s[p.pos] == '}')
             depth = std::max(0, depth - 1);
         else if (depth == 0 && p.s[p.pos] == '=') {
-            std::string lhs = trimWs(p.s.substr(start, p.pos - start));
+            lhsBlob = trimWs(p.s.substr(start, p.pos - start));
             ++p.pos;
             std::size_t rstart = p.pos;
             while (!p.eof() && p.s[p.pos] != ';')
                 ++p.pos;
             rhsBlob = trimWs(p.s.substr(rstart, p.pos - rstart));
-            if (!Parser{lhs, 0}.firstNetToken(lhs, lhsNet)) {
+            if (assignLhsNetList(lhsBlob).empty()) {
                 p.pos = save;
                 return false;
             }
@@ -664,12 +828,17 @@ void scanAssigns(const std::string &body,
 {
     Parser p{body, 0};
     while (!p.eof()) {
-        std::string lhs, rhs;
-        if (parseAssignStatement(p, lhs, rhs)) {
-            std::vector<std::string> ids;
-            Parser{rhs, 0}.collectIdents(rhs, ids);
-            for (const std::string &id : ids)
-                addCombFanoutEdge(fanout, id, lhs);
+        std::string lhsBlob, rhs;
+        if (parseAssignStatement(p, lhsBlob, rhs)) {
+            std::vector<std::string> lhsNets = assignLhsNetList(lhsBlob);
+            std::vector<std::string> rhsNets;
+            collectNetIdsFromExpr(rhs, rhsNets);
+            std::sort(rhsNets.begin(), rhsNets.end());
+            rhsNets.erase(std::unique(rhsNets.begin(), rhsNets.end()), rhsNets.end());
+            for (const std::string &inNet : rhsNets) {
+                for (const std::string &outNet : lhsNets)
+                    addCombFanoutEdge(fanout, inNet, outNet);
+            }
             continue;
         }
         ++p.pos;
@@ -825,9 +994,8 @@ bool mergeSequentialEdgesFromVerilog(ScanData &data, const std::string &path)
               << " directed edge(s) (combinational reachability from each FF's Q to others' "
                  "D; " << edges_from_this_netlist << " from this netlist).\n";
     if (data.seq_edges.empty() && !insts.empty()) {
-        std::cerr << "Hint: no Q→D paths found through parsed assign/primitive fanout. "
-                     "Unsupported cells, complex port expressions, or missing gate instances "
-                     "will yield zero edges.\n";
+        std::cerr << "Hint: no Q→D paths through parsed assign / primitives / named module "
+                     "ports. Zero edges if the netlist uses only unsupported constructs.\n";
     }
     return true;
 }
