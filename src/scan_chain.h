@@ -31,8 +31,7 @@ struct ScanData {
     int                   numFF;
     std::vector<FFInfo>   ffs;
     std::vector<Pattern>  patterns;
-    // Optional sequential dependency edges (FF Q → FF D), from extended .sf lines:
-    //   EDGE <from_idx> <to_idx>
+    // Sequential FF dependency edges (FF Q → FF D), filled by mergeSequentialEdgesFromVerilog().
     std::vector<SeqEdge>  seq_edges;
 };
 
@@ -95,7 +94,7 @@ struct ScanResult {
 // Parse a .sf file produced by FAN_ATPG's add_scan_chains command.
 bool parseScanData(const std::string &path, ScanData &out);
 
-// Parse only header through FF metadata (NUM_FF, FF_NAMES, SCOAP, EDGE); stops at
+// Parse only header through FF metadata (NUM_FF, FF_NAMES, SCOAP); stops at
 // PATTERNS without loading PPI/PPO. SCOAP line optional (defaults to zeros). For fast
 // sequential-graph-only workflows.
 bool parseScanDataHeader(const std::string &path, ScanData &out);

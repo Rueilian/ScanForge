@@ -93,11 +93,6 @@ bool parseScanData(const std::string &path, ScanData &out)
         } else if (tok == "SCOAP") {
             for (int i = 0; i < out.numFF; ++i)
                 ss >> out.ffs[i].cc0 >> out.ffs[i].cc1 >> out.ffs[i].co;
-        } else if (tok == "EDGE") {
-            int a = -1, b = -1;
-            ss >> a >> b;
-            if (out.numFF > 0 && a >= 0 && b >= 0 && a < out.numFF && b < out.numFF)
-                out.seq_edges.push_back(SeqEdge{a, b});
         } else if (tok == "PATTERNS") {
             ss >> expectedPatterns;
             out.patterns.reserve(expectedPatterns);
@@ -158,11 +153,6 @@ bool parseScanDataHeader(const std::string &path, ScanData &out)
             saw_scoap = true;
             for (int i = 0; i < out.numFF; ++i)
                 ss >> out.ffs[i].cc0 >> out.ffs[i].cc1 >> out.ffs[i].co;
-        } else if (tok == "EDGE") {
-            int a = -1, b = -1;
-            ss >> a >> b;
-            if (out.numFF > 0 && a >= 0 && b >= 0 && a < out.numFF && b < out.numFF)
-                out.seq_edges.push_back(SeqEdge{a, b});
         } else if (tok == "PATTERNS") {
             break;
         }

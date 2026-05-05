@@ -52,8 +52,8 @@ static void usage(const char *prog)
         "  --seq-graph-only      Alias for --seq-graph\n"
         "  --partial-seq-graph   Same selection as seq-graph on full .sf, then simulate\n"
         "                        partial chain (cycle break + depth heuristic)\n"
-        "  --seq-netlist <path>  Verilog netlist (.v); FF names match .sf; Q→D edges\n"
-        "                        (with --seq-graph or --partial-seq-graph)\n"
+        "  --seq-netlist <path>  Required with --seq-graph / --partial-seq-graph: Verilog\n"
+        "                        netlist (.v); FF instance names match .sf FF_NAMES\n"
         "  --seq-depth <n>       Max sequential path length in edges before depth pass\n"
         "                        flags longer paths (default: 4)\n"
         "  --seq-path-cap <n>    Cap on enumerated long paths per greedy step (default:\n"
@@ -160,6 +160,11 @@ int main(int argc, char *argv[])
         std::cerr << "Error: --partial-seq-graph cannot be combined with --seq-graph\n";
         return 1;
     }
+    if ((doSeqGraph || doPartialSeqGraph) && seqNetlistPath.empty()) {
+        std::cerr << "Error: --seq-netlist <circuit.v> is required with --seq-graph or "
+                     "--partial-seq-graph\n";
+        return 1;
+    }
     if (doPartialSeqGraph &&
         (doSweep || doCoverage || (partialR > 0.0 && partialR < 1.0))) {
         std::cerr << "Error: --partial-seq-graph cannot be combined with --sweep, "
@@ -205,8 +210,8 @@ int main(int argc, char *argv[])
 
         const auto &chain = seqSel.all_selected_ffs;
         if (chain.empty()) {
-            std::cerr << "Error: sequential graph selection is empty — add EDGE lines or "
-                         "--seq-netlist, or adjust --seq-depth / graph.\n";
+            std::cerr << "Error: sequential graph selection is empty — check netlist vs "
+                         "FF_NAMES, or adjust --seq-depth.\n";
             return 1;
         }
 
