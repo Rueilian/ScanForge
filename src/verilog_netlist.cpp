@@ -63,7 +63,9 @@ bool isLikelyFFCell(const std::string &cell)
     std::string l = lowerCopy(cell);
     if (l == "dff")
         return true;
-    // Common standard-cell / structural naming fragments
+    // Match DFF_X1, DFFB, etc.
+    if (l.find("dff") != std::string::npos)
+        return true;
     static const char *frag[] = {"_dff", "_dfxtp", "_dff_", "dffsr", "sdff", "_sdlatch"};
     for (const char *p : frag) {
         if (l.find(p) != std::string::npos)
@@ -89,6 +91,38 @@ bool isQPort(const std::string &port)
 {
     std::string l = lowerCopy(port);
     return l == "q" || l == "so";
+}
+
+std::string trimWs(std::string s)
+{
+    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front())))
+        s.erase(s.begin());
+    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back())))
+        s.pop_back();
+    return s;
+}
+
+// Split port list at commas not inside (), [], {}.
+std::vector<std::string> splitTopLevelCommas(const std::string &blob)
+{
+    std::vector<std::string> parts;
+    int depth = 0;
+    std::size_t start = 0;
+    for (std::size_t i = 0; i < blob.size(); ++i) {
+        char c = blob[i];
+        if (c == '(' || c == '[' || c == '{')
+            ++depth;
+        else if (c == ')' || c == ']' || c == '}')
+            depth = std::max(0, depth - 1);
+        else if (c == ',' && depth == 0) {
+            parts.push_back(trimWs(blob.substr(start, i - start)));
+            start = i + 1;
+        }
+    }
+    parts.push_back(trimWs(blob.substr(start)));
+    while (!parts.empty() && parts.back().empty())
+        parts.pop_back();
+    return parts;
 }
 
 struct Parser {
@@ -244,6 +278,28 @@ struct Parser {
     }
 };
 
+// Positional ports: ISCAS dff (CK, reset, Q, D) or (clk, D, Q).
+void inferPortsPositional(const std::string &portsBlob, std::string &dnet, std::string &qnet)
+{
+    auto parts = splitTopLevelCommas(portsBlob);
+    if (parts.empty())
+        return;
+
+    if (portsBlob.find('.') != std::string::npos)
+        return;
+
+    const std::size_t n = parts.size();
+    if (n >= 4) {
+        qnet = trimWs(parts[n - 2]);
+        dnet = trimWs(parts[n - 1]);
+        return;
+    }
+    if (n == 3) {
+        dnet = trimWs(parts[1]);
+        qnet = trimWs(parts[2]);
+    }
+}
+
 struct FFInst {
     std::string inst;
     std::string d_net;
@@ -313,6 +369,9 @@ bool parseFfInstance(Parser &p, FFInst &out)
         pp.consume(',');
     }
 
+    if (dnet.empty() || qnet.empty())
+        inferPortsPositional(portsBlob, dnet, qnet);
+
     out.inst  = inst;
     out.d_net = dnet;
     out.q_net = qnet;
@@ -352,6 +411,7 @@ bool mergeSequentialEdgesFromVerilog(ScanData &data, const std::string &path)
 
     std::unordered_map<std::string, int> net_q_driver;
     int unmatched_inst = 0;
+    int matched_by_name = 0;
 
     for (const auto &fi : insts) {
         auto it = ff_by_name.find(fi.inst);
@@ -359,6 +419,7 @@ bool mergeSequentialEdgesFromVerilog(ScanData &data, const std::string &path)
             ++unmatched_inst;
             continue;
         }
+        ++matched_by_name;
         int idx = it->second;
         if (!fi.q_net.empty())
             net_q_driver[fi.q_net] = idx;
@@ -381,6 +442,40 @@ bool mergeSequentialEdgesFromVerilog(ScanData &data, const std::string &path)
         new_edges.push_back(SeqEdge{from, to});
     }
 
+    if (new_edges.empty() && data.numFF > 0 &&
+        (int)insts.size() == data.numFF && matched_by_name == 0) {
+        std::cerr << "Note: flip-flop instance names in the netlist do not match .sf FF_NAMES; "
+                     "mapping the first " << data.numFF
+                  << " dff-like instances to FF_NAMES in file order.\n";
+        net_q_driver.clear();
+        for (int j = 0; j < data.numFF; ++j) {
+            if (!insts[static_cast<std::size_t>(j)].q_net.empty())
+                net_q_driver[insts[static_cast<std::size_t>(j)].q_net] = j;
+        }
+        for (int j = 0; j < data.numFF; ++j) {
+            const auto &fi = insts[static_cast<std::size_t>(j)];
+            if (fi.d_net.empty())
+                continue;
+            auto dit = net_q_driver.find(fi.d_net);
+            if (dit == net_q_driver.end())
+                continue;
+            int from = dit->second;
+            if (from == j)
+                continue;
+            new_edges.push_back(SeqEdge{from, j});
+        }
+        std::sort(new_edges.begin(), new_edges.end(),
+                  [](const SeqEdge &a, const SeqEdge &b) {
+                      if (a.from != b.from) return a.from < b.from;
+                      return a.to < b.to;
+                  });
+        new_edges.erase(std::unique(new_edges.begin(), new_edges.end(),
+                                    [](const SeqEdge &a, const SeqEdge &b) {
+                                        return a.from == b.from && a.to == b.to;
+                                    }),
+                          new_edges.end());
+    }
+
     std::vector<SeqEdge> merged = data.seq_edges;
     merged.insert(merged.end(), new_edges.begin(), new_edges.end());
 
@@ -397,13 +492,19 @@ bool mergeSequentialEdgesFromVerilog(ScanData &data, const std::string &path)
 
     data.seq_edges = std::move(merged);
 
-    if (unmatched_inst > 0) {
+    if (unmatched_inst > 0 && matched_by_name > 0) {
         std::cerr << "Note: " << unmatched_inst
-                  << " flip-flop-like cell(s) in netlist had instance names not "
-                     "listed in .sf FF_NAMES (skipped for Q-driver map).\n";
+                  << " flip-flop-like cell(s) had instance names not in .sf FF_NAMES "
+                     "(ignored).\n";
     }
     std::cerr << "Sequential edges from netlist: " << data.seq_edges.size()
               << " (direct Q→D connections only).\n";
+    if (data.seq_edges.empty() && !insts.empty()) {
+        std::cerr << "Hint: many gate-level netlists (e.g. ISCAS s27) connect each FF D pin "
+                     "through combinational logic, so there are no FF-to-FF wires and this "
+                     "count is zero. Use a netlist with explicit FF-to-FF nets, or a "
+                     "structural flow where Q and D share the same net name.\n";
+    }
     return true;
 }
 
