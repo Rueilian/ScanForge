@@ -31,7 +31,7 @@ struct ScanData {
     int                   numFF;
     std::vector<FFInfo>   ffs;
     std::vector<Pattern>  patterns;
-    // Sequential FF dependency edges (FF Q → FF D), filled by mergeSequentialEdgesFromVerilog().
+    // Sequential FF dependency edges (direct Q→D FF links from mergeSequentialEdgesFromVerilog()).
     std::vector<SeqEdge>  seq_edges;
     bool                  seq_netlist_loaded = false;
 };

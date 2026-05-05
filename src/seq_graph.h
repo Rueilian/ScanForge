@@ -25,6 +25,8 @@ struct SeqGraphSelection {
 };
 
 // Requires ScanData::seq_edges from mergeSequentialEdgesFromVerilog().
+// Cycle enumeration uses the transitive closure of direct edges so indirect FF chains
+// (e.g. F1→F2→F1) appear as graph cycles; depth reduction still uses direct edges only.
 // depth_threshold: maximum allowed path length in edges between FFs; paths with
 // length strictly greater than this trigger the depth-reduction greedy loop.
 // path_enum_cap: safety limit on how many long paths are scored per run.
