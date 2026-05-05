@@ -4,12 +4,14 @@
 #include "scan_chain.h"
 #include "partial_scan.h"
 #include "segment_stress.h"
+#include "seq_graph.h"
 #include <iostream>
 #include <iomanip>
 #include <string>
 #include <vector>
 #include <cstdlib>
 #include <cmath>
+#include <cstddef>
 
 static std::string basenameSf(const std::string &path)
 {
@@ -45,6 +47,17 @@ static void usage(const char *prog)
         "                        (default: 0.5)\n"
         "  --coverage-proxy <co|combined|controllability>\n"
         "                        SCOAP proxy for sweep CSV (default: combined)\n"
+        "  --seq-graph           Print sequential-graph FF selection only (header .sf);\n"
+        "                        no simulation\n"
+        "  --seq-graph-only      Alias for --seq-graph\n"
+        "  --partial-seq-graph   Same selection as seq-graph on full .sf, then simulate\n"
+        "                        partial chain (cycle break + depth heuristic)\n"
+        "  --seq-netlist <path>  Required with --seq-graph / --partial-seq-graph: Verilog\n"
+        "                        netlist (.v); FF instance names match .sf FF_NAMES\n"
+        "  --seq-depth <n>       Max sequential path length in edges before depth pass\n"
+        "                        flags longer paths (default: 4)\n"
+        "  --seq-path-cap <n>    Cap on enumerated long paths per greedy step (default:\n"
+        "                        500000)\n"
         "  -h, --help            Print this help\n"
         "\n"
         "  <scan_data.sf>  Data file exported by FAN_ATPG's 'add_scan_chains -o' command.\n";
@@ -81,6 +94,11 @@ int main(int argc, char *argv[])
     ScanForge::SelectionMode mode = ScanForge::SelectionMode::SCOAP_CO;
     ScanForge::CoverageProxyMode proxyMode = ScanForge::CoverageProxyMode::COMBINED;
     int         segmentWindow = 0;
+    bool        doSeqGraph        = false;
+    bool        doPartialSeqGraph = false;
+    int         seqDepth      = 4;
+    std::size_t seqPathCap    = 500000;
+    std::string seqNetlistPath;
 
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
@@ -92,6 +110,14 @@ int main(int argc, char *argv[])
         else if (a == "--stress-csv" && i+1 < argc) { stressCsvPath = argv[++i]; }
         else if (a == "--segment-csv" && i+1 < argc) { segmentCsvPath = argv[++i]; }
         else if (a == "--segment-window" && i+1 < argc) { segmentWindow = std::atoi(argv[++i]); }
+        else if (a == "--seq-graph") { doSeqGraph = true; }
+        else if (a == "--seq-graph-only") { doSeqGraph = true; }
+        else if (a == "--partial-seq-graph") { doPartialSeqGraph = true; }
+        else if (a == "--seq-netlist" && i + 1 < argc) { seqNetlistPath = argv[++i]; }
+        else if (a == "--seq-depth" && i+1 < argc) { seqDepth = std::atoi(argv[++i]); }
+        else if (a == "--seq-path-cap" && i+1 < argc) {
+            seqPathCap = static_cast<std::size_t>(std::strtoull(argv[++i], nullptr, 10));
+        }
         else if (a == "--summary-csv" && i+1 < argc) { summaryCsvPath = argv[++i]; }
         else if (a == "--partial" && i+1 < argc) { partialR = std::atof(argv[++i]); }
         else if (a == "--lambda" && i+1 < argc) { lambda = std::atof(argv[++i]); }
@@ -126,6 +152,25 @@ int main(int argc, char *argv[])
     }
 
     if (sfPath.empty()) { std::cerr << "Error: no .sf file specified\n"; return 1; }
+    if (seqDepth < 0) {
+        std::cerr << "Error: --seq-depth must be >= 0\n";
+        return 1;
+    }
+    if (doPartialSeqGraph && doSeqGraph) {
+        std::cerr << "Error: --partial-seq-graph cannot be combined with --seq-graph\n";
+        return 1;
+    }
+    if ((doSeqGraph || doPartialSeqGraph) && seqNetlistPath.empty()) {
+        std::cerr << "Error: --seq-netlist <circuit.v> is required with --seq-graph or "
+                     "--partial-seq-graph\n";
+        return 1;
+    }
+    if (doPartialSeqGraph &&
+        (doSweep || doCoverage || (partialR > 0.0 && partialR < 1.0))) {
+        std::cerr << "Error: --partial-seq-graph cannot be combined with --sweep, "
+                     "--coverage, or --partial\n";
+        return 1;
+    }
     if (!segmentCsvPath.empty() && segmentWindow <= 0) {
         std::cerr << "Error: --segment-csv requires --segment-window > 0\n";
         return 1;
@@ -137,8 +182,89 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    if (doSeqGraph) {
+        ScanForge::ScanData data;
+        if (!ScanForge::parseScanDataHeader(sfPath, data))
+            return 1;
+        if (!seqNetlistPath.empty()) {
+            if (!ScanForge::mergeSequentialEdgesFromVerilog(data, seqNetlistPath))
+                return 1;
+        }
+        auto seqSel =
+            ScanForge::selectSequentialGraphFFs(data, seqDepth, seqPathCap);
+        ScanForge::printSeqGraphReport(data, seqSel);
+        return 0;
+    }
+
     ScanForge::ScanData data;
     if (!ScanForge::parseScanData(sfPath, data)) return 1;
+
+    if (doPartialSeqGraph) {
+        if (!seqNetlistPath.empty()) {
+            if (!ScanForge::mergeSequentialEdgesFromVerilog(data, seqNetlistPath))
+                return 1;
+        }
+        auto seqSel =
+            ScanForge::selectSequentialGraphFFs(data, seqDepth, seqPathCap);
+        ScanForge::printSeqGraphReport(data, seqSel);
+
+        const auto &chain = seqSel.all_selected_ffs;
+        if (chain.empty()) {
+            std::cerr << "Error: sequential graph selection is empty — check netlist vs "
+                         "FF_NAMES, or adjust --seq-depth.\n";
+            return 1;
+        }
+
+        std::vector<double> stressProf = ScanForge::fullScanStressScores(data);
+        auto               agg         = ScanForge::aggregateStressForChain(stressProf, chain);
+
+        int k = (int)chain.size();
+        std::cout << std::fixed << std::setprecision(2);
+        std::cout << "Partial scan (seq-graph): selected FFs " << k << " / " << data.numFF
+                  << "\n";
+
+        auto result = ScanForge::simulate(data, chain);
+        if (segmentWindow > 0)
+            ScanForge::applySegmentProfile(result, segmentWindow);
+        std::cout << "Switching Activity: " << std::setprecision(4) << result.switchingActivity
+                  << "\n";
+        std::cout << "Max Stress: " << std::setprecision(4) << agg.maxStress << "\n";
+        std::cout << "Stress Variance: " << agg.variance << "\n";
+        std::cout << "Stress Imbalance: " << agg.imbalance << "\n";
+
+        ScanForge::printReport(result, data, chain);
+        if (segmentWindow > 0 && !result.segments.empty()) {
+            std::cout << "  Max segment stress (avg over W=" << result.segment_window_used
+                      << "): " << std::fixed << std::setprecision(4)
+                      << result.max_segment_stress << "\n";
+            std::cout << "  Segment variance: " << result.segment_variance << "\n";
+            std::cout << "  Hotspot segments: " << result.hotspot_count << "\n";
+        }
+        if (!stressCsvPath.empty()) {
+            if (ScanForge::writeStressCsv(result, stressCsvPath))
+                std::cout << "  Stress CSV written to: " << stressCsvPath << "\n";
+            else
+                std::cerr << "Error: cannot write stress CSV: " << stressCsvPath << "\n";
+        }
+        if (!segmentCsvPath.empty()) {
+            if (ScanForge::writeSegmentCsv(result.segments, segmentCsvPath))
+                std::cout << "  Segment CSV written to: " << segmentCsvPath << "\n";
+            else
+                std::cerr << "Error: cannot write segment CSV: " << segmentCsvPath << "\n";
+        }
+        auto cov = ScanForge::estimateCoverage(data, chain);
+        std::cout << "  Estimated coverage: "
+                  << cov.applicablePatterns << "/" << cov.totalPatterns
+                  << " patterns applicable ("
+                  << std::fixed << std::setprecision(1)
+                  << cov.estimatedCoverage * 100 << "%)\n";
+        auto px = ScanForge::computeCoverageProxy(data, chain, proxyMode);
+        std::cout << "  Coverage proxy (" << (proxyMode == ScanForge::CoverageProxyMode::CO ? "co" :
+              proxyMode == ScanForge::CoverageProxyMode::CONTROLLABILITY ? "controllability" : "combined")
+                  << "): " << std::fixed << std::setprecision(4)
+                  << px.proxy << "  (loss " << px.loss << ")\n";
+        return 0;
+    }
 
     // Build ratio list
     std::vector<double> ratios;
