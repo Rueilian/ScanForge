@@ -11,11 +11,21 @@ CIRCUITS="s27 s208 s510 s953 s1196 s1238 s5378 s9234 s15850 s35932 s38417 s38584
 
 MODE="co"
 SWEEP_FLAG=""
-for arg in "$@"; do
-  case $arg in
-    --sweep) SWEEP_FLAG="--sweep" ;;
-    --mode) shift; MODE="$1" ;;
-    --mode=*) MODE="${arg#*=}" ;;
+# Do not `shift` inside `for arg in "$@"` — the list is expanded up front, so
+# shift does not advance the loop and leaves MODE set to the flag token (e.g. "--mode").
+while [ $# -gt 0 ]; do
+  case $1 in
+    --sweep) SWEEP_FLAG="--sweep"; shift ;;
+    --mode)
+      if [ $# -lt 2 ]; then
+        echo "Error: --mode requires a value" >&2
+        exit 1
+      fi
+      MODE="$2"
+      shift 2
+      ;;
+    --mode=*) MODE="${1#*=}"; shift ;;
+    *) shift ;;
   esac
 done
 
