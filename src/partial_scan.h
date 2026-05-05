@@ -15,6 +15,10 @@ enum class SelectionMode {
     RANDOM,              // random selection (for baseline comparison)
     SCOAP_CO_WEAR,       // normalized CO minus λ × normalized full-scan stress
     SCOAP_COMBINED_WEAR, // normalized (CC0+CC1+2*CO) minus λ × normalized stress
+    // Greedy wear-leveling: min–max testability gain minus λ × max segment avg stress
+    // along chain in circuit index order (requires stress + segment_window > 0).
+    SCOAP_CO_WEAR_LEVELING,
+    SCOAP_COMBINED_WEAR_LEVELING,
 };
 
 // SCOAP-based testability preservation proxy (not exact fault coverage).
@@ -36,11 +40,13 @@ CoverageProxyResult computeCoverageProxy(const ScanData &data,
 // Select `k` FF indices from data.ffs using the given strategy.
 // Returns sorted list of selected indices (circuit order).
 // Wear modes require stressByFF with size data.numFF (full-scan per-FF stress scores).
+// *_WEAR_LEVELING modes require stressByFF and segment_window > 0 (chain order = sorted FF index).
 std::vector<int> selectFFs(const ScanData &data, int k,
                             SelectionMode mode = SelectionMode::SCOAP_CO,
                             unsigned seed = 42,
                             const std::vector<double> *stressByFF = nullptr,
-                            double lambda = 0.5);
+                            double lambda = 0.5,
+                            int segment_window = 0);
 
 struct SweepConfig {
     bool        csv_stdout = false;
@@ -49,6 +55,8 @@ struct SweepConfig {
     CoverageProxyMode coverage_proxy_mode = CoverageProxyMode::COMBINED;
     unsigned    random_seed = 42;
     std::string circuit_name;
+    // Sliding-window segment stress along selected chain (0 = disabled for sweep rows)
+    int         segment_window = 0;
 };
 
 // Sweep partial scan ratios and print a comparison table.

@@ -70,6 +70,28 @@ def main():
         f"{circuit} / {mode}: coverage proxy vs activity",
         base + "_cov_vs_activity.png",
     )
+    if "max_segment_stress" in rows[0]:
+        plot_pair(
+            rows,
+            "coverage_proxy",
+            "max_segment_stress",
+            f"{circuit} / {mode}: coverage proxy vs max segment stress",
+            base + "_cov_vs_maxsegment.png",
+        )
+        plot_pair(
+            rows,
+            "ratio",
+            "hotspot_count",
+            f"{circuit} / {mode}: partial ratio vs hotspot segment count",
+            base + "_ratio_vs_hotspots.png",
+            label_key="k",
+        )
+        print(
+            "Also wrote",
+            base + "_cov_vs_maxsegment.png",
+            "and",
+            base + "_ratio_vs_hotspots.png",
+        )
     print("Wrote", base + "_cov_vs_maxstress.png", "and", base + "_cov_vs_activity.png")
 
 
