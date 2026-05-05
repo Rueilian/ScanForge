@@ -490,7 +490,8 @@ bool mergeSequentialEdgesFromVerilog(ScanData &data, const std::string &path)
                              }),
                  merged.end());
 
-    data.seq_edges = std::move(merged);
+    data.seq_edges      = std::move(merged);
+    data.seq_netlist_loaded = true;
 
     if (unmatched_inst > 0 && matched_by_name > 0) {
         std::cerr << "Note: " << unmatched_inst

@@ -76,6 +76,7 @@ bool parseScanData(const std::string &path, ScanData &out)
     out.ffs      = {};
     out.patterns = {};
     out.seq_edges.clear();
+    out.seq_netlist_loaded = false;
     int expectedPatterns = 0;
 
     while (std::getline(f, line)) {
@@ -135,6 +136,7 @@ bool parseScanDataHeader(const std::string &path, ScanData &out)
     out.ffs      = {};
     out.patterns = {};
     out.seq_edges.clear();
+    out.seq_netlist_loaded = false;
     bool saw_scoap = false;
 
     while (std::getline(f, line)) {

@@ -347,8 +347,13 @@ void printSeqGraphReport(const ScanData &data, const SeqGraphSelection &sel)
 {
     std::cout << "Sequential FF graph analysis\n";
     if (sel.edges_missing) {
-        std::cout << "  No sequential edges — use --seq-netlist <circuit.v> (FF instance names "
-                     "must match FF_NAMES).\n";
+        if (!data.seq_netlist_loaded) {
+            std::cout << "  No sequential edges — --seq-netlist <circuit.v> is required (FF "
+                         "instance names should match FF_NAMES when possible).\n";
+        } else {
+            std::cout << "  No sequential edges after parsing the netlist — see stderr hints "
+                         "above (direct Q→D nets only).\n";
+        }
         return;
     }
 
