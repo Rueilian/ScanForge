@@ -17,14 +17,16 @@ struct SeqGraphSelection {
     // Union of the above, sorted ascending (circuit indices).
     std::vector<int> all_selected_ffs;
 
-    int         cycle_count_raw      = 0;  // elementary cycles before minimal pruning
-    int         cycle_count_minimal  = 0;  // after removing embedded supersets
+    int         cycle_count_raw      = 0;  // non-trivial cyclic SCCs (size > 1)
+    int         cycle_count_minimal  = 0;  // same as cycle_count_raw (kept for ABI compat)
     int         paths_long_recorded  = 0;  // long paths in last enumeration (≤ cap)
     std::size_t path_enum_cap_used   = 0;
     bool        edges_missing        = false;
 };
 
-// Requires ScanData::seq_edges from mergeSequentialEdgesFromVerilog().
+// Requires ScanData::seq_edges from mergeSequentialEdgesFromVerilog() (combinational Q→D
+// reachability; one edge per source FF that can reach a destination FF's D without traversing
+// another FF's Q). Cycle and depth analysis use this graph as before.
 // depth_threshold: maximum allowed path length in edges between FFs; paths with
 // length strictly greater than this trigger the depth-reduction greedy loop.
 // path_enum_cap: safety limit on how many long paths are scored per run.
