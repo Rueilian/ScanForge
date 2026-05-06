@@ -47,11 +47,10 @@ static void usage(const char *prog)
         "                        (default: 0.5)\n"
         "  --coverage-proxy <co|combined|controllability>\n"
         "                        SCOAP proxy for sweep CSV (default: combined)\n"
-        "  --seq-graph           Print sequential-graph FF selection only (header .sf);\n"
-        "                        no simulation\n"
+        "  --seq-graph           Sequential-graph FF selection + scan simulation on that\n"
+        "                        partial chain (full .sf patterns; same as partial-seq-graph)\n"
         "  --seq-graph-only      Alias for --seq-graph\n"
-        "  --partial-seq-graph   Same selection as seq-graph on full .sf, then simulate\n"
-        "                        partial chain (cycle break + depth heuristic)\n"
+        "  --partial-seq-graph   Same as --seq-graph (kept for backward compatibility)\n"
         "  --seq-netlist <path>  Required with --seq-graph / --partial-seq-graph: Verilog\n"
         "                        netlist (.v); FF instance names match .sf FF_NAMES\n"
         "  --seq-depth <n>       Max sequential path length in edges before depth pass\n"
@@ -156,19 +155,15 @@ int main(int argc, char *argv[])
         std::cerr << "Error: --seq-depth must be >= 0\n";
         return 1;
     }
-    if (doPartialSeqGraph && doSeqGraph) {
-        std::cerr << "Error: --partial-seq-graph cannot be combined with --seq-graph\n";
-        return 1;
-    }
     if ((doSeqGraph || doPartialSeqGraph) && seqNetlistPath.empty()) {
         std::cerr << "Error: --seq-netlist <circuit.v> is required with --seq-graph or "
                      "--partial-seq-graph\n";
         return 1;
     }
-    if (doPartialSeqGraph &&
+    if ((doSeqGraph || doPartialSeqGraph) &&
         (doSweep || doCoverage || (partialR > 0.0 && partialR < 1.0))) {
-        std::cerr << "Error: --partial-seq-graph cannot be combined with --sweep, "
-                     "--coverage, or --partial\n";
+        std::cerr << "Error: --seq-graph / --partial-seq-graph cannot be combined with "
+                     "--sweep, --coverage, or --partial\n";
         return 1;
     }
     if (!segmentCsvPath.empty() && segmentWindow <= 0) {
@@ -182,24 +177,10 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    if (doSeqGraph) {
-        ScanForge::ScanData data;
-        if (!ScanForge::parseScanDataHeader(sfPath, data))
-            return 1;
-        if (!seqNetlistPath.empty()) {
-            if (!ScanForge::mergeSequentialEdgesFromVerilog(data, seqNetlistPath))
-                return 1;
-        }
-        auto seqSel =
-            ScanForge::selectSequentialGraphFFs(data, seqDepth, seqPathCap);
-        ScanForge::printSeqGraphReport(data, seqSel, seqDepth);
-        return 0;
-    }
-
     ScanForge::ScanData data;
     if (!ScanForge::parseScanData(sfPath, data)) return 1;
 
-    if (doPartialSeqGraph) {
+    if (doSeqGraph || doPartialSeqGraph) {
         if (!seqNetlistPath.empty()) {
             if (!ScanForge::mergeSequentialEdgesFromVerilog(data, seqNetlistPath))
                 return 1;
@@ -210,9 +191,11 @@ int main(int argc, char *argv[])
 
         const auto &chain = seqSel.all_selected_ffs;
         if (chain.empty()) {
-            std::cerr << "Error: sequential graph selection is empty — check netlist vs "
-                         "FF_NAMES, or adjust --seq-depth.\n";
-            return 1;
+            std::cout << "No sequential-graph FFs selected; skipping scan simulation.\n";
+            if (!stressCsvPath.empty() || !segmentCsvPath.empty())
+                std::cerr << "Warning: --stress-csv / --segment-csv not written (empty "
+                             "seq-graph selection)\n";
+            return 0;
         }
 
         std::vector<double> stressProf = ScanForge::fullScanStressScores(data);
@@ -220,8 +203,7 @@ int main(int argc, char *argv[])
 
         int k = (int)chain.size();
         std::cout << std::fixed << std::setprecision(2);
-        std::cout << "Partial scan (seq-graph): selected FFs " << k << " / " << data.numFF
-                  << "\n";
+        std::cout << "Seq-graph chain: selected FFs " << k << " / " << data.numFF << "\n";
 
         auto result = ScanForge::simulate(data, chain);
         if (segmentWindow > 0)
