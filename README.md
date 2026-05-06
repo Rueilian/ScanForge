@@ -147,7 +147,7 @@ Options:
   --coverage-proxy <co|combined|controllability>
                             Which SCOAP sums define coverage_proxy in sweep / --partial
   --seq-graph               Load full .sf + Verilog netlist; print sequential-graph report,
-                            then simulate the selected partial chain (cycle-break + depth)
+                            then simulate the selected partial chain when non-empty
   --seq-graph-only          Alias for --seq-graph
   --partial-seq-graph       Same as --seq-graph (backward-compatible name)
   --seq-netlist <path>      Required with --seq-graph / --partial-seq-graph: gate-level
@@ -222,11 +222,11 @@ At **λ = 0.5**, wear-leveling keeps the same high-testability set as `combined`
 
 The sequential graph features let you analyze and break unwanted **feedback loops** in the FF dependency graph of a circuit, and **reduce the sequential depth** (maximum path length between FFs).
 
-The sequential graph flow is exposed as **`--seq-graph`** (alias **`--seq-graph-only`**) and **`--partial-seq-graph`**, which behave the same: load the **full** `.sf` (patterns included), merge netlist-derived FF edges, print the sequential-graph report, then run scan simulation on the unioned `all_selected_ffs` chain and print the **Scan Chain Analysis Report** plus coverage lines.
+The sequential graph flow is exposed as **`--seq-graph`** (alias **`--seq-graph-only`**) and **`--partial-seq-graph`**, which behave the same: load the **full** `.sf` (patterns included), merge netlist-derived FF edges, print the sequential-graph report, then — **if `all_selected_ffs` is non-empty** — run scan simulation on that partial chain and print the **Scan Chain Analysis Report** plus coverage lines. If the unioned selection is empty (no cycles to break and no paths longer than `--seq-depth`), scan simulation is skipped and the run exits successfully.
 
 | Mode | What it does |
 |------|-------------|
-| `--seq-graph` | Sequential-graph selection + partial-chain scan simulation and full statistics |
+| `--seq-graph` | Sequential-graph report; partial-chain scan simulation only when at least one FF is selected |
 | `--partial-seq-graph` | Same as `--seq-graph` |
 
 Both require `--seq-netlist <circuit.v>`: a structural gate-level Verilog file whose DFF instance names match the `FF_NAMES` in the `.sf` file.

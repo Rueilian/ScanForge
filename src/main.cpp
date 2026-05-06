@@ -191,9 +191,11 @@ int main(int argc, char *argv[])
 
         const auto &chain = seqSel.all_selected_ffs;
         if (chain.empty()) {
-            std::cerr << "Error: sequential graph selection is empty — check netlist vs "
-                         "FF_NAMES, or adjust --seq-depth.\n";
-            return 1;
+            std::cout << "No sequential-graph FFs selected; skipping scan simulation.\n";
+            if (!stressCsvPath.empty() || !segmentCsvPath.empty())
+                std::cerr << "Warning: --stress-csv / --segment-csv not written (empty "
+                             "seq-graph selection)\n";
+            return 0;
         }
 
         std::vector<double> stressProf = ScanForge::fullScanStressScores(data);
