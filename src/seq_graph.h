@@ -34,6 +34,8 @@ SeqGraphSelection selectSequentialGraphFFs(const ScanData &data,
                                            int depth_threshold,
                                            std::size_t path_enum_cap = 500000);
 
-void printSeqGraphReport(const ScanData &data, const SeqGraphSelection &sel);
+void printSeqGraphReport(const ScanData &data,
+                         const SeqGraphSelection &sel,
+                         int depth_threshold);
 
 } // namespace ScanForge

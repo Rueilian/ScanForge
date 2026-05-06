@@ -192,7 +192,7 @@ int main(int argc, char *argv[])
         }
         auto seqSel =
             ScanForge::selectSequentialGraphFFs(data, seqDepth, seqPathCap);
-        ScanForge::printSeqGraphReport(data, seqSel);
+        ScanForge::printSeqGraphReport(data, seqSel, seqDepth);
         return 0;
     }
 
@@ -206,7 +206,7 @@ int main(int argc, char *argv[])
         }
         auto seqSel =
             ScanForge::selectSequentialGraphFFs(data, seqDepth, seqPathCap);
-        ScanForge::printSeqGraphReport(data, seqSel);
+        ScanForge::printSeqGraphReport(data, seqSel, seqDepth);
 
         const auto &chain = seqSel.all_selected_ffs;
         if (chain.empty()) {
