@@ -347,6 +347,10 @@ SeqGraphSelection selectSequentialGraphFFs(const ScanData &data,
     return out;
 }
 
+// Terminal-safe width for --seq-graph summary table: use ASCII in labels so
+// std::setw lines up with common fixed-width fonts (Unicode e.g. U+2264 can be double-width).
+constexpr int kSeqGraphMetricColW = 24;
+
 void printSeqGraphReport(const ScanData &data,
                          const SeqGraphSelection &sel,
                          int depth_threshold)
@@ -377,28 +381,28 @@ void printSeqGraphReport(const ScanData &data,
     }
 
     std::cout << std::left
-              << std::setw(22) << "Metric"
+              << std::setw(kSeqGraphMetricColW) << "Metric"
               << std::setw(8) << "Count"
               << "Detail\n";
-    std::cout << std::string(72, '-') << "\n";
+    std::cout << std::string(74, '-') << "\n";
 
-    std::cout << std::left << std::setw(22) << "Cyclic SCCs"
+    std::cout << std::left << std::setw(kSeqGraphMetricColW) << "Cyclic SCCs"
               << std::setw(8) << sel.cycle_count_raw
               << "non-trivial strongly-connected components\n";
 
-    std::cout << std::left << std::setw(22) << "Cycle-break FFs"
+    std::cout << std::left << std::setw(kSeqGraphMetricColW) << "Cycle-break FFs"
               << std::setw(8) << (int)sel.cycle_break_ffs.size()
               << "heuristic FVS (SCC greedy)\n";
 
-    std::cout << std::left << std::setw(22) << "Depth-reduction FFs"
+    std::cout << std::left << std::setw(kSeqGraphMetricColW) << "Depth-reduction FFs"
               << std::setw(8) << (int)sel.depth_reduction_ffs.size()
               << "greedy on paths longer than depth threshold\n";
 
-    std::cout << std::left << std::setw(22) << "Combined selected"
+    std::cout << std::left << std::setw(kSeqGraphMetricColW) << "Combined selected"
               << std::setw(8) << (int)sel.all_selected_ffs.size()
               << "union of cycle-break and depth-reduction\n";
 
-    std::cout << std::left << std::setw(22) << "Long paths (≤ cap)"
+    std::cout << std::left << std::setw(kSeqGraphMetricColW) << "Long paths (<= cap)"
               << std::setw(8) << sel.paths_long_recorded
               << "enumerated for last depth pass\n";
     std::cout << "====================================================\n";
