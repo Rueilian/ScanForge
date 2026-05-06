@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <iomanip>
 #include <iostream>
 #include <queue>
 #include <set>
@@ -346,61 +347,80 @@ SeqGraphSelection selectSequentialGraphFFs(const ScanData &data,
     return out;
 }
 
-void printSeqGraphReport(const ScanData &data, const SeqGraphSelection &sel)
+void printSeqGraphReport(const ScanData &data,
+                         const SeqGraphSelection &sel,
+                         int depth_threshold)
 {
-    std::cout << "Sequential FF graph analysis (edges: combinational reachability from each "
-                 "FF's Q to another's D; no F0→F2 shortcut across intermediate FFs)\n";
+    const int nFF = data.numFF;
+    const std::size_t graphEdges = data.seq_edges.size();
+
+    std::cout << "\n====================================================\n";
+    std::cout << "  ScanForge — Sequential FF Graph (--seq-graph)\n";
+    std::cout << "  Circuit FFs: " << nFF
+              << "   Seq edges: " << graphEdges << "\n";
+    std::cout << "  Depth threshold: " << depth_threshold
+              << "   Path enum cap: " << sel.path_enum_cap_used << "\n";
+    std::cout << "  Edges: combinational Q→D reachability (no FF shortcuts across "
+                 "intermediate FFs)\n";
+    std::cout << "====================================================\n";
+
     if (sel.edges_missing) {
         if (!data.seq_netlist_loaded) {
-            std::cout << "  No sequential edges — --seq-netlist <circuit.v> is required (FF "
-                         "instance names should match FF_NAMES when possible).\n";
+            std::cout << "  No sequential edges — --seq-netlist <circuit.v> is required\n";
+            std::cout << "    (FF instance names should match FF_NAMES when possible).\n";
         } else {
             std::cout << "  No sequential edges after parsing the netlist — see stderr hints "
                          "above.\n";
         }
+        std::cout << "====================================================\n";
         return;
     }
 
-    std::cout << "  Cyclic SCCs (non-trivial strongly-connected components): "
-              << sel.cycle_count_raw << "\n";
-    std::cout << "  Cycle-breaking FFs (heuristic FVS via SCC greedy): "
-              << sel.cycle_break_ffs.size() << "\n";
-    if (!sel.cycle_break_ffs.empty()) {
-        std::cout << "    Indices:";
-        for (int i : sel.cycle_break_ffs)
-            std::cout << " " << i;
-        std::cout << "\n";
-        std::cout << "    Names:";
-        for (int i : sel.cycle_break_ffs)
-            std::cout << " " << data.ffs[i].name;
-        std::cout << "\n";
-    }
+    std::cout << std::left
+              << std::setw(22) << "Metric"
+              << std::setw(8) << "Count"
+              << "Detail\n";
+    std::cout << std::string(72, '-') << "\n";
 
-    std::cout << "  Depth-reduction FFs: " << sel.depth_reduction_ffs.size() << "\n";
-    if (!sel.depth_reduction_ffs.empty()) {
-        std::cout << "    Indices:";
-        for (int i : sel.depth_reduction_ffs)
-            std::cout << " " << i;
-        std::cout << "\n";
-        std::cout << "    Names:";
-        for (int i : sel.depth_reduction_ffs)
-            std::cout << " " << data.ffs[i].name;
-        std::cout << "\n";
-    }
+    std::cout << std::left << std::setw(22) << "Cyclic SCCs"
+              << std::setw(8) << sel.cycle_count_raw
+              << "non-trivial strongly-connected components\n";
 
-    std::cout << "  Combined selected FFs: " << sel.all_selected_ffs.size() << "\n";
-    if (!sel.all_selected_ffs.empty()) {
+    std::cout << std::left << std::setw(22) << "Cycle-break FFs"
+              << std::setw(8) << (int)sel.cycle_break_ffs.size()
+              << "heuristic FVS (SCC greedy)\n";
+
+    std::cout << std::left << std::setw(22) << "Depth-reduction FFs"
+              << std::setw(8) << (int)sel.depth_reduction_ffs.size()
+              << "greedy on paths longer than depth threshold\n";
+
+    std::cout << std::left << std::setw(22) << "Combined selected"
+              << std::setw(8) << (int)sel.all_selected_ffs.size()
+              << "union of cycle-break and depth-reduction\n";
+
+    std::cout << std::left << std::setw(22) << "Long paths (≤ cap)"
+              << std::setw(8) << sel.paths_long_recorded
+              << "enumerated for last depth pass\n";
+    std::cout << "====================================================\n";
+
+    auto printListBlock = [&](const char *title, const std::vector<int> &idxs) {
+        if (idxs.empty()) return;
+        std::cout << "  " << title << " (" << idxs.size() << ")\n";
         std::cout << "    Indices:";
-        for (int i : sel.all_selected_ffs)
+        for (int i : idxs)
             std::cout << " " << i;
         std::cout << "\n";
         std::cout << "    Names:";
-        for (int i : sel.all_selected_ffs)
+        for (int i : idxs)
             std::cout << " " << data.ffs[i].name;
         std::cout << "\n";
-    }
-    std::cout << "  Long paths enumerated for depth pass (≤ cap): "
-              << sel.paths_long_recorded << " / cap " << sel.path_enum_cap_used << "\n";
+    };
+
+    printListBlock("Cycle-breaking FFs", sel.cycle_break_ffs);
+    printListBlock("Depth-reduction FFs", sel.depth_reduction_ffs);
+    printListBlock("Combined selected FFs", sel.all_selected_ffs);
+
+    std::cout << "====================================================\n";
 }
 
 } // namespace ScanForge
