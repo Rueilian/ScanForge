@@ -111,13 +111,13 @@ cd ..
   --lambda 0.5 \
   --segment-window 16
 
-# Sequential graph: find FFs that break all cycles (requires a Verilog netlist)
+# Sequential graph: cycle-break + depth heuristic, then scan simulation on selected chain
 ./src/scanforge circuit.sf --seq-graph --seq-netlist circuit.v
 
-# Sequential graph: break cycles AND reduce sequential depth to ≤3 edges, no simulation
+# Same with a stricter depth threshold (≤3 edges between FFs)
 ./src/scanforge circuit.sf --seq-graph --seq-netlist circuit.v --seq-depth 3
 
-# Partial seq-graph: break cycles + depth reduction, then simulate selected partial chain
+# --partial-seq-graph is an alias (same behavior as --seq-graph)
 ./src/scanforge circuit.sf --partial-seq-graph --seq-netlist circuit.v --seq-depth 3
 ```
 
@@ -146,11 +146,10 @@ Options:
   --lambda <x>              Penalty weight for *_wear and *_wear_leveling (default: 0.5)
   --coverage-proxy <co|combined|controllability>
                             Which SCOAP sums define coverage_proxy in sweep / --partial
-  --seq-graph               Parse .sf header + Verilog netlist, print sequential-graph FF
-                            selection (cycle-break + depth FFs); no scan simulation
+  --seq-graph               Load full .sf + Verilog netlist; print sequential-graph report,
+                            then simulate the selected partial chain (cycle-break + depth)
   --seq-graph-only          Alias for --seq-graph
-  --partial-seq-graph       Same selection as --seq-graph on the full .sf, then simulate
-                            the selected partial chain (cycle-break + depth heuristic)
+  --partial-seq-graph       Same as --seq-graph (backward-compatible name)
   --seq-netlist <path>      Required with --seq-graph / --partial-seq-graph: gate-level
                             Verilog netlist (.v); FF instance names should match FF_NAMES
   --seq-depth <n>           Maximum allowed sequential path length in edges; paths strictly
@@ -223,14 +222,14 @@ At **λ = 0.5**, wear-leveling keeps the same high-testability set as `combined`
 
 The sequential graph features let you analyze and break unwanted **feedback loops** in the FF dependency graph of a circuit, and **reduce the sequential depth** (maximum path length between FFs).
 
-The two analyses are driven by two new CLI modes:
+The sequential graph flow is exposed as **`--seq-graph`** (alias **`--seq-graph-only`**) and **`--partial-seq-graph`**, which behave the same: load the **full** `.sf` (patterns included), merge netlist-derived FF edges, print the sequential-graph report, then run scan simulation on the unioned `all_selected_ffs` chain and print the **Scan Chain Analysis Report** plus coverage lines.
 
 | Mode | What it does |
 |------|-------------|
-| `--seq-graph` | Parse `.sf` header + Verilog netlist only; print cycle-break and depth-reduction FFs; **no scan simulation** |
-| `--partial-seq-graph` | Same selection, then simulate the selected FFs as a partial scan chain and print full statistics |
+| `--seq-graph` | Sequential-graph selection + partial-chain scan simulation and full statistics |
+| `--partial-seq-graph` | Same as `--seq-graph` |
 
-Both modes require `--seq-netlist <circuit.v>`: a structural gate-level Verilog file whose DFF instance names match the `FF_NAMES` in the `.sf` file.
+Both require `--seq-netlist <circuit.v>`: a structural gate-level Verilog file whose DFF instance names match the `FF_NAMES` in the `.sf` file.
 
 ### Verilog Netlist Parsing
 
@@ -248,31 +247,31 @@ The selected FFs form the set found by this heuristic that breaks all detected c
 
 After the cycle-breaking FFs are removed from the graph, ScanForge enumerates simple paths whose **edge count exceeds `--seq-depth`** (default: 4). A **greedy vertex-removal pass** picks FFs that appear most frequently near the **center** of long paths (center-weighted scoring), ensuring that removing one FF breaks the maximum number of oversized paths.
 
-The two passes are independent and their results are **unioned** into `all_selected_ffs` — the final partial-scan chain used for simulation under `--partial-seq-graph`.
+The two passes are independent and their results are **unioned** into `all_selected_ffs` — the final partial-scan chain used for simulation under `--seq-graph` / `--partial-seq-graph`.
 
 ### Command Usage
 
 ```bash
-# Analysis only — print which FFs to scan (no simulation)
+# Sequential graph report + scan simulation on the selected partial chain
 ./src/scanforge circuit.sf \
     --seq-graph \
     --seq-netlist circuit.v
 
-# Also reduce sequential depth to ≤3 edges between FFs
+# Stricter depth threshold (≤3 edges between FFs)
 ./src/scanforge circuit.sf \
     --seq-graph \
     --seq-netlist circuit.v \
     --seq-depth 3
 
-# Simulate selected FFs as a partial scan chain
+# Same as above (--partial-seq-graph is a synonym)
 ./src/scanforge circuit.sf \
     --partial-seq-graph \
     --seq-netlist circuit.v \
     --seq-depth 3
 
-# Combine with stress and segment CSV exports
+# Stress and segment CSV exports (same as other full/partial runs)
 ./src/scanforge circuit.sf \
-    --partial-seq-graph \
+    --seq-graph \
     --seq-netlist circuit.v \
     --seq-depth 3 \
     --stress-csv stress.csv \
@@ -285,7 +284,7 @@ The two passes are independent and their results are **unioned** into `all_selec
 The smallest ISCAS'89 circuit, `s27`, gives a concrete example:
 
 ```
-$ ./src/scanforge FAN_ATPG/results/s27.sf \
+$ ./src/scanforge results/s27.sf \
     --seq-graph --seq-netlist FAN_ATPG/netlist/s27.v
 
 Sequential FF graph: 4 directed edge(s) (combinational reachability from each FF's Q to others' D; 4 from this netlist).
@@ -311,9 +310,25 @@ Long paths (<= cap)     0       enumerated for last depth pass
     Indices: 1
     Names: U_G6
 ====================================================
+Seq-graph chain: selected FFs 1 / 3
+Switching Activity: 0.6000
+Max Stress: 0.6500
+Stress Variance: 0.0000
+Stress Imbalance: 1.0000
+====================================================
+  ScanForge — Scan Chain Analysis Report
+====================================================
+  Total FFs in circuit : 3
+  FFs in chain (K)     : 1
+  Scan ratio           : 33.3%
+  Test patterns        : 5
+  ...
+====================================================
+  Estimated coverage: 0/5 patterns applicable (68.4%)
+  Coverage proxy (combined): 0.6364  (loss 0.3636)
 ```
 
-The circuit has one cyclic SCC (U_G5↔U_G6 form a feedback pair through combinational logic); breaking U_G6 removes the cycle.
+The circuit has one cyclic SCC (U_G5↔U_G6 form a feedback pair through combinational logic); breaking U_G6 removes the cycle. The **Scan Chain Analysis Report** reflects simulation on that single selected FF only (K=1).
 
 ### Effect of `--seq-depth` on Sequential Depth
 
