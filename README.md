@@ -288,17 +288,29 @@ The smallest ISCAS'89 circuit, `s27`, gives a concrete example:
 $ ./src/scanforge FAN_ATPG/results/s27.sf \
     --seq-graph --seq-netlist FAN_ATPG/netlist/s27.v
 
-Sequential FF graph: 4 directed edge(s) ...
-Sequential FF graph analysis (edges: combinational reachability ...)
-  Cyclic SCCs (non-trivial strongly-connected components): 1
-  Cycle-breaking FFs (heuristic FVS via SCC greedy): 1
+Sequential FF graph: 4 directed edge(s) (combinational reachability from each FF's Q to others' D; 4 from this netlist).
+
+====================================================
+  ScanForge — Sequential FF Graph (--seq-graph)
+  Circuit FFs: 3   Seq edges: 4
+  Depth threshold: 4   Path enum cap: 500000
+  Edges: combinational Q→D reachability (no FF shortcuts across intermediate FFs)
+====================================================
+Metric                  Count   Detail
+--------------------------------------------------------------------------
+Cyclic SCCs             1       non-trivial strongly-connected components
+Cycle-break FFs         1       heuristic FVS (SCC greedy)
+Depth-reduction FFs     0       greedy on paths longer than depth threshold
+Combined selected       1       union of cycle-break and depth-reduction
+Long paths (<= cap)     0       enumerated for last depth pass
+====================================================
+  Cycle-breaking FFs (1)
     Indices: 1
     Names: U_G6
-  Depth-reduction FFs: 0
-  Combined selected FFs: 1
+  Combined selected FFs (1)
     Indices: 1
     Names: U_G6
-  Long paths enumerated for depth pass (≤ cap): 0 / cap 500000
+====================================================
 ```
 
 The circuit has one cyclic SCC (U_G5↔U_G6 form a feedback pair through combinational logic); breaking U_G6 removes the cycle.
