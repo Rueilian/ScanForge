@@ -14,7 +14,7 @@ It uses [FAN_ATPG](https://github.com/NTU-LaDS-II/FAN_ATPG) as a backend to expo
 | **Segment stress CSV** | Sliding-window stress along the **current scan chain** (`--segment-window`, `--segment-csv`); hotspot flag from mean+1σ over segment averages |
 | **Partial scan selection** | SCOAP-CO, SCOAP-Combined, Random, **wear-aware** (`co_wear`, `combined_wear`), or **wear-leveling** (`co_wear_leveling`, `combined_wear_leveling`) greedy selection using segment max stress along the chain |
 | **Ratio sweep** | Sweep 25/50/75/100% ratios in one command (`--sweep`) |
-| **Sequential graph — cycle breaking** | Parse a gate-level Verilog netlist, build the FF-to-FF dependency graph, and select the **minimum set of FFs** (heuristic FVS) needed to break all directed cycles (self-loops excluded) |
+| **Sequential graph — cycle breaking** | Parse a gate-level Verilog netlist, build the FF-to-FF **combinational reachability** graph (Tarjan SCC-based, O(V×(V+E))), and select a heuristic FVS to break all directed cycles; scales to 1 728 FFs and 32 000+ edges |
 | **Sequential graph — depth reduction** | After cycle breaking, greedily remove additional FFs to reduce the longest sequential path to a user-defined maximum (`--seq-depth`) |
 | **SCOAP export** | FAN_ATPG fork computes CC0/CC1/CO and exports them to `.sf` format |
 | **12 ISCAS'89 benchmarks** | Scripts and results for s27 through s38584 |
@@ -234,15 +234,15 @@ Both modes require `--seq-netlist <circuit.v>`: a structural gate-level Verilog 
 
 ### Verilog Netlist Parsing
 
-ScanForge parses the netlist to build the **FF-to-FF dependency graph**: an edge `FF_i → FF_j` is added when FF_i's Q net directly drives FF_j's D net (no intervening combinational logic).  Named-port (`.d(net)`, `.q(net)`) and positional (`clk, d, q`) DFF instantiation styles are both supported.
+ScanForge parses the netlist to build the **FF-to-FF combinational reachability graph**: an edge `FF_i → FF_j` is added when FF_i's Q net can reach FF_j's D net by following assign/gate fanout without crossing another FF's Q net (i.e., no implicit F0→F2 shortcut when only F0→F1 and F1→F2 exist). Both named-port (`.d(net)`, `.q(net)`) and positional (`clk, d, q`) DFF instantiation styles are supported, and a single D net shared by multiple FFs produces an edge to each of them.
 
-> **Note:** Many standard ISCAS'89 gate-level netlists connect each FF's D pin through combinational gates, so there are **no direct FF-to-FF wires** and the edge count will be zero. Use netlists with explicit sequential connections (e.g., RTL-synthesised with preserved register names), or ones where FF Q and D nets share the same wire name.
+> **Note:** Many standard ISCAS'89 gate-level netlists connect each FF's D pin through combinational gates, so the combinational reachability graph is dense. ScanForge handles this correctly at scale — see the benchmark results below.
 
 ### Cycle Breaking (Heuristic FVS)
 
-ScanForge enumerates all simple directed cycles in the FF graph (capped at 100 000 for large circuits), prunes **inclusion-non-minimal** cycle vertex sets, then applies a **greedy feedback vertex set (FVS) heuristic**: at each step it removes the FF that appears in the largest number of remaining minimal cycles. Self-loops are excluded from the cycle enumeration.
+ScanForge runs **Tarjan's SCC algorithm** to find all non-trivial strongly-connected components (SCCs) in the FF graph. It then applies a **greedy feedback vertex set (FVS) heuristic**: at each step it removes the FF with the highest combined in+out degree within the remaining cyclic SCCs, repeating until no cyclic SCCs remain. Self-loops are excluded.
 
-The selected FFs are the **smallest set found by this heuristic** that breaks all detected cycles.
+The selected FFs form the set found by this heuristic that breaks all detected cycles. The SCC-based approach runs in O(V×(V+E)) and handles circuits up to 1 728 FFs and 32 000+ edges without exponential blowup.
 
 ### Depth Reduction
 
@@ -280,103 +280,41 @@ The two passes are independent and their results are **unioned** into `all_selec
     --segment-window 8
 ```
 
-### Demo: `results/demo_seq.sf` + `results/demo_seq.v`
+### Demo: `s27` benchmark (3 FFs)
 
-An 8-FF synthetic circuit (`results/demo_seq.sf` / `results/demo_seq.v`) is included to demonstrate both features.  
-Topology (7 direct Q→D edges):
-
-```
-FF0 ─────────────────── FF4 → FF5 → FF6 → FF7
-     FF1 ⇄ FF2 → FF3 ──┘
-      (cycle)
-```
-
-Specifically: FF1↔FF2 form a 2-node cycle via back-edge FF2→FF1; FF2→FF3→FF4→FF5→FF6→FF7 is a forward chain. After removing FF1 (cycle break), the longest remaining path is FF4→FF5→FF6→FF7 (depth 4 edges).
-
-**`--seq-depth 4` (default) — cycle-breaking only:**
+The smallest ISCAS'89 circuit, `s27`, gives a concrete example:
 
 ```
-$ ./src/scanforge results/demo_seq.sf \
-    --seq-graph --seq-netlist results/demo_seq.v
+$ ./src/scanforge FAN_ATPG/results/s27.sf \
+    --seq-graph --seq-netlist FAN_ATPG/netlist/s27.v
 
-Sequential FF graph analysis
-  Elementary cycles (enumerated): 1
-  Minimal cycles (non-embedded vertex sets): 1
-  Cycle-breaking FFs (heuristic FVS): 1
+Sequential FF graph: 4 directed edge(s) ...
+Sequential FF graph analysis (edges: combinational reachability ...)
+  Cyclic SCCs (non-trivial strongly-connected components): 1
+  Cycle-breaking FFs (heuristic FVS via SCC greedy): 1
     Indices: 1
-    Names: U_FF1
+    Names: U_G6
   Depth-reduction FFs: 0
   Combined selected FFs: 1
     Indices: 1
-    Names: U_FF1
+    Names: U_G6
   Long paths enumerated for depth pass (≤ cap): 0 / cap 500000
 ```
 
-**`--seq-depth 3` — cycle-breaking + depth reduction:**
+The circuit has one cyclic SCC (U_G5↔U_G6 form a feedback pair through combinational logic); breaking U_G6 removes the cycle.
+
+### Effect of `--seq-depth` on Sequential Depth
+
+With `--seq-depth 3`, additional depth-reduction FFs are selected to ensure no sequential path exceeds 3 edges. Example on s953 (29 FFs):
 
 ```
-$ ./src/scanforge results/demo_seq.sf \
-    --seq-graph --seq-netlist results/demo_seq.v --seq-depth 3
+$ ./src/scanforge FAN_ATPG/results/s953.sf \
+    --seq-graph --seq-netlist FAN_ATPG/netlist/s953.v
 
-Sequential FF graph analysis
-  Elementary cycles (enumerated): 1
-  Minimal cycles (non-embedded vertex sets): 1
-  Cycle-breaking FFs (heuristic FVS): 1
-    Indices: 1
-    Names: U_FF1
-  Depth-reduction FFs: 1
-    Indices: 5
-    Names: U_FF5
-  Combined selected FFs: 2
-    Indices: 1 5
-    Names: U_FF1 U_FF5
-  Long paths enumerated for depth pass (≤ cap): 1 / cap 500000
+  Cyclic SCCs: 1   Cycle-breaking FFs: 5   Depth-reduction FFs: 0
 ```
 
-**`--partial-seq-graph --seq-depth 3` — simulate selected chain:**
-
-```
-$ ./src/scanforge results/demo_seq.sf \
-    --partial-seq-graph --seq-netlist results/demo_seq.v --seq-depth 3
-
-Sequential FF graph analysis
-  ...  (same selection as above)
-Partial scan (seq-graph): selected FFs 2 / 8
-Switching Activity: 0.1250
-Max Stress: 0.6719
-...
-  Coverage proxy (combined): 0.2250  (loss 0.7750)
-```
-
-### Demo: `results/demo_seq_cycles.sf` + `results/demo_seq_cycles.v`
-
-A 10-FF circuit with **three independent cycles** (one 2-node, two 3-node):
-
-```
-$ ./src/scanforge results/demo_seq_cycles.sf \
-    --seq-graph --seq-netlist results/demo_seq_cycles.v
-
-Sequential FF graph analysis
-  Elementary cycles (enumerated): 3
-  Minimal cycles (non-embedded vertex sets): 3
-  Cycle-breaking FFs (heuristic FVS): 3
-    Indices: 1 3 6
-    Names: FF1 FF3 FF6
-  Depth-reduction FFs: 0
-  Combined selected FFs: 3
-```
-
-All three cycles are broken by selecting exactly one FF per cycle — the heuristic finds the minimum-size hitting set in this case.
-
-### Effect of `--seq-depth` on Selected FF Count
-
-The table below shows results on the 8-FF demo (`results/demo_seq.sf`):
-
-| `--seq-depth` | Cycle-break FFs | Depth-reduction FFs | Total selected | Long paths before depth pass |
-|:---:|:---:|:---:|:---:|:---:|
-| 4 (default) | 1 (U_FF1) | 0 | 1 | 0 |
-| 3 | 1 (U_FF1) | 1 (U_FF5) | 2 | 1 |
-| 2 | 1 (U_FF1) | 1 (U_FF5) | 2 | 3 |
+All state-machine FFs belong to one SCC; after breaking 5 FFs the remaining graph is acyclic with paths ≤ 4 edges, so no additional depth-reduction FFs are needed at the default `--seq-depth 4`.
 
 ---
 
@@ -418,6 +356,38 @@ The table below shows results on the 8-FF demo (`results/demo_seq.sf`):
 | 50%   | 90  | 410,140   | 0.4328          |
 | 75%   | 134 | 945,111   | 0.4499          |
 | 100%  | 179 | 1,703,514 | 0.4544          |
+
+### Sequential Graph Analysis — All ISCAS'89 Benchmarks
+
+Results of `--seq-graph` on all 12 ISCAS'89 benchmarks using `FAN_ATPG/netlist/*.v` (gate-level, combinational reachability edges).  
+**Algorithm:** Tarjan's SCC (Cyclic SCCs) + greedy FVS via in/out-degree heuristic (cycle-break FFs) + center-weighted greedy on long paths (depth-reduction FFs, `--seq-depth 4`).
+
+| Circuit | FFs | Comb. Edges | Cyclic SCCs | Cycle-break FFs | Depth-red. FFs | Total selected |
+|---------|----:|------------:|:-----------:|:---------------:|:--------------:|:--------------:|
+| s27     |   3 |           4 |      1      |        1        |        0       |        1       |
+| s208    |   8 |          28 |      0      |        0        |        3       |        3       |
+| s510    |   6 |          30 |      1      |        5        |        0       |        5       |
+| s953    |  29 |         150 |      1      |        5        |        0       |        5       |
+| s1196   |  18 |          20 |      0      |        0        |        0       |        0       |
+| s1238   |  18 |          20 |      0      |        0        |        0       |        0       |
+| s5378   | 179 |       1,200 |      1      |       32        |        7       |       39       |
+| s9234   | 211 |       2,546 |     10      |       63        |       23       |       86       |
+| s15850  | 534 |      11,497 |      7      |      105        |       99       |      204       |
+| s35932  | 1728|       4,475 |     18      |      306        |      171       |      477       |
+| s38417  | 1636|      32,774 |     31      |      390        |      205       |      595       |
+| s38584  | 1426|      15,300 |      1      |      376        |      269       |      645       |
+
+**Combinational edges** = FF-to-FF combinational reachability edges (from `--seq-netlist`); higher counts reflect denser FSM-to-datapath connectivity.  
+**Cyclic SCCs** = non-trivial strongly-connected components in the FF dependency graph; circuits with 0 SCCs are acyclic.  
+**Cycle-break FFs** = minimum heuristic FVS to dissolve all cycles; after removal the graph is a DAG.  
+**Depth-red. FFs** = additional FFs chosen to ensure no sequential path exceeds `--seq-depth 4` edges; 0 means the post-FVS DAG already satisfies the depth constraint.
+
+Run command for any circuit:
+```bash
+./src/scanforge FAN_ATPG/results/<circuit>.sf \
+    --seq-graph \
+    --seq-netlist FAN_ATPG/netlist/<circuit>.v
+```
 
 ---
 

@@ -17,8 +17,8 @@ struct SeqGraphSelection {
     // Union of the above, sorted ascending (circuit indices).
     std::vector<int> all_selected_ffs;
 
-    int         cycle_count_raw      = 0;  // elementary cycles before minimal pruning
-    int         cycle_count_minimal  = 0;  // after removing embedded supersets
+    int         cycle_count_raw      = 0;  // non-trivial cyclic SCCs (size > 1)
+    int         cycle_count_minimal  = 0;  // same as cycle_count_raw (kept for ABI compat)
     int         paths_long_recorded  = 0;  // long paths in last enumeration (≤ cap)
     std::size_t path_enum_cap_used   = 0;
     bool        edges_missing        = false;

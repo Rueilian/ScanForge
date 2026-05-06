@@ -851,8 +851,9 @@ std::vector<SeqEdge> combReachableFfEdges(
     const std::vector<FFInst> &insts,
     const std::unordered_map<std::string, std::vector<std::string>> &fanout)
 {
-    std::unordered_map<std::string, int> net_to_q_ff; // net is some matched FF's Q
-    std::unordered_map<std::string, int> net_to_d_ff; // net is some matched FF's D
+    std::unordered_map<std::string, int> net_to_q_ff; // net → FF whose Q drives that net
+    // One D net can feed multiple FFs (e.g. broadcast or scan-SI sharing same wire).
+    std::unordered_map<std::string, std::vector<int>> net_to_d_ffs; // net → FFs whose D is that net
     std::vector<std::string> ff_q_net(static_cast<std::size_t>(numFF));
     std::vector<std::string> ff_d_net(static_cast<std::size_t>(numFF));
 
@@ -866,7 +867,7 @@ std::vector<SeqEdge> combReachableFfEdges(
             ff_q_net[static_cast<std::size_t>(idx)] = fi.q_net;
         }
         if (!fi.d_net.empty()) {
-            net_to_d_ff[fi.d_net] = idx;
+            net_to_d_ffs[fi.d_net].push_back(idx);
             ff_d_net[static_cast<std::size_t>(idx)] = fi.d_net;
         }
     }
@@ -887,9 +888,13 @@ std::vector<SeqEdge> combReachableFfEdges(
             std::string u = q.front();
             q.pop();
 
-            auto dit = net_to_d_ff.find(u);
-            if (dit != net_to_d_ff.end() && dit->second != src)
-                edges.push_back(SeqEdge{src, dit->second});
+            auto dit = net_to_d_ffs.find(u);
+            if (dit != net_to_d_ffs.end()) {
+                for (int dst : dit->second) {
+                    if (dst != src)
+                        edges.push_back(SeqEdge{src, dst});
+                }
+            }
 
             auto fit = fanout.find(u);
             if (fit == fanout.end())

@@ -8,6 +8,7 @@
 #include <iostream>
 #include <queue>
 #include <set>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -15,147 +16,147 @@ namespace ScanForge {
 
 namespace {
 
-using VertexSet = std::vector<int>; // sorted unique vertex ids
-
-bool isStrictSubset(const VertexSet &small, const VertexSet &big)
+// Iterative Tarjan's SCC.  Returns one vector<int> per SCC (any order, any size).
+// O(V+E), no recursion (safe for large graphs).
+std::vector<std::vector<int>> tarjanSCC(int n,
+                                         const std::vector<std::vector<int>> &adj)
 {
-    if (small.size() >= big.size()) return false;
-    std::size_t i = 0, j = 0;
-    while (i < small.size() && j < big.size()) {
-        if (small[i] == big[j]) {
-            ++i;
-            ++j;
-        } else if (small[i] > big[j]) {
-            ++j;
-        } else {
-            return false;
-        }
-    }
-    return i == small.size();
-}
+    std::vector<int>  disc(n, -1), low(n, 0);
+    std::vector<bool> onStack(n, false);
+    std::vector<int>  stk;
+    std::vector<std::vector<int>> sccs;
+    int timer = 0;
 
-VertexSet sortedUnique(const std::vector<int> &cyc)
-{
-    VertexSet v = cyc;
-    std::sort(v.begin(), v.end());
-    v.erase(std::unique(v.begin(), v.end()), v.end());
-    return v;
-}
+    // Explicit stack frame for iterative DFS.
+    struct Frame {
+        int v;
+        int ei; // index into adj[v]
+    };
+    std::vector<Frame> dfsStack;
 
-// Enumerate simple directed cycles where the smallest vertex index equals `start`,
-// using only vertices with index >= `start` (standard uniqueness trick).
-void enumerateCyclesFrom(int start, int n,
-                         const std::vector<std::vector<int>> &adj,
-                         std::vector<std::vector<int>> &out,
-                         int cap)
-{
-    if ((int)out.size() >= cap) return;
+    for (int root = 0; root < n; ++root) {
+        if (disc[root] != -1) continue;
+        dfsStack.push_back({root, 0});
+        disc[root] = low[root] = timer++;
+        stk.push_back(root);
+        onStack[root] = true;
 
-    std::vector<int> path;
-    std::vector<char> onPath(n, 0);
-
-    std::function<void(int)> dfs = [&](int v) {
-        if ((int)out.size() >= cap) return;
-        for (int w : adj[v]) {
-            if (w < start) continue;
-            if (w == start) {
-                if (path.size() >= 2) {
-                    std::vector<int> cyc = path;
-                    cyc.push_back(start);
-                    out.push_back(std::move(cyc));
-                    if ((int)out.size() >= cap) return;
+        while (!dfsStack.empty()) {
+            Frame &f = dfsStack.back();
+            int v = f.v;
+            if (f.ei < (int)adj[v].size()) {
+                int w = adj[v][f.ei++];
+                if (disc[w] == -1) {
+                    disc[w] = low[w] = timer++;
+                    stk.push_back(w);
+                    onStack[w] = true;
+                    dfsStack.push_back({w, 0});
+                } else if (onStack[w]) {
+                    low[v] = std::min(low[v], disc[w]);
                 }
-            } else if (!onPath[w]) {
-                onPath[w] = 1;
-                path.push_back(w);
-                dfs(w);
-                path.pop_back();
-                onPath[w] = 0;
-                if ((int)out.size() >= cap) return;
+            } else {
+                // Done with v — propagate low upward.
+                dfsStack.pop_back();
+                if (!dfsStack.empty())
+                    low[dfsStack.back().v] = std::min(low[dfsStack.back().v], low[v]);
+                // SCC root?
+                if (low[v] == disc[v]) {
+                    std::vector<int> scc;
+                    while (true) {
+                        int u = stk.back(); stk.pop_back();
+                        onStack[u] = false;
+                        scc.push_back(u);
+                        if (u == v) break;
+                    }
+                    sccs.push_back(std::move(scc));
+                }
             }
         }
-    };
-
-    onPath[start] = 1;
-    path.push_back(start);
-    dfs(start);
-    path.pop_back();
-    onPath[start] = 0;
+    }
+    return sccs;
 }
 
-std::vector<std::vector<int>> enumerateElementaryCycles(
-    int n, const std::vector<std::vector<int>> &adj, int cap)
+// Count non-trivial (size > 1) SCCs in the subgraph induced by vertices not in `removed`.
+// Returns the SCCs themselves (each sorted ascending).
+std::vector<std::vector<int>> nonTrivialSCCs(int n,
+                                              const std::vector<std::vector<int>> &adj,
+                                              const std::unordered_set<int> &removed)
 {
-    std::vector<std::vector<int>> cycles;
-    for (int s = 0; s < n && (int)cycles.size() < cap; ++s)
-        enumerateCyclesFrom(s, n, adj, cycles, cap);
-    return cycles;
-}
+    // Build compact adjacency for live vertices.
+    std::vector<int> live;
+    live.reserve(n);
+    for (int i = 0; i < n; ++i)
+        if (!removed.count(i)) live.push_back(i);
 
-// Drop cycle A if ∃ B with V(B) ⊂ V(A) (inclusion-minimal vertex sets kept).
-std::vector<std::vector<int>> minimalCyclesByVertexInclusion(
-    std::vector<std::vector<int>> cycles)
-{
-    std::vector<VertexSet> verts;
-    verts.reserve(cycles.size());
-    for (const auto &c : cycles)
-        verts.push_back(sortedUnique(c));
+    const int m = (int)live.size();
+    std::unordered_map<int,int> id;
+    id.reserve(static_cast<std::size_t>(m) * 2);
+    for (int i = 0; i < m; ++i) id[live[i]] = i;
 
-    std::vector<char> drop(verts.size(), 0);
-    for (std::size_t i = 0; i < verts.size(); ++i) {
-        if (drop[i]) continue;
-        for (std::size_t j = 0; j < verts.size(); ++j) {
-            if (i == j || drop[j]) continue;
-            if (isStrictSubset(verts[j], verts[i]))
-                drop[i] = 1;
+    std::vector<std::vector<int>> sub(m);
+    for (int i = 0; i < m; ++i) {
+        int v = live[i];
+        for (int w : adj[v]) {
+            if (removed.count(w)) continue;
+            sub[i].push_back(id[w]);
         }
     }
 
-    std::vector<std::vector<int>> kept;
-    for (std::size_t i = 0; i < cycles.size(); ++i)
-        if (!drop[i]) kept.push_back(std::move(cycles[i]));
-    return kept;
+    auto sccs = tarjanSCC(m, sub);
+
+    std::vector<std::vector<int>> result;
+    for (auto &scc : sccs) {
+        if (scc.size() < 2) continue;
+        std::vector<int> orig;
+        orig.reserve(scc.size());
+        for (int i : scc) orig.push_back(live[i]);
+        std::sort(orig.begin(), orig.end());
+        result.push_back(std::move(orig));
+    }
+    return result;
 }
 
-bool cycleContainsVertex(const std::vector<int> &cyc, int v)
-{
-    return std::find(cyc.begin(), cyc.end(), v) != cyc.end();
-}
-
-std::vector<int> fvsFromMinimalCycles(std::vector<std::vector<int>> cycles)
+// Greedy SCC-based FVS: at each step pick the vertex with the highest combined
+// (in + out) degree *within the current cyclic SCCs*, remove it, recompute SCCs.
+// O(#removed × (V+E)) — practical for V ≤ ~2000.
+std::vector<int> fvsFromSCCs(int n,
+                              const std::vector<std::vector<int>> &adj,
+                              std::unordered_set<int> removed)
 {
     std::vector<int> selected;
-    while (!cycles.empty()) {
-        int maxv = 0;
-        for (const auto &c : cycles)
-            for (int v : c)
-                maxv = std::max(maxv, v);
 
-        std::vector<int> freq(maxv + 1, 0);
-        for (const auto &c : cycles) {
-            VertexSet su = sortedUnique(c);
-            for (int v : su)
-                ++freq[v];
-        }
-        int best = -1;
-        int bestCnt = -1;
-        for (int v = 0; v <= maxv; ++v) {
-            if (freq[v] > bestCnt) {
-                bestCnt = freq[v];
-                best = v;
+    while (true) {
+        auto sccs = nonTrivialSCCs(n, adj, removed);
+        if (sccs.empty()) break;
+
+        // Collect all vertices in cyclic SCCs and count intra-SCC degree.
+        std::unordered_map<int, int> inDeg, outDeg;
+        for (const auto &scc : sccs) {
+            std::unordered_set<int> sccSet(scc.begin(), scc.end());
+            for (int v : scc) {
+                if (!inDeg.count(v)) inDeg[v] = 0;
+                if (!outDeg.count(v)) outDeg[v] = 0;
+                for (int w : adj[v]) {
+                    if (removed.count(w) || !sccSet.count(w)) continue;
+                    outDeg[v]++;
+                    inDeg[w]++;
+                }
             }
         }
-        if (best < 0) break;
-        selected.push_back(best);
 
-        std::vector<std::vector<int>> next;
-        next.reserve(cycles.size());
-        for (auto &c : cycles) {
-            if (!cycleContainsVertex(c, best))
-                next.push_back(std::move(c));
+        int best = -1;
+        int bestScore = -1;
+        for (const auto &kv : outDeg) {
+            int v = kv.first;
+            int score = outDeg[v] + inDeg[v];
+            if (score > bestScore) { bestScore = score; best = v; }
         }
-        cycles.swap(next);
+        if (best < 0) break;
+
+        selected.push_back(best);
+        removed.insert(best);
     }
+
     std::sort(selected.begin(), selected.end());
     selected.erase(std::unique(selected.begin(), selected.end()), selected.end());
     return selected;
@@ -311,14 +312,15 @@ SeqGraphSelection selectSequentialGraphFFs(const ScanData &data,
 
     auto adj = buildAdj(n, data.seq_edges);
 
-    const int cycleCap = 100000;
-    auto rawCycles = enumerateElementaryCycles(n, adj, cycleCap);
-    out.cycle_count_raw = (int)rawCycles.size();
+    // Count non-trivial SCCs (size > 1) before FVS.
+    {
+        std::unordered_set<int> noRemoved;
+        auto sccs = nonTrivialSCCs(n, adj, noRemoved);
+        out.cycle_count_raw = (int)sccs.size();   // repurposed: number of cyclic SCCs
+        out.cycle_count_minimal = out.cycle_count_raw;
+    }
 
-    auto minimal = minimalCyclesByVertexInclusion(std::move(rawCycles));
-    out.cycle_count_minimal = (int)minimal.size();
-
-    out.cycle_break_ffs = fvsFromMinimalCycles(std::move(minimal));
+    out.cycle_break_ffs = fvsFromSCCs(n, adj, {});
 
     std::unordered_set<int> removed;
     for (int v : out.cycle_break_ffs)
@@ -359,11 +361,10 @@ void printSeqGraphReport(const ScanData &data, const SeqGraphSelection &sel)
         return;
     }
 
-    std::cout << "  Elementary cycles (enumerated): " << sel.cycle_count_raw << "\n";
-    std::cout << "  Minimal cycles (non-embedded vertex sets): " << sel.cycle_count_minimal
-              << "\n";
-    std::cout << "  Cycle-breaking FFs (heuristic FVS): " << sel.cycle_break_ffs.size()
-              << "\n";
+    std::cout << "  Cyclic SCCs (non-trivial strongly-connected components): "
+              << sel.cycle_count_raw << "\n";
+    std::cout << "  Cycle-breaking FFs (heuristic FVS via SCC greedy): "
+              << sel.cycle_break_ffs.size() << "\n";
     if (!sel.cycle_break_ffs.empty()) {
         std::cout << "    Indices:";
         for (int i : sel.cycle_break_ffs)
