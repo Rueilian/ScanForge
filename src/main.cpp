@@ -4,7 +4,6 @@
 #include "scan_chain.h"
 #include "partial_scan.h"
 #include "segment_stress.h"
-#include "diagnosis.h"
 #include <iostream>
 #include <iomanip>
 #include <string>
@@ -28,9 +27,6 @@ static void usage(const char *prog)
         "Usage: " << prog << " [options] <scan_data.sf>\n"
         "\n"
         "Options:\n"
-        "  --diagnose            Scan chain fault dictionary (SA0/SA1 per FF)\n"
-        "  --inject-fault <spec> Inject one fault, e.g. U_G6:SA1\n"
-        "  --diagnose-csv <path> Write fault dictionary CSV\n"
         "  (no options)          Full scan analysis\n"
         "  --sweep               Sweep partial scan ratios 25/50/75/100%\n"
         "  --coverage            Coverage estimate sweep (compares CO/Combined/Random)\n"
@@ -76,13 +72,10 @@ int main(int argc, char *argv[])
     std::string stressCsvPath;
     std::string segmentCsvPath;
     std::string summaryCsvPath;
-    std::string diagCsvPath;
-    std::string injectFaultSpec;
     bool        doSweep    = false;
     bool        doCoverage = false;
     bool        doFine     = false;
     bool        doCSV      = false;
-    bool        doDiagnose = false;
     double      partialR   = -1.0;
     double      lambda     = 0.5;
     ScanForge::SelectionMode mode = ScanForge::SelectionMode::SCOAP_CO;
@@ -96,9 +89,6 @@ int main(int argc, char *argv[])
         else if (a == "--coverage") { doCoverage = true; }
         else if (a == "--fine")     { doFine     = true; }
         else if (a == "--csv")      { doCSV      = true; }
-        else if (a == "--diagnose") { doDiagnose = true; }
-        else if (a == "--inject-fault" && i+1 < argc) { injectFaultSpec = argv[++i]; }
-        else if (a == "--diagnose-csv" && i+1 < argc) { diagCsvPath = argv[++i]; }
         else if (a == "--stress-csv" && i+1 < argc) { stressCsvPath = argv[++i]; }
         else if (a == "--segment-csv" && i+1 < argc) { segmentCsvPath = argv[++i]; }
         else if (a == "--segment-window" && i+1 < argc) { segmentWindow = std::atoi(argv[++i]); }
@@ -158,33 +148,8 @@ int main(int argc, char *argv[])
         ratios = {0.25, 0.50, 0.75, 1.0};
     }
 
-    // Diagnosis / fault injection (uses full chain; --partial ignored)
-    if (doDiagnose || !injectFaultSpec.empty()) {
-        std::vector<int> chain(data.numFF);
-        for (int i = 0; i < data.numFF; ++i) chain[i] = i;
-
-        if (doDiagnose) {
-            auto report = ScanForge::buildFaultDictionary(data, chain);
-            ScanForge::printDiagnosisReport(report, data, chain);
-            if (!diagCsvPath.empty()) {
-                if (ScanForge::writeDiagnosisCsv(report, diagCsvPath))
-                    std::cout << "  Fault dictionary CSV written to: " << diagCsvPath << "\n";
-                else
-                    std::cerr << "Error: cannot write diagnosis CSV: " << diagCsvPath << "\n";
-            }
-        }
-        if (!injectFaultSpec.empty()) {
-            int fpos = 0;
-            ScanForge::FaultType ftype = ScanForge::FaultType::SA1;
-            if (!ScanForge::parseFaultSpec(injectFaultSpec, data, chain, fpos, ftype))
-                return 1;
-            auto inj = ScanForge::injectFault(data, chain, fpos, ftype);
-            ScanForge::printFaultInjection(inj, data, chain);
-        }
-        return 0;
-    }
-
-    if (doCoverage) {        if (!stressCsvPath.empty())
+    if (doCoverage) {
+        if (!stressCsvPath.empty())
             std::cerr << "Warning: --stress-csv is ignored with --coverage\n";
         if (!segmentCsvPath.empty())
             std::cerr << "Warning: --segment-csv is ignored with --coverage\n";
