@@ -5,6 +5,7 @@
 #include "partial_scan.h"
 #include "segment_stress.h"
 #include "diagnosis.h"
+#include <chrono>
 #include <iostream>
 #include <iomanip>
 #include <string>
@@ -224,7 +225,9 @@ int main(int argc, char *argv[])
             stressPtr = &stressProf;
         }
 
+        auto t0 = std::chrono::steady_clock::now();
         auto chain = ScanForge::selectFFs(data, k, mode, 42u, stressPtr, lambda, segmentWindow);
+        auto t1 = std::chrono::steady_clock::now();
         auto agg = ScanForge::aggregateStressForChain(stressPtr ? stressProf
             : ScanForge::fullScanStressScores(data), chain);
 
@@ -239,9 +242,14 @@ int main(int argc, char *argv[])
         std::cout << "Selected FFs: " << k << " / " << data.numFF << "\n";
 
         auto result = ScanForge::simulate(data, chain);
+        auto t2 = std::chrono::steady_clock::now();
         if (segmentWindow > 0)
             ScanForge::applySegmentProfile(result, segmentWindow);
         std::cout << "Switching Activity: " << std::setprecision(4) << result.switchingActivity << "\n";
+        std::cout << "Selection time: " << std::setprecision(3)
+                  << std::chrono::duration<double, std::milli>(t1 - t0).count() << " ms\n";
+        std::cout << "Simulation time: "
+                  << std::chrono::duration<double, std::milli>(t2 - t1).count() << " ms\n";
         std::cout << "Max Stress: " << std::setprecision(4) << agg.maxStress << "\n";
         std::cout << "Stress Variance: " << agg.variance << "\n";
         std::cout << "Stress Imbalance: " << agg.imbalance << "\n";

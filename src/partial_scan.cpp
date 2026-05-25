@@ -6,6 +6,7 @@
 #include "segment_stress.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <fstream>
 #include <iomanip>
@@ -102,6 +103,8 @@ struct SweepRowRaw {
     double max_segment_stress = 0.0;
     double segment_variance = 0.0;
     int    hotspot_count = 0;
+    double selection_time_ms = 0.0;
+    double simulation_time_ms = 0.0;
 };
 
 bool paretoMaxCovMinStress(const std::vector<SweepRowRaw> &rows, std::size_t i)
@@ -372,9 +375,12 @@ void sweepPartialScan(const ScanData &data,
              mode == SelectionMode::SCOAP_COMBINED_WEAR ||
              mode == SelectionMode::SCOAP_CO_WEAR_LEVELING ||
              mode == SelectionMode::SCOAP_COMBINED_WEAR_LEVELING) ? &fullStress : nullptr;
+        auto t0 = std::chrono::steady_clock::now();
         auto chain = selectFFs(data, k, mode, cfg.random_seed, stressPtr, cfg.wear_lambda,
                               cfg.segment_window);
+        auto t1 = std::chrono::steady_clock::now();
         auto res   = simulate(data, chain);
+        auto t2 = std::chrono::steady_clock::now();
         if (cfg.segment_window > 0)
             applySegmentProfile(res, cfg.segment_window);
 
@@ -390,6 +396,8 @@ void sweepPartialScan(const ScanData &data,
         row.max_segment_stress = res.max_segment_stress;
         row.segment_variance     = res.segment_variance;
         row.hotspot_count        = res.hotspot_count;
+        row.selection_time_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+        row.simulation_time_ms = std::chrono::duration<double, std::milli>(t2 - t1).count();
         rawRows.push_back(row);
     }
 
@@ -424,7 +432,8 @@ void sweepPartialScan(const ScanData &data,
                        "max_stress,stress_variance,stress_imbalance,"
                        "max_segment_stress,segment_variance,hotspot_count,"
                        "tradeoff_score,"
-                       "pareto_cov_maxstress,pareto_cov_activity\n";
+                       "pareto_cov_maxstress,pareto_cov_activity,"
+                       "selection_time_ms,simulation_time_ms\n";
         }
     }
 
@@ -502,7 +511,10 @@ void sweepPartialScan(const ScanData &data,
                     << row.segment_variance << ','
                     << row.hotspot_count << ','
                     << trade << ','
-                    << p_ms << ',' << p_ac << '\n';
+                    << p_ms << ',' << p_ac << ','
+                    << std::setprecision(3)
+                    << row.selection_time_ms << ','
+                    << row.simulation_time_ms << '\n';
         }
 
         if (showHuman) {
