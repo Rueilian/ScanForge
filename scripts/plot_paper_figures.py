@@ -338,6 +338,68 @@ def fig_window_sensitivity(rows, circuit, lam, outdir):
     save(fig, fname)
 
 
+# ── F2: Metric illustration (per-FF stress + segment stress) ─────────────────
+
+def fig_metric_illustration(stress_csv, seg_csv, outdir, window=8):
+    """Illustrate per-FF toggle rate and sliding-window segment stress on s953."""
+    # Load per-FF stress
+    ff_rows = load_csv(stress_csv)
+    indices = [int(r["index"]) for r in ff_rows]
+    stress  = [float(r["stress_score"]) for r in ff_rows]
+    n = len(stress)
+
+    # Load segment stress
+    seg_rows = load_csv(seg_csv)
+    seg_ids   = [int(r["segment_id"]) for r in seg_rows]
+    seg_avg   = [float(r["avg_stress"]) for r in seg_rows]
+    hotspots  = [int(r["hotspot"]) for r in seg_rows]
+
+    # Mean stress threshold for hotspot annotation
+    mean_stress = sum(stress) / n
+    std_stress  = (sum((s - mean_stress)**2 for s in stress) / n) ** 0.5
+    hotspot_thresh = mean_stress + std_stress
+
+    fig, axes = plt.subplots(2, 1, figsize=(10, 6), sharex=False)
+
+    # Top: per-FF toggle rate bars
+    ax1 = axes[0]
+    bar_colors = ["#d62728" if s > hotspot_thresh else "#1f77b4" for s in stress]
+    ax1.bar(indices, stress, color=bar_colors, edgecolor="none", alpha=0.85, width=0.7)
+    ax1.axhline(hotspot_thresh, color="#d62728", linestyle="--", linewidth=1.2,
+                label=f"Hotspot threshold (μ+σ = {hotspot_thresh:.3f})")
+    ax1.axhline(mean_stress, color="#ff7f0e", linestyle=":", linewidth=1.2,
+                label=f"Mean stress (μ = {mean_stress:.3f})")
+    ax1.set_ylabel("Per-FF toggle rate", fontsize=11)
+    ax1.set_title("s953 (29 FFs) — Full-scan per-FF stress", fontsize=12)
+    ax1.legend(fontsize=8, loc="upper right")
+    ax1.set_xlim(-0.5, n - 0.5)
+    ax1.set_ylim(0, max(stress) * 1.15)
+    ax1.grid(True, axis="y", alpha=0.25)
+    ax1.set_xticks(indices[::4])
+
+    # Bottom: sliding-window segment stress
+    ax2 = axes[1]
+    # Centre each segment bar at its midpoint (start_idx + window/2)
+    seg_centers = [int(seg_rows[i]["start_idx"]) + window / 2 for i in range(len(seg_rows))]
+    seg_bar_colors = ["#d62728" if h else "#2ca02c" for h in hotspots]
+    ax2.bar(seg_centers, seg_avg, width=window * 0.85,
+            color=seg_bar_colors, edgecolor="none", alpha=0.75, align="center")
+    ax2.axhline(hotspot_thresh, color="#d62728", linestyle="--", linewidth=1.2,
+                label=f"Hotspot threshold ({hotspot_thresh:.3f})")
+    hs_count = sum(hotspots)
+    ax2.set_xlabel(f"Scan chain position (FF index 0 = SI side)    "
+                   f"[red = hotspot segment, W={window}]", fontsize=10)
+    ax2.set_ylabel(f"Segment avg stress (W={window})", fontsize=11)
+    ax2.set_title(f"s953 — Segment stress (W={window}, {hs_count} hotspot segments)", fontsize=12)
+    ax2.legend(fontsize=8, loc="upper right")
+    ax2.set_xlim(-0.5, n - 0.5)
+    ax2.set_ylim(0, max(seg_avg) * 1.15)
+    ax2.grid(True, axis="y", alpha=0.25)
+
+    fname = os.path.join(outdir, "F2_metric_illustration.png")
+    save(fig, fname)
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
@@ -345,11 +407,22 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("csv", help="results/all_experiments.csv")
     ap.add_argument("-o", "--outdir", default="figures", help="Output directory")
+    ap.add_argument("--stress-csv", default=None,
+                    help="Per-FF stress CSV for F2 (optional)")
+    ap.add_argument("--seg-csv", default=None,
+                    help="Segment stress CSV for F2 (optional)")
     args = ap.parse_args()
 
     os.makedirs(args.outdir, exist_ok=True)
 
-    print(f"Loading {args.csv}...")
+    # F2: Metric illustration (needs per-FF CSV files)
+    print("\n[F2] Metric illustration")
+    if args.stress_csv and args.seg_csv:
+        fig_metric_illustration(args.stress_csv, args.seg_csv, args.outdir)
+    else:
+        print("  skip F2: pass --stress-csv and --seg-csv for metric illustration")
+
+    print(f"\nLoading {args.csv}...")
     rows = load_csv(args.csv)
     print(f"  {len(rows)} rows loaded.")
 
