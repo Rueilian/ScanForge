@@ -15,7 +15,7 @@ The paper should not be written as a general "DFT toolbox" paper. It should be w
 
 **Core claim**
 
-> A stress-aware partial scan selection framework can preserve testability better than naive low-stress selection, while reducing scan-shift stress or stress imbalance better than standard SCOAP-only selection.
+> A stress-aware partial scan selection framework can preserve SCOAP-derived testability while reducing scan-shift stress on selected ISCAS'89 benchmarks, and segment-aware greedy selection can improve the stress-testability tradeoff over global stress-penalized ranking in representative cases.
 
 **Important framing**
 
@@ -118,6 +118,18 @@ This section is the implementation-side source of truth for the paper.
 | Exact fault coverage for partial scan | Not implemented | Important publication gap; use proxy with explicit disclaimer |
 | Literature-backed baseline reproduction | Not yet done | Needed for stronger submission |
 
+For the progress report version, the implementation-status section should explicitly distinguish:
+1. completed components already available in the codebase, and
+2. remaining implementation work that is still under development or not yet integrated.
+
+Prefer expressing both categories in a single status table when possible, so readers can see completed and unfinished implementation items in one unified view.
+
+When an item is not yet part of the implemented evaluation flow, label it as **not implemented**, **planned**, or **not yet integrated** rather than wording that suggests partial completion without evidence.
+
+Appendix settings in the progress report must match the experiment artifact actually used in the report. If the reported CSV only uses one segment window, list that single value instead of a broader planned sweep.
+
+Reference formatting in the progress report should match the inline citation style. If the body uses bracketed citations such as `[1]`, the reference list should also use bracketed numbering.
+
 ---
 
 ## 7. Paper Scope Boundaries
@@ -146,6 +158,19 @@ This section is the implementation-side source of truth for the paper.
 - Exact partial-scan fault coverage evaluation
 - ATPG regeneration after partial-scan selection
 - Additional public benchmarks beyond ISCAS'89
+
+### Progress-report emphasis
+
+For the progress report stage, the document should not read like a finished paper. It should explicitly identify the remaining technical work required for the final submission, especially when current results still rely on proxy-based evaluation.
+
+The future-work section of the progress report should highlight:
+
+1. exact fault-coverage evaluation for selected partial-scan sets
+2. ATPG regeneration or fault simulation after partial-scan selection
+3. broader validation across additional benchmarks, scan ratios, and hyperparameters
+4. literature-backed baseline comparison
+5. figure/table refinement and tighter discussion of limitations
+6. final report integration, presentation preparation, and reproducibility cleanup
 
 ---
 
