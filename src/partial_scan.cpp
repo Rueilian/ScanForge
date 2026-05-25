@@ -299,46 +299,86 @@ std::vector<int> selectFFsWearLeveling(const ScanData &data, int k, bool useCo,
     for (double s : stressByFF)
         stressMax = std::max(stressMax, s);
 
+    // Candidate pruning: only consider top min(2k, N) FFs by testability score.
+    // Low-testability FFs cannot win the greedy objective regardless of stress penalty
+    // (penalty in [0,1], so nt[f] dominates for large nt gaps).
+    int M = std::min(2 * k, N);
+    std::vector<int> candidates(N);
+    std::iota(candidates.begin(), candidates.end(), 0);
+    std::partial_sort(candidates.begin(), candidates.begin() + M, candidates.end(),
+                      [&](int a, int b){ return nt[a] > nt[b]; });
+    candidates.resize(M);
+
     std::vector<char> chosen(N, 0);
-    std::vector<int> selected;
+    // selected and chainStress kept in sync, both sorted by FF index.
+    // This allows O(log K) insertion-point lookup and O(K) inline sliding-window
+    // max-segment computation without allocating per-candidate temp vectors.
+    std::vector<int>    selected;
+    std::vector<double> chainStress;
     selected.reserve(k);
+    chainStress.reserve(k);
+
+    int W = std::max(1, segment_window);
 
     for (int step = 0; step < k; ++step) {
         int bestF = -1;
         double bestScore = -1e300;
         double bestNt = -1e300;
 
-        for (int f = 0; f < N; ++f) {
+        int chainLen = (int)selected.size();
+
+        for (int f : candidates) {
             if (chosen[f]) continue;
 
-            std::vector<int> temp = selected;
-            temp.push_back(f);
-            std::sort(temp.begin(), temp.end());
+            // Insertion position in sorted chain
+            int pos = (int)(std::lower_bound(selected.begin(), selected.end(), f)
+                            - selected.begin());
 
-            std::vector<FFStress> perChain((int)temp.size());
-            for (int p = 0; p < (int)temp.size(); ++p)
-                perChain[p].stress_score = stressByFF[temp[p]];
+            // Augmented chain length
+            int augLen = chainLen + 1;
+            int wEff   = std::min(W, augLen);
 
-            SegmentSummary seg = summarizeSegmentStress(perChain, segment_window);
+            // Inline sliding-window max-avg over augmented chain without allocation.
+            // augStress(i): maps index i in new chain to stress value.
+            // Uses the already-sorted chainStress[] with a virtual insert at pos.
+            auto augStress = [&](int i) -> double {
+                if (i < pos)  return chainStress[i];
+                if (i == pos) return stressByFF[f];
+                return chainStress[i - 1];
+            };
+
+            double windowSum = 0.0;
+            for (int i = 0; i < wEff; ++i) windowSum += augStress(i);
+            double maxAvg = windowSum / wEff;
+            for (int start = 1; start + wEff <= augLen; ++start) {
+                windowSum -= augStress(start - 1);
+                windowSum += augStress(start + wEff - 1);
+                double avg = windowSum / wEff;
+                if (avg > maxAvg) maxAvg = avg;
+            }
+
             // Scale-free penalty vs min–max testability: divide by max full-scan stress.
-            double penalty = seg.max_segment_stress / (stressMax + kEps);
-            double score = nt[f] - lambda * penalty;
+            double penalty = maxAvg / (stressMax + kEps);
+            double score   = nt[f] - lambda * penalty;
 
             if (score > bestScore + kEps
                 || (std::abs(score - bestScore) <= kEps && nt[f] > bestNt + kEps)
                 || (std::abs(score - bestScore) <= kEps && std::abs(nt[f] - bestNt) <= kEps
                     && (bestF < 0 || f < bestF))) {
                 bestScore = score;
-                bestNt = nt[f];
-                bestF = f;
+                bestNt    = nt[f];
+                bestF     = f;
             }
         }
         if (bestF < 0) break;
+
+        int pos = (int)(std::lower_bound(selected.begin(), selected.end(), bestF)
+                        - selected.begin());
+        selected.insert(selected.begin() + pos, bestF);
+        chainStress.insert(chainStress.begin() + pos, stressByFF[bestF]);
         chosen[bestF] = 1;
-        selected.push_back(bestF);
     }
 
-    std::sort(selected.begin(), selected.end());
     return selected;
 }
 
