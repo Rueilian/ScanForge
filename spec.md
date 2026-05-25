@@ -133,7 +133,7 @@ This section is the implementation-side source of truth for the paper.
 
 ### Explicitly out of scope
 
-- Scan-chain diagnosis *(note: implemented in `src/diagnosis.cpp` as a separate feature; not included in paper scope or experiments)*
+- Scan-chain diagnosis *(removed from codebase; not in paper scope or experiments)*
 - Fault localization
 - Defect diagnosis metrics
 - Multi-chain scan architecture
