@@ -84,14 +84,75 @@ Explicit disclaimer: this is a testability preservation proxy, not exact stuck-a
 | Sweep mode + Pareto tags | ✅ Complete |
 | Runtime logging (selection + simulation) | ✅ Complete |
 | Coverage proxy | ✅ Complete |
-| Multi-mode sweep script | 🔲 Pending |
-| Full experiment matrix (12 circuits) | 🔲 Pending |
+| Multi-mode sweep script (`scripts/run_experiment.sh`) | ✅ Complete |
+| Full experiment matrix (12 circuits × 7 modes × λ sweep) | ✅ Complete — 5520 data rows |
 | Publication-quality figures | 🔲 Pending |
 | Literature comparison table | 🔲 Pending |
 | Exact fault coverage | 🔲 Out of scope (proxy used with disclaimer) |
 
 **Backend:** Built on FAN_ATPG (NTU LaDS-II) for SCOAP export via `.sf` format.
 **Benchmarks:** ISCAS'89 (s27–s38584, 12 circuits, 3–1728 FFs).
+
+---
+
+## Preliminary Experimental Results
+
+Experiment matrix completed: 12 ISCAS'89 circuits × 7 modes × 5 λ values × segment window W=16,
+using fine-grained ratio sweep (5%–100% in 5% steps). All results in `results/all_experiments.csv`.
+
+### Finding 1: `co_wear_leveling` Pareto-dominates `co` on medium circuits
+
+At 50% scan ratio, λ=0.5:
+
+| Circuit | FFs | `co` CovProxy | `co_wear_leveling` CovProxy | `co` MaxStress | `co_wear_leveling` MaxStress |
+|---------|-----|--------------|----------------------------|---------------|------------------------------|
+| s510    | 6   | same         | same (0 loss)              | —             | **−2.3%** |
+| s953    | 29  | 0.8667       | 0.8667 (0 loss)            | 0.4607        | **0.3648 (−20.8%)** |
+| s1238   | 18  | same         | same (0 loss)              | —             | **−2.0%** |
+
+`co_wear_leveling` achieves the same SCOAP-derived coverage as the classical `co` baseline while
+reducing per-FF max switching stress by up to **20.8%** — without any coverage penalty.
+
+### Finding 2: `co_wear` (global sort) is unstable on large circuits
+
+`co_wear` consistently reduces coverage (Δcov = −6% to −19%) but stress reduction is
+**unreliable** — on 7 of 12 circuits, max_stress actually increases after applying the penalty.
+This suggests global-sort stress penalization does not generalize across circuit sizes.
+
+### Finding 3: λ robustness on s953
+
+For `co_wear_leveling` on s953 at 50%:
+
+| λ | CovProxy | MaxStress |
+|---|---------|-----------|
+| 0.00 | 0.8667 | 0.4607 (= pure `co`) |
+| 0.25 | 0.8667 | **0.3648** |
+| 0.50 | 0.8667 | 0.3648 |
+| 0.75 | 0.8667 | 0.3648 |
+| 1.00 | 0.8667 | 0.3648 |
+
+Any λ > 0 triggers the optimal selection. The method is **insensitive to λ** in [0.25, 1.0],
+indicating robustness to hyperparameter choice.
+
+### Finding 4: Leveling effect diminishes on large circuits (> 100 FFs)
+
+For s5378 (179 FFs), s9234 (211 FFs), s15850 (534 FFs) and above, `co_wear_leveling` selects
+identical FFs as pure `co`. The segment-level greedy objective does not change the selection
+when the number of FFs is large relative to the segment window. This is an identified limitation.
+
+### Finding 5: Runtime scalability
+
+Selection time for `co_wear_leveling` at 50% ratio:
+
+| Circuit | FFs | Selection time |
+|---------|-----|---------------|
+| s953    | 29  | 0.13 ms |
+| s5378   | 179 | 7.8 ms |
+| s9234   | 211 | 12.9 ms |
+| s15850  | 534 | 231 ms |
+| s35932  | 1728 | 7,684 ms |
+
+O(KN) greedy becomes expensive above ~500 FFs. `co` and `co_wear` remain < 1 ms on all circuits.
 
 ---
 
@@ -110,7 +171,7 @@ Explicit disclaimer: this is a testability preservation proxy, not exact stuck-a
 | Date | Milestone |
 |------|-----------|
 | 2026-05-26 | Progress report submission |
-| 2026-05-27–05-31 | Run full experiment matrix (12 circuits × 7 modes × 4 ratios) |
+| 2026-05-27–05-31 | ~~Run full experiment matrix~~ **DONE** — Generate figures from CSV |
 | 2026-06-01–06-07 | Generate figures; write problem description + method sections |
 | 2026-06-08–06-10 | Write results + discussion; build literature comparison table |
 | 2026-06-11–06-14 | Finalize report; prepare PPT |
