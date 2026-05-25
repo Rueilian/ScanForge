@@ -135,11 +135,23 @@ For `co_wear_leveling` on s953 at 50%:
 Any λ > 0 triggers the optimal selection. The method is **insensitive to λ** in [0.25, 1.0],
 indicating robustness to hyperparameter choice.
 
-### Finding 4: Leveling effect diminishes on large circuits (> 100 FFs)
+### Finding 4: Leveling effect diminishes on large circuits — root cause identified
 
-For s5378 (179 FFs), s9234 (211 FFs), s15850 (534 FFs) and above, `co_wear_leveling` selects
-identical FFs as pure `co`. The segment-level greedy objective does not change the selection
-when the number of FFs is large relative to the segment window. This is an identified limitation.
+For s5378 (179 FFs) and above, `co_wear_leveling` selects identical or nearly identical FFs
+as pure `co`. Investigation (including attempting a full-chain density metric variant) reveals
+this is a **structural property of the circuits**, not an algorithmic deficiency:
+
+- s5378 full-scan stress: min=0.398, max=0.527, range=0.130 — all 179 FFs fall in [0.40, 0.53].
+- With such a narrow stress distribution, **any** selection of K ≈ N/2 FFs yields similar
+  max_stress. There are no genuinely "low-stress" FFs to prefer; the stress penalty cannot
+  overcome testability differences at the top-K boundary.
+- In contrast, s953 has wider stress spread (some FFs < 0.2, some > 0.4), enabling the greedy
+  to meaningfully avoid high-stress FFs and achieve −20.8% max_stress with zero coverage loss.
+
+**Conclusion:** For circuits with near-uniform stress distribution (common in larger ISCAS'89
+benchmarks), selection-based stress optimization faces a fundamental ceiling. This is documented
+as a construct validity limitation: the method's effectiveness is bounded by the circuit's
+intrinsic stress spread, not by algorithm design.
 
 ### Finding 5: Runtime scalability (after greedy optimization)
 

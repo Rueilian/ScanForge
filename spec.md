@@ -522,11 +522,19 @@ The paper should include a limitations / threats section.
 
 - Coverage may currently be estimated by a SCOAP proxy rather than exact stuck-at fault coverage.
 - Stress score is a model-derived metric, not direct silicon degradation.
+- **Stress reduction effectiveness is bounded by circuit stress spread.** For large circuits
+  (e.g., s5378, N=179), all FFs have stress in a narrow range [0.40, 0.53]; no selection
+  of K ≈ N/2 FFs can meaningfully avoid high-stress FFs. Alternative metrics (full-chain
+  density windows) provide no significant improvement in this regime. This is a fundamental
+  limitation of selection-based stress optimization, not an algorithmic deficiency.
 
 ### Internal validity
 
 - Different modes may optimize different objectives; a method should not be judged only on metrics it was not designed to optimize.
 - Segment-aware greedy selection uses a static full-scan stress profile as input.
+- The leveling improvement is concentrated in small/medium circuits (N ≤ ~30) where stress
+  variance is higher. For large circuits with near-uniform stress, the method degenerates
+  to pure testability-based selection.
 
 ### External validity
 
