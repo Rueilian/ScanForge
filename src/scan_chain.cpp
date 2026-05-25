@@ -48,7 +48,7 @@ void finalizeStressMetrics(ScanResult &res)
         s.duty_0      = (double)s.zero_count / (double)C;
         s.bias_score    = std::abs(s.duty_1 - 0.5);
         s.max_run_score = (double)std::max(s.max_run_0, s.max_run_1) / (double)C;
-        s.stress_score  = 1.0 * s.toggle_rate + 0.5 * s.bias_score + 0.5 * s.max_run_score;
+        s.stress_score  = s.toggle_rate;
     }
 }
 

@@ -24,9 +24,11 @@ struct FaultCandidate {
     std::string ff_name;
     FaultType   fault_type;
 
-    int    detected_by;     // number of patterns that detect this fault
+    int    detected_shift_out; // patterns detecting via shift-out mismatch
+    int    detected_shift_in;  // patterns detecting via shift-in mismatch
+    int    detected_by;        // union: detected_shift_out | detected_shift_in
     int    total_patterns;
-    double detection_rate;  // detected_by / total_patterns
+    double detection_rate;     // detected_by / total_patterns
 
     bool        diagnosable;    // detected AND has a unique detection signature
     std::string alias_group;    // non-empty label shared by aliased faults
