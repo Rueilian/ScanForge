@@ -104,7 +104,7 @@ This section is the implementation-side source of truth for the paper.
 |---|---|---|
 | `.sf` parser | Implemented | Reads FF names, SCOAP metrics, PPI/PPO patterns |
 | Full-scan simulation | Implemented | Produces toggles and switching activity |
-| Per-FF stress metrics | Implemented | CSV export supported |
+| Per-FF stress metrics | Implemented | `stress_score = toggle_rate`; CSV export supported |
 | Segment stress profiling | Implemented | Sliding-window metrics and hotspot count |
 | Partial scan selection: `co` | Implemented | Main classical baseline |
 | Partial scan selection: `combined` | Implemented | Alternative SCOAP-based baseline |
@@ -114,8 +114,8 @@ This section is the implementation-side source of truth for the paper.
 | Sweep mode | Implemented | Ratio sweeps and CSV output |
 | Coverage proxy | Implemented | SCOAP-derived proxy, not exact fault coverage |
 | Pareto tags in sweep CSV | Implemented | Useful for paper figures |
-| Exact fault coverage for partial scan | Not implemented | Important publication gap |
-| Runtime study tables | Not yet documented | Needed for paper |
+| Runtime logging | Implemented | `selection_time_ms` and `simulation_time_ms` in sweep CSV and `--partial` stdout |
+| Exact fault coverage for partial scan | Not implemented | Important publication gap; use proxy with explicit disclaimer |
 | Literature-backed baseline reproduction | Not yet done | Needed for stronger submission |
 
 ---
@@ -133,7 +133,7 @@ This section is the implementation-side source of truth for the paper.
 
 ### Explicitly out of scope
 
-- Scan-chain diagnosis
+- Scan-chain diagnosis *(note: implemented in `src/diagnosis.cpp` as a separate feature; not included in paper scope or experiments)*
 - Fault localization
 - Defect diagnosis metrics
 - Multi-chain scan architecture
@@ -179,10 +179,24 @@ Describe:
 
 ### 8.4 Stress metrics
 
-Define exactly:
-- per-FF toggle-based stress
-- duty/run-length terms
-- composite `stress_score`
+Two distinct metrics are used (no weighted composite):
+
+**Per-FF stress** (point metric, used in global-sort wear modes):
+```
+stress_score_i = toggle_rate_i = toggle_count_i / total_shift_cycles
+```
+Directly maps to per-cell switching activity during scan shift — the standard metric in low-power scan literature (e.g., PEAKASO, VTS 2006).
+
+Note: `bias_score` (duty cycle deviation) and `max_run_score` (longest run / cycles) are still computed and exported to the stress CSV as diagnostic data, but are **not** included in `stress_score`. Their physical motivation in the scan-shift context is insufficient to include in the primary metric.
+
+**Segment stress** (spatial metric, used in greedy wear-leveling modes):
+```
+segment_stress_j = mean(stress_score_i for FF i in window j)
+hotspot threshold: segment_stress_j > mean(all segments) + 1·stddev(all segments)
+```
+Captures spatial concentration of switching activity along the chain. Motivated by thermal hotspot analysis in PEAKASO (Cho & Pan, VTS 2006).
+
+Define in paper:
 - segment average stress
 - segment variance
 - hotspot count
@@ -475,21 +489,22 @@ If the paper says one of the following, the experiments must support it directly
 
 ### High priority
 
-1. Cleanly define the paper contribution in one sentence.
+1. ~~Cleanly define the paper contribution in one sentence.~~ **DONE** — see Section 2.
 2. Decide whether the paper uses:
    - only coverage proxy, or
    - coverage proxy + exact fault coverage validation.
+   → **Current decision: coverage proxy only, with explicit disclaimer.**
 3. Run a complete experiment matrix for all required modes.
-4. Add runtime logging.
+4. ~~Add runtime logging.~~ **DONE** — `selection_time_ms` / `simulation_time_ms` in sweep CSV.
 5. Create publication-quality figures from CSV outputs.
 6. Perform literature review and build the comparison table.
 
 ### Medium priority
 
-1. Refine stress metric explanation.
+1. ~~Refine stress metric explanation.~~ **DONE** — `stress_score = toggle_rate` only; bias/run retained as diagnostic CSV columns.
 2. Verify that README/docs match the implementation exactly.
 3. Add a reproducibility section and exact command lines.
-4. Clarify where heuristic scores are used.
+4. Clarify where heuristic scores are used — `tradeoff_score` in sweep CSV is a ranking aid only, not a scientific metric.
 
 ### Low priority
 
