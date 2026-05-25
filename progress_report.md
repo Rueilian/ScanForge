@@ -256,7 +256,7 @@ The experiment matrix covers 12 ISCAS'89 circuits, 7 modes, 5 λ values, and a r
 
 ### Finding 1: `co_wear_leveling` preserves coverage while reducing max stress on several medium circuits
 
-### RQ1 & RQ2: Testability vs. Stress Tradeoff — Main Results (Table T3)
+At 50% scan ratio, λ=0.5:
 
 | Circuit | FFs | `co` CovProxy | `co_wear_leveling` CovProxy | `co` MaxStress | `co_wear_leveling` MaxStress |
 |---------|-----|--------------|----------------------------|---------------|------------------------------|
@@ -281,10 +281,15 @@ These results suggest that simple global stress penalization does not consistent
 
 ### Finding 3: Sensitivity to λ on s953
 
-The global-sort approach (`co_wear`) penalizes SCOAP scores before sorting. Across 12 circuits at 50% ratio:
+For `co_wear_leveling` on s953 at 50%:
 
-- `co_wear` consistently degrades coverage: Δcov ranges from −6% to −19% compared to `co`.
-- Despite this coverage cost, `co_wear` **fails to reduce stress** on 7 of 12 circuits — max\_stress either stays identical to `co` or increases (by up to +1.7%).
+| λ | CovProxy | MaxStress |
+|---|---------|-----------|
+| 0.00 | 0.8667 | 0.4607 (= pure `co`) |
+| 0.25 | 0.8667 | **0.3648** |
+| 0.50 | 0.8667 | 0.3648 |
+| 0.75 | 0.8667 | 0.3648 |
+| 1.00 | 0.8667 | 0.3648 |
 
 Any λ > 0 yields the same selected set. The method is therefore **insensitive to λ** in [0.25, 1.0], indicating robustness to hyperparameter choice.
 
@@ -301,13 +306,17 @@ For larger circuits such as s5378 (179 FFs), `co_wear_leveling` often selects FF
 
 These results suggest that the effectiveness of stress-leveling depends on the circuit's intrinsic stress spread. When stress values are tightly clustered, there may be few genuinely low-stress alternatives at the top-K boundary, so the stress penalty has little room to change the selected set. We treat this as a limitation of the current benchmark regime rather than proof of a universal ceiling.
 
-**λ sensitivity (Fig. F4).** Table T4 shows coverage proxy and max stress for `co_wear_leveling` on s953 at 50% ratio across all five λ values.
+### Finding 5: Runtime scalability
 
 The initial greedy implementation recomputed segment summaries for each candidate at every step, resulting in O(M·K²·W) total complexity. An inline sliding-window evaluation reduces the greedy implementation to **O(M·K²)**.
 
-The transition from no-stress-awareness (λ=0, equivalent to pure `co`) to full benefit occurs between λ=0 and λ=0.25. For all λ ∈ [0.25, 1.0], coverage proxy and max stress are identical, indicating that the greedy selection converges to the same optimal subset regardless of how strongly stress is weighted. This saturation behavior means practitioners need only choose any positive λ — precise tuning is unnecessary.
-
-On s5378, where the stress distribution is near-uniform, max stress is insensitive to λ across all values (Fig. F4, right panel), consistent with the structural ceiling identified in RQ3.
+| Circuit | N    | Selection time (`co_wear_leveling`, 50%) |
+|---------|------|------------------------------------------|
+| s953    | 29   | 0.03 ms |
+| s5378   | 179  | 0.6 ms  |
+| s9234   | 211  | 1.0 ms  |
+| s15850  | 534  | 10 ms   |
+| s35932  | 1728 | 293 ms  |
 
 `co` and `co_wear` remain below 1 ms on all evaluated circuits. The greedy modes require less than 10 ms up to approximately 500 FFs and remain below 300 ms at 1728 FFs.
 
@@ -328,34 +337,6 @@ Although the current implementation already supports stress-aware partial-scan s
 5. **Discussion of limitations and applicability:** The current results already suggest that the benefit of stress-leveling depends on circuit characteristics such as stress spread. The final version should make these boundary conditions more explicit and explain when the proposed method is expected to help most.
 
 6. **Final artifact refinement:** The remaining work also includes refining figures and tables, strengthening the literature comparison, improving the final discussion section, and packaging the code and scripts into a more reproducible submission flow.
-
----
-
-### RQ5: Runtime Scalability *(Fig. F6)*
-
-**Table T5.** Selection runtime for `co_wear_leveling` at 50% scan ratio after greedy optimization (W-fold sliding-window speedup over naïve implementation).
-
-| Circuit | N    | Selection time | vs. `co` overhead |
-|---------|------|---------------|-------------------|
-| s953    | 29   | 0.03 ms        | < 1 ms            |
-| s5378   | 179  | 0.6 ms         | < 1 ms            |
-| s9234   | 211  | 1.0 ms         | < 1 ms            |
-| s15850  | 534  | 10 ms          | < 1 ms            |
-| s35932  | 1728 | 293 ms         | < 1 ms            |
-
-Sort-based modes (`co`, `combined`, `co_wear`, `combined_wear`) all run in under 1 ms on every circuit. The greedy modes (`co_wear_leveling`, `combined_wear_leveling`) scale as O(N·K²) after the inline sliding-window optimization, which yielded a ~26× speedup on s35932 versus the naïve O(N·K²·W) implementation. For the representative medium circuits used in main experiments (s953–s9234), selection time is under 1 ms, well within design-time budget.
-
-The log-log scalability curves in Fig. F6 confirm the empirical scaling trend and show that `co_wear_leveling` maintains a 2–3 order-of-magnitude overhead vs. sort-based methods, which remains constant in absolute terms (< 300 ms for the largest tested circuit).
-
----
-
-### Negative Result: Bootstrapped Stress Refinement
-
-We investigated whether replacing the full-scan stress prior with partial-scan stress (simulated on the K-FF chain) could improve leveling on circuits where full-scan spread is narrow. The hypothesis was that reducing chain length would expose higher per-FF stress variance by isolating each FF's individual toggle pattern.
-
-Empirically, the opposite holds: partial-scan stress spread is consistently *smaller* than full-scan stress spread for the same selected FFs (s5378, K=9: full-scan spread = 0.0079, partial-scan spread = 0.0019). Reducing chain length compresses the stress distribution because each FF's toggle rate is driven primarily by its own PI↔PPO transition pattern across ATPG vectors — a property that is unaffected by which other FFs share the chain. Furthermore, the greedy objective operates on segment-level (spatial window) stress, while the bootstrap only updates scalar per-FF values; these are structurally decoupled, so per-FF substitution cannot inform spatial interaction effects.
-
-As a result, bootstrapped refinement produces no improvement at any scan ratio, and at ratios above 25% can degrade max stress by up to 10% due to non-convergent oscillation. The static full-scan stress proxy is already near-optimal for the greedy leveling objective. This result is discussed further in §Discussion.
 
 ---
 
