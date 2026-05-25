@@ -85,6 +85,7 @@ Explicit disclaimer: this is a testability preservation proxy, not exact stuck-a
 | Runtime logging (selection + simulation) | ✅ Complete |
 | Coverage proxy | ✅ Complete |
 | Multi-mode sweep script (`scripts/run_experiment.sh`) | ✅ Complete |
+| Greedy O(M·K²·W) → O(M·K²) optimization | ✅ Complete — ~26× speedup on s35932 |
 | Full experiment matrix (12 circuits × 7 modes × λ sweep) | ✅ Complete — 5520 data rows |
 | Publication-quality figures | 🔲 Pending |
 | Literature comparison table | 🔲 Pending |
@@ -140,19 +141,26 @@ For s5378 (179 FFs), s9234 (211 FFs), s15850 (534 FFs) and above, `co_wear_level
 identical FFs as pure `co`. The segment-level greedy objective does not change the selection
 when the number of FFs is large relative to the segment window. This is an identified limitation.
 
-### Finding 5: Runtime scalability
+### Finding 5: Runtime scalability (after greedy optimization)
 
-Selection time for `co_wear_leveling` at 50% ratio:
+The original greedy called `summarizeSegmentStress` (O(chain×W)) per candidate per step and
+allocated a sorted temp vector per candidate, giving O(M·K²·W) total.
 
-| Circuit | FFs | Selection time |
-|---------|-----|---------------|
-| s953    | 29  | 0.13 ms |
-| s5378   | 179 | 7.8 ms |
-| s9234   | 211 | 12.9 ms |
-| s15850  | 534 | 231 ms |
-| s35932  | 1728 | 7,684 ms |
+We replaced this with an inline O(chain) sliding-window sum using a virtual-insert lambda,
+eliminating all per-candidate allocations. New complexity: **O(M·K²)** — a W× improvement.
 
-O(KN) greedy becomes expensive above ~500 FFs. `co` and `co_wear` remain < 1 ms on all circuits.
+Selection time for `co_wear_leveling` at 50% ratio (before → after):
+
+| Circuit | FFs | Before | After | Speedup |
+|---------|-----|--------|-------|---------|
+| s953    | 29  | 0.13 ms | 0.03 ms | ~4× |
+| s5378   | 179 | 7.8 ms | 0.6 ms | ~13× |
+| s9234   | 211 | 12.9 ms | 1.0 ms | ~13× |
+| s15850  | 534 | 231 ms | 10 ms | ~23× |
+| s35932  | 1728 | 7,684 ms | 293 ms | **~26×** |
+
+`co` and `co_wear` remain < 1 ms on all circuits. The greedy modes are now practical for
+circuits up to ~500 FFs (<10 ms) and usable up to 1728 FFs (<300 ms).
 
 ---
 
