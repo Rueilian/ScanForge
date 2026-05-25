@@ -1,5 +1,5 @@
 # Progress Report
-## Course: [COURSE NAME / NUMBER]
+## Course: EEE5001 VLSI Testing
 ## Date: 2026-05-26
 
 ---
@@ -8,9 +8,9 @@
 
 | Item | Info |
 |------|------|
-| Group Number | [GROUP NUMBER] |
+| Group Number | Group 5 |
 | Topic | 3. Self-Defined — Stress-Aware Partial Scan Selection |
-| Members | [MEMBER 1 NAME / ID], [MEMBER 2 NAME / ID], [MEMBER 3 NAME / ID] |
+| Members | 丁睿廉, 駱彥竹, 黃思維 |
 
 ---
 
@@ -160,9 +160,9 @@ O(KN) greedy becomes expensive above ~500 FFs. `co` and `co_wear` remain < 1 ms 
 
 | Member | Responsibilities |
 |--------|----------------|
-| [MEMBER 1] | [e.g., FAN_ATPG integration, .sf parser, simulation engine] |
-| [MEMBER 2] | [e.g., partial scan selection algorithms, stress metrics] |
-| [MEMBER 3] | [e.g., experiments, figures, report writing] |
+| 丁睿廉 | 主題發想、主要程式碼撰寫（ScanForge engine、selection modes、FAN_ATPG integration） |
+| 駱彥竹 | 方法探索、主題討論（metric 定義、演算法設計、相關文獻調查） |
+| 黃思維 | Bug 修復、測試、報告撰寫 |
 
 ---
 
@@ -193,21 +193,22 @@ O(KN) greedy becomes expensive above ~500 FFs. `co` and `co_wear` remain < 1 ms 
 
 5. X. Lin et al., "Scan Chain Reordering-Aware X-Filling and Stitching for Scan Shift Power Reduction," *Proc. Design, Automation and Test in Europe (DATE)*, 2016.
 
-6. [TO BE ADDED — ETD partial scan paper]
-
-7. [TO BE ADDED — low-power scan survey paper]
-
 ---
 
 ## AI Usage Declaration
 
-This project made use of Claude (Anthropic) as an AI coding and research assistant for:
+This project made use of the following AI tools:
+
+**Claude (Anthropic)**
 - Code implementation and debugging (C++ source)
 - Literature search and summarization
 - Metric definition review and comparison with published work
 - Report and specification drafting
 
-All key design decisions, algorithm logic, and experimental analysis were reviewed and confirmed by team members. The AI was used as a productivity tool; all claims in this report are understood and verified by the team.
+**GitHub Copilot**
+- Code completion and suggestion during development
+
+All key design decisions, algorithm logic, and experimental analysis were reviewed and confirmed by team members. AI tools were used as productivity aids; all claims in this report are understood and verified by the team.
 
 ---
 
