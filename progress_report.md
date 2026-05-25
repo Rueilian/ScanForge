@@ -43,13 +43,7 @@ The remainder of this report is organized as follows. Section 2 describes the pr
 > This work presents a partial-scan FF selection framework that jointly optimizes SCOAP-derived testability and scan-shift stress distribution, and shows that segment-aware greedy selection can improve the stress-testability tradeoff relative to global stress-penalized ranking on selected ISCAS'89 benchmarks.
 
 **Problem:**
-Given a circuit with N flip-flops, select K ≈ r × N FFs for partial scan, where the scan ratio r ∈ (0,1] and K is computed by rounding rN with a minimum of 1, such that:
-- Testability (SCOAP-derived coverage proxy) is preserved
-- Per-FF switching stress during scan shift is reduced
-- Spatial stress concentration (segment hotspots) along the chain is minimized
-
-**Why this matters:**
-During scan shift, switching activity is substantially higher than under normal functional operation and can create local hotspots and uneven stress distribution [1][4][5]. Standard SCOAP-based partial scan selection does not optimize for this stress concentration.
+Given a circuit with N flip-flops, select K ≈ r × N FFs for partial scan (scan ratio r ∈ (0,1], K = round(rN) ≥ 1) such that testability is preserved, per-FF scan-shift stress is reduced, and spatial stress concentration along the chain is minimized.
 
 ---
 
@@ -257,14 +251,14 @@ For N ≤ 534 (s15850), the greedy runs in < 10 ms after the O(M·K²) → O(M·
 | Sweep mode + Pareto tags | ✅ Complete |
 | Runtime logging (selection + simulation) | ✅ Complete |
 | Coverage proxy | ✅ Complete |
-| Multi-mode sweep script | ✅ Complete |
-| Greedy O(M·K²·W) → O(M·K²) optimization | ✅ Complete |
-| Full experiment matrix (12 circuits × 7 modes × λ sweep) | ✅ Complete |
-| Literature comparison table | 🔲 In preparation |
-| Exact fault coverage | 🔲 Not yet integrated |
+| Multi-mode sweep script (`scripts/run_experiment.sh`) | ✅ Complete |
+| Greedy O(M·K²·W) → O(M·K²) optimization | ✅ Complete — ~26× speedup on s35932 |
+| Full experiment matrix (12 circuits × 7 modes × λ sweep) | ✅ Complete — 7,920 data rows |
+| Publication-quality figures (F1–F7) | ✅ Complete — generated in `figures/` |
+| Literature comparison table (Table T6) | ✅ Complete — 11 papers |
+| Exact fault coverage | 🔲 Not yet integrated (proxy used with disclaimer) |
 | Post-selection ATPG / fault simulation | 🔲 Not yet integrated |
 | Final comparison tables | 🔲 In preparation |
-| Figure-generation and reproducibility flow | 🔲 In preparation |
 
 **Backend:** Implemented on top of FAN_ATPG (NTU LaDS-II) for SCOAP export via `.sf` format.
 **Benchmarks:** ISCAS'89 (s27–s38584, 12 circuits, 3–1728 FFs).
@@ -340,6 +334,19 @@ The initial greedy implementation recomputed segment summaries for each candidat
 | s35932  | 1728 | 293 ms  |
 
 `co` and `co_wear` remain below 1 ms on all evaluated circuits. The greedy modes require less than 10 ms up to approximately 500 FFs and remain below 300 ms at 1728 FFs.
+
+### Finding 6: Bootstrapped iterative refinement does not improve wear-leveling (negative result)
+
+We investigated whether substituting partial-scan stress (simulated on the K-FF chain) for the full-scan stress prior could improve leveling on circuits where full-scan spread is narrow. The hypothesis was that a shorter chain would reveal greater per-FF stress variance.
+
+The hypothesis fails: partial-scan stress spread is consistently *smaller* than full-scan spread for the same selected FFs.
+
+| | s5378, K=9 | s953 (low ratio) |
+|---|---|---|
+| Full-scan stress spread (selected FFs) | 0.0079 | ~0.003 |
+| Partial-scan stress spread (same FFs) | 0.0019 | similar or smaller |
+
+Per-FF toggle rate is driven by each FF's own PI↔PPO transition pattern across ATPG vectors, not by neighboring FFs. Reducing chain length from N to K compresses the stress distribution rather than expanding it. Furthermore, the greedy penalizes segment-level (sliding-window) stress while the bootstrap only updates per-FF scalar values — these are structurally decoupled, so per-FF substitution cannot inform spatial effects. Empirically, bootstrapped refinement produces no improvement at any ratio and degrades performance by up to 10% at ratios above 25% due to non-convergent oscillation. The static full-scan stress prior is already near-optimal for the greedy leveling objective.
 
 ---
 
