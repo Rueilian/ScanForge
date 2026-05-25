@@ -14,6 +14,27 @@
 
 ---
 
+## Introduction
+
+Scan-based testing is the dominant design-for-testability (DFT) strategy in modern digital circuits. In full-scan design, every flip-flop (FF) is connected into a single scan chain, enabling controllability and observability of all internal state. However, full scan incurs area and timing overhead proportional to the number of FFs. **Partial scan** reduces this overhead by selecting a subset of FFs for inclusion in the scan chain, at the cost of reduced testability.
+
+Classical partial scan selection methods rank FFs by SCOAP-derived testability metrics — most commonly, observability (CO) or a combined controllability-observability score — and greedily include the highest-ranked FFs [2][3]. These methods are effective at preserving testability under a given scan budget, but they ignore a critical secondary effect: **scan-shift stress distribution**.
+
+During scan shift, FFs toggle at rates far exceeding those seen during normal functional operation. Switching activity during scan can reach 30–50% toggle rate per clock cycle [1], creating localized stress concentrations along the scan chain. FFs selected purely for their SCOAP scores may cluster in high-stress regions of the chain, creating segment-level hotspots that accelerate local aging and increase peak switching power [1][4][5].
+
+This paper presents **ScanForge**, a partial scan selection framework that jointly optimizes SCOAP-derived testability preservation and scan-shift stress distribution. The framework implements seven selection modes, including two novel segment-aware greedy algorithms (`co_wear_leveling` and `combined_wear_leveling`) that directly minimize spatial stress concentration during selection. We evaluate all modes on 12 ISCAS'89 benchmarks (3–1728 FFs) across a full hyperparameter sweep.
+
+**Contributions:**
+1. A unified partial scan selection framework with seven modes covering SCOAP-only, stress-penalized, and segment-aware greedy strategies.
+2. A two-level stress model comprising per-FF toggle rate and sliding-window segment stress with hotspot detection.
+3. Empirical evidence that segment-aware greedy leveling achieves up to **20.8% reduction in max per-FF stress with zero coverage loss** on circuits with sufficient stress spread, while global stress-penalized ranking degrades coverage with no reliable stress benefit.
+4. An O(M·K²) greedy implementation (W-fold improvement over naïve O(M·K²·W)) that runs in under 10 ms for circuits up to 534 FFs.
+5. A characterization of when stress-leveling benefits are bounded by intrinsic circuit stress spread, providing a practical guideline for applying the method.
+
+The remainder of this report is organized as follows. Section 2 describes the proposed technique. Section 3 presents the method formally. Section 4 reports experimental results. Section 5 discusses implications and limitations. Section 6 concludes.
+
+---
+
 ## Topic Description
 
 **Title:** ScanForge: A Stress-Aware Partial Scan Selection Framework
