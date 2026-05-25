@@ -10,7 +10,7 @@
 |------|------|
 | Group Number | Group 5 |
 | Topic | 3. Self-Defined — Stress-Aware Partial Scan Selection |
-| Members | 丁睿廉, 駱彥竹, 黃思維 |
+| Members | 丁睿濂, 駱彥竹, 黃思維 |
 
 ---
 
@@ -168,7 +168,7 @@ circuits up to ~500 FFs (<10 ms) and usable up to 1728 FFs (<300 ms).
 
 | Member | Responsibilities |
 |--------|----------------|
-| 丁睿廉 | 主題發想、主要程式碼撰寫（ScanForge engine、selection modes、FAN_ATPG integration） |
+| 丁睿濂 | 主題發想、主要程式碼撰寫（ScanForge engine、selection modes、FAN_ATPG integration） |
 | 駱彥竹 | 方法探索、主題討論（metric 定義、演算法設計、相關文獻調查） |
 | 黃思維 | Bug 修復、測試、報告撰寫 |
 
