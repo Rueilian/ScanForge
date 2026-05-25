@@ -208,6 +208,12 @@ This project made use of the following AI tools:
 **GitHub Copilot**
 - Code completion and suggestion during development
 
+**DeepSeek V4 Pro**
+- Code generation and algorithm discussion
+
+**Cursor**
+- AI-assisted code editing and refactoring within the IDE
+
 All key design decisions, algorithm logic, and experimental analysis were reviewed and confirmed by team members. AI tools were used as productivity aids; all claims in this report are understood and verified by the team.
 
 ---
