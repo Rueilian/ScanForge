@@ -190,6 +190,51 @@ Although the current implementation already supports stress-aware partial-scan s
 
 6. **Final artifact refinement:** The remaining work also includes refining figures and tables, strengthening the literature comparison, improving the final discussion section, and packaging the code and scripts into a more reproducible submission flow.
 
+### Finding 6: Bootstrapped iterative refinement does not improve wear-leveling (negative result)
+
+**Motivation.** At low scan ratios on large circuits, full-scan stress spread is narrow
+(e.g. s5378, K=9: spread = 0.008), limiting the penalty term's ability to differentiate
+FFs with similar testability scores. We hypothesised that substituting actual partial-scan
+stress (simulated on the K-FF chain) would reveal greater variance and improve leveling.
+
+**Method.** `selectFFsBootstrapped`:
+1. Bootstrap with pure SCOAP-CO selection.
+2. Simulate the K-FF partial chain → per-FF partial stress.
+3. Build hybrid stress vector: override selected FFs with partial stress; scale non-selected
+   FFs' full-scan stress to match the partial magnitude.
+4. Re-run wear-leveling greedy with hybrid stress.
+5. Repeat until convergence or `max_iters = 5`.
+
+**Key finding: the hypothesis fails.** Partial-scan stress spread is *smaller*, not larger,
+than full-scan stress for the same selected FFs.
+
+| | s5378, K=9 | s953 (low ratio) |
+|---|---|---|
+| Full-scan stress spread (selected FFs) | 0.0079 | 0.003 |
+| Partial-scan stress spread (same FFs) | 0.0019 | similar or smaller |
+
+**Root cause.** Per-FF toggle rate is driven mainly by that FF's own PI↔PPO transitions
+across ATPG patterns, not by neighboring FFs in the chain. Reducing chain length from N to K
+cuts the number of shift cycles each FF experiences, which *compresses* the stress distribution
+rather than expanding it. Additionally, the greedy objective penalizes segment-level
+(sliding-window) stress, while the bootstrap only updates per-FF scores — these two quantities
+are structurally decoupled, so replacing individual stress values cannot inform spatial
+interaction effects.
+
+**Empirical results** (s953 and s5378, λ=0.5, full ratio sweep):
+
+- No improvement at any ratio vs. standard `co_wear_leveling`.
+- At ratios > 25%, bootstrap degrades performance (max_stress up to 10% worse) due to
+  non-convergent oscillation between iterations (iters_used saturating at `max_iters`).
+- At convergence (iters_used = 1), results are identical to standard leveling.
+
+**Conclusion.** Bootstrapped iterative refinement using hybrid stress does not improve
+partial-scan wear-leveling under ATPG-generated test patterns on ISCAS'89 benchmarks.
+The static full-scan stress proxy is already near-optimal for the greedy leveling objective.
+This negative result is informative and will be documented in the paper's discussion section.
+The approach may be effective under functional workload traces where inter-FF toggle
+correlation is structurally higher.
+
 ---
 
 ## Job Partition
