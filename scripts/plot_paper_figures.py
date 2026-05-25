@@ -288,6 +288,56 @@ def fig_casestudy(rows, circuit, lam, outdir):
     fname = os.path.join(outdir, f"F7_casestudy_{circuit}_l{lam}.png")
     save(fig, fname)
 
+# ── F5: Window sensitivity ───────────────────────────────────────────────────
+
+def fig_window_sensitivity(rows, circuit, lam, outdir):
+    """Coverage proxy and max_segment_stress vs ratio for W=8 vs W=16 (co_wear_leveling)."""
+    windows = [8, 16]
+    win_colors = {8: "#e377c2", 16: "#2ca02c"}
+    win_ls = {8: "--", 16: "-"}
+
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+
+    for w in windows:
+        mrs = [r for r in rows
+               if r["circuit"] == circuit
+               and r["mode"] == "co_wear_leveling"
+               and abs(flt(r, "lambda") - lam) < 1e-6
+               and int(r.get("segment_window", 0)) == w]
+        if not mrs:
+            print(f"  skip F5 W={w}: no data for {circuit}")
+            continue
+        mrs = sorted(mrs, key=lambda r: flt(r, "ratio"))
+        ratios = [flt(r, "ratio") * 100 for r in mrs]
+        covs   = [flt(r, "coverage_proxy") for r in mrs]
+        segs   = [flt(r, "max_segment_stress") for r in mrs]
+
+        label = f"W={w}"
+        axes[0].plot(ratios, covs, label=label,
+                     color=win_colors[w], linestyle=win_ls[w],
+                     marker="o", markersize=4, linewidth=1.4)
+        axes[1].plot(ratios, segs, label=label,
+                     color=win_colors[w], linestyle=win_ls[w],
+                     marker="o", markersize=4, linewidth=1.4)
+
+    for ax, ylabel, title in [
+        (axes[0], "Coverage proxy (SCOAP)", "Coverage vs scan ratio"),
+        (axes[1], "Max segment stress",     "Segment stress vs scan ratio"),
+    ]:
+        ax.set_xlabel("Scan ratio (%)", fontsize=10)
+        ax.set_ylabel(ylabel, fontsize=10)
+        ax.set_title(title, fontsize=11)
+        ax.legend(fontsize=9)
+        ax.grid(True, alpha=0.25)
+        ax.set_xlim(0, 105)
+        ax.set_ylim(bottom=0)
+
+    n_ff = FF_COUNTS.get(circuit, "?")
+    fig.suptitle(f"Window sensitivity: {circuit} ({n_ff} FFs) — co_wear_leveling, λ={lam}", fontsize=11)
+    fname = os.path.join(outdir, f"F5_window_{circuit}_l{lam}.png")
+    save(fig, fname)
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
@@ -317,6 +367,11 @@ def main():
     print("\n[F6] Scalability")
     fig_scalability(rows, ratio=0.5, outdir=args.outdir)
     fig_scalability(rows, ratio=0.25, outdir=args.outdir)
+
+    # F5: Window sensitivity
+    print("\n[F5] Window sensitivity")
+    for circuit in ["s953", "s1238", "s5378"]:
+        fig_window_sensitivity(rows, circuit, lam=0.5, outdir=args.outdir)
 
     # F7: Case studies
     print("\n[F7] Case studies")
