@@ -1,255 +1,151 @@
-# ScanForge Paper Spec (Revised)
+# ScanForge Project Specification
 
-## 1. Scope
+## 1. Motivation
 
-**Paper focus:** Partial scan FF selection for stuck-at fault coverage under physical design constraints  
-**Core framing:** In modern designs, partial scan is not an area-saving technique — it is a consequence of physical constraints (timing-critical FFs, routing restrictions) that prevent full-scan insertion. The test engineer's problem is: given a set of FFs that cannot be scanned, how to maximize stuck-at fault coverage through the sequential ATPG problem that results.
+**Working title:** Sequential ATPG for Partial-Scan Circuits Under Timing-Driven Scan Exclusion
 
-This paper studies which FFs, when made scannable, best preserve stuck-at fault coverage — evaluated with **actual fault coverage from FAN_ATPG**, not a proxy.
+Modern industrial testing flows aim to insert scan on as many flip-flops (FFs) as possible. In practice, however, a subset of FFs may remain non-scan because converting them to scan FFs can worsen timing or violate implementation constraints. Once this happens, scan-based ATPG loses full controllability and observability over circuit state, and stuck-at fault coverage may drop accordingly.
 
----
+This project focuses on that practical setting. Rather than studying generic scan selection under area overhead assumptions, the project investigates how much fault coverage is lost when timing-critical FFs are excluded from scan, and how much of that loss can be recovered through a sequential ATPG flow designed for partial-scan circuits.
 
 ## 2. Problem Statement
 
-**Given:** A circuit with N flip-flops. A subset F_fixed ⊆ {FF₁, …, FF_N} cannot be scanned (physical constraint). The remaining FFs may or may not be scanned, subject to a budget K_free.
+The target problem can be stated as follows:
 
-**Goal:** Select K_free FFs from the remaining candidates such that stuck-at fault coverage under sequential ATPG is maximized.
+> Given a sequential circuit in which a timing-critical subset of FFs cannot be converted to scan FFs, construct a partial-scan test model and develop a sequential ATPG flow that recovers as much stuck-at fault coverage as possible.
 
-**Why this is hard:**  
-Non-scan FFs require sequential ATPG: the circuit must be unrolled across multiple time-frames to sensitize and propagate faults through non-scan FFs. This causes memory/time explosion. The choice of which FFs to scan directly affects the sequential depth and cycle structure of the S-graph, which determines ATPG tractability.
+The project assumes:
 
----
+- a gate-level benchmark circuit
+- a stuck-at fault model
+- an open-source technology library with cell-delay information
+- a user-defined scan-exclusion ratio `x%`
 
-## 3. Target Contribution
+To emulate timing-driven scan exclusion, the project will perform timing-criticality ranking using a library-based timing proxy. FFs will be ranked by timing criticality using metrics such as slack or critical-path participation, and the top `x%` FFs will be treated as non-scan FFs. This setup is intended as a practical timing-sensitivity model rather than a claim of full post-layout timing realism.
 
-> We study how partial scan FF selection affects sequential ATPG difficulty and stuck-at fault coverage on ISCAS'89 benchmarks, compare SCOAP-based and S-graph-based selection strategies against actual measured fault coverage, and characterize when each strategy is most beneficial.
+All remaining FFs will be treated as scan-capable FFs and connected into a single scan chain. The main research objective is not scan-chain architecture exploration, but sequential test generation under constrained scan access.
 
-This is a **measurement and characterization paper** more than a pure algorithm paper. The contribution is:
+## 3. Research Questions
 
-1. Empirical comparison of partial scan selection strategies under **actual fault coverage** (not proxy)
-2. S-graph construction and MFVS analysis to characterize sequential ATPG complexity
-3. Comparison: SCOAP CO ranking vs MFVS vs combined strategy
-4. Characterization of which FF properties (SCOAP score, S-graph position, cycle membership) best predict coverage importance
-5. A reproducible evaluation flow on ISCAS'89 using FAN_ATPG
+### RQ1. Coverage loss under timing-driven scan exclusion
 
----
+How much stuck-at fault coverage is lost when the top `x%` timing-critical FFs are left as non-scan FFs?
 
-## 4. Research Questions
+### RQ2. Coverage recovery by sequential ATPG
 
-### RQ1. Does SCOAP CO ranking correlate with actual fault coverage improvement?
-When a FF is selected for scan based on its CO score (high observability cost), does it actually improve fault coverage more than a random or MFVS-selected FF?
+How much of that lost coverage can be recovered by a sequential ATPG flow for the resulting partial-scan circuit?
 
-### RQ2. Does MFVS-based selection (cycle breaking) outperform SCOAP-based selection for coverage?
-The classic Cheng & Agrawal 1990 method prioritizes FFs that break S-graph cycles. Does this give higher fault coverage than SCOAP-ranking on ISCAS'89?
+### RQ3. Sensitivity to sequential search depth
 
-### RQ3. Does a combined MFVS + SCOAP strategy outperform either alone?
-MFVS addresses ATPG tractability; SCOAP addresses observability. A hybrid may address both.
+How do fault coverage, pattern count, and runtime vary as the sequential ATPG depth increases?
 
-### RQ4. How does sequential depth / ATPG abort rate vary with partial scan configuration?
-Which partial scan configurations lead to more ATPG aborts (timeframe limit exceeded)? Can we predict this from S-graph structure without running ATPG?
+## 4. Proposed Method
 
-### RQ5. At what scan ratio does fault coverage stabilize?
-How many FFs need to be scanned before coverage approaches full-scan levels? Does the answer depend on S-graph topology or SCOAP distribution?
+The proposed flow consists of four main stages.
 
----
+### 4.1 Timing-driven non-scan FF identification
 
-## 5. Key Technical Dependency
+The circuit will be analyzed using an open-source timing flow and technology library. Based on a timing-criticality ranking, the top `x%` FFs will be marked as non-scan FFs. The output of this stage is a non-scan mask for each benchmark circuit.
 
-**Critical prerequisite:** The entire evaluation depends on being able to run FAN_ATPG in partial scan mode and obtain actual stuck-at fault coverage.
+### 4.2 Partial-scan modeling
 
-This must be verified **before** any other implementation work:
-1. Can FAN_ATPG accept a partial scan chain definition (specifying which FFs are scan vs non-scan)?
-2. Does it run sequential ATPG for the non-scan FFs?
-3. Does it report per-fault detection status and overall fault coverage?
+After the non-scan set is determined, all remaining FFs will be modeled as scan-capable FFs and connected into one scan chain. This produces the constrained partial-scan architecture that will be used for ATPG and evaluation.
 
-If yes → all RQs are tractable.  
-If FAN_ATPG cannot do this directly → need to investigate workaround (modify .sf file, use external fault simulator, or use FAN_ATPG's existing partial scan output).
+### 4.3 Sequential ATPG strategy
 
----
+The project will study a sequential ATPG flow for partial-scan circuits with the following high-level structure:
 
-## 6. Selection Methods to Implement
+1. solve faults that are manageable through the scanned portion of the circuit first
+2. apply sequential recovery to residual faults that depend on non-scan state
+3. increase sequential search depth in a bounded manner and observe the resulting coverage gain and computational cost
 
-| Method | Description | Status |
-|--------|-------------|--------|
-| `random` | Uniform random selection | ✅ Existing |
-| `co` | Sort by SCOAP CO (high observability first) | ✅ Existing |
-| `combined` | Sort by CC0+CC1+2·CO | ✅ Existing |
-| `mfvs` | Select FFs that break S-graph cycles (MFVS heuristic) | ❌ New |
-| `mfvs_co` | MFVS first, then SCOAP CO for remaining budget | ❌ New |
-| `co_mfvs` | SCOAP CO first, then MFVS for remaining budget | ❌ New |
+At the current stage, the exact sequential ATPG algorithm is not fixed. The project scope is to design and evaluate a bounded sequential recovery strategy suitable for partial-scan circuits under timing-driven scan exclusion.
 
-**Removed** (old stress-based modes — no longer relevant to paper direction):
-- `co_wear`, `combined_wear`, `co_wear_leveling`, `combined_wear_leveling`
+### 4.4 Success criteria
 
-These remain in the codebase but are not evaluated in the paper.
+The project will be considered successful if it can:
 
----
+- quantify the coverage loss introduced by timing-driven scan exclusion
+- demonstrate measurable fault-coverage recovery over the no-recovery partial-scan baseline
+- report the runtime and pattern-count cost associated with deeper sequential search
 
-## 7. New Infrastructure Required
+## 5. Experimental Plan
 
-### 7.1 S-graph Construction
+### Benchmarks
 
-Build the FF dependency graph from the circuit netlist or .sf file:
-- Node: each FF
-- Edge FF_i → FF_j: exists if there is a combinational path from FF_i's Q-output to FF_j's D-input
-- Required for: MFVS computation, sequential depth analysis, cycle detection
+- ISCAS'89 sequential benchmark circuits
 
-### 7.2 MFVS Heuristic
+### Main parameter sweeps
 
-Minimum Feedback Vertex Set is NP-complete in general. Use the standard heuristic:
-- Iteratively remove the FF on the most/longest cycles
-- Continue until the S-graph is acyclic
-- This gives the MFVS candidates; remaining scan budget goes to SCOAP ranking
+1. **non-scan ratio:** `x ∈ {5%, 10%, 15%, 20%}`
+2. **sequential depth limit:** `T ∈ {0, 1, 2, 4, 8}` or a similar bounded sequence
 
-### 7.3 Actual Fault Coverage Integration
+### Baselines
 
-Replace SCOAP coverage proxy with FAN_ATPG-measured stuck-at fault coverage:
-- Input: partial scan configuration (which FFs are scan)
-- Output: # detected faults / # total faults
-- Must handle sequential ATPG for non-scan FF faults
+- full-scan ATPG
+- partial-scan ATPG without sequential recovery
+- partial-scan ATPG with sequential recovery
 
-### 7.4 Sequential Depth Measurement
+### Evaluation metrics
 
-For each partial scan configuration:
-- Compute the sequential depth of the resulting partial-scan circuit (max timeframe depth needed)
-- Track ATPG abort rate (faults aborted due to timeframe limit)
+| Metric | Purpose |
+|---|---|
+| Fault coverage | Primary success metric |
+| Undetected / aborted faults | Remaining ATPG gap |
+| Pattern count | Test-cost proxy |
+| ATPG runtime | Practicality of the method |
+| Sequential depth used | Search difficulty indicator |
+| Scan shift cycles | Secondary test-time metric |
 
----
+The core comparison will measure how coverage changes as the timing-driven non-scan ratio increases, and how much of that loss can be recovered as the sequential ATPG depth increases.
 
-## 8. Evaluation Metrics
+## 6. Expected Contributions
 
-| Metric | Definition | How obtained |
-|--------|------------|--------------|
-| Stuck-at fault coverage | # detected / # total SAF | FAN_ATPG |
-| ATPG abort rate | # aborted faults / # total faults | FAN_ATPG log |
-| Sequential depth | Max timeframe depth in S-graph | S-graph analysis |
-| S-graph cycle count | # cycles in non-scan FF subgraph | S-graph analysis |
-| MFVS size | # FFs needed to break all cycles | MFVS algorithm |
-| SCOAP CO (selected FFs) | Sum/avg CO of selected FFs | .sf file |
-| Selection time | ms | ScanForge timer |
+This project is expected to contribute:
 
-**Removed metrics** (stress-based, no longer relevant):
-- toggle rate, stress variance, segment stress, hotspot count
+1. a timing-driven scan-exclusion setup for evaluating partial-scan testability on sequential benchmark circuits
+2. a sequential ATPG flow aimed at recovering fault coverage under non-scan constraints
+3. an experimental study of the tradeoff among fault coverage, runtime, pattern count, and sequential depth
 
----
+## 7. Implementation Plan
 
-## 9. Baselines
+The implementation work is organized into four tasks:
 
-| Baseline | Source | Status |
-|----------|--------|--------|
-| Random | ScanForge existing | ✅ |
-| SCOAP CO | ScanForge existing | ✅ |
-| SCOAP Combined | ScanForge existing | ✅ |
-| MFVS (Cheng & Agrawal 1990) | New implementation | ❌ |
-| VTS'11 (Alawadhi test cube analysis) | Reference only (requires full-scan cubes) | Optional |
+### Task A. Timing analysis and non-scan mask generation
 
----
+- build the timing-analysis flow
+- rank FFs by timing criticality
+- generate non-scan masks for each benchmark and exclusion ratio
 
-## 10. Experiment Matrix
+### Task B. Partial-scan circuit modeling
 
-### Circuits
-All 12 ISCAS'89 benchmarks: s27, s208, s510, s953, s1196, s1238, s5378, s9234, s15850, s35932, s38417, s38584
+- represent scan-capable FFs and non-scan FFs explicitly
+- construct the one-chain partial-scan model used for ATPG
 
-### Scan ratios
-10%, 25%, 50%, 75%, 100%
-
-### Modes
-`random`, `co`, `combined`, `mfvs`, `mfvs_co`
-
-### No λ sweep needed
-λ is a stress-tradeoff hyperparameter from the old direction; not relevant here.
-
----
-
-## 11. Paper Structure
-
-### 1. Introduction
-- Modern partial scan is driven by physical constraints, not area saving
-- Non-scan FFs create sequential ATPG difficulty (timeframe expansion)
-- The FF selection problem: which FFs to scan to maximize coverage under budget
-- Contributions
-
-### 2. Background
-- Sequential ATPG and timeframe expansion
-- S-graph and sequential depth
-- SCOAP metrics and their relationship to coverage
-- Prior partial scan selection work (MFVS, ETD, SCOAP-based)
-
-### 3. Method
-- S-graph construction
-- MFVS heuristic
-- Selection modes
-- Actual fault coverage evaluation flow
-
-### 4. Experimental Results
-- RQ1–RQ5 answers
-- Circuit-by-circuit comparison
-- Coverage vs scan ratio curves
-
-### 5. Discussion
-- When does SCOAP predict coverage well?
-- When does MFVS outperform SCOAP?
-- ATPG abort rate vs S-graph structure
-- Limitations
-
-### 6. Conclusion
-
----
-
-## 12. Literature Review Targets
-
-### Bucket A. Partial scan FF selection (coverage-focused)
-- Cheng & Agrawal, IEEE TC 1990 — MFVS foundational paper
-- Cheng & Agrawal, JETA 1993 — empirical testability (ETD)
-- Agrawal et al., JETA 1993 — SCOAP-based partial scan analysis
-- Hsiao, FTCS 1997 — beyond cycle cutting (state reachability)
-- Alawadhi & Sinanoglu, VTS 2011 — most recent classical method
-
-### Bucket B. Sequential ATPG complexity
-- El-Maleh et al., IEEE TCAD 1996 — density of encoding as complexity driver
-- Bounded ATPG / timeframe limits — standard industrial practice
-- SAT-based sequential ATPG — modern approach
-
-### Bucket C. SCOAP and testability measures
-- Goldstein, DAC 1979 — original SCOAP definition
-- Validation of SCOAP as coverage proxy
-
----
-
-## 13. Risks
-
-| Risk | Likelihood | Mitigation |
-|------|-----------|------------|
-| FAN_ATPG cannot do partial scan | Medium | Check first; if blocked, use alternative fault simulator or FAN_ATPG workaround |
-| MFVS not extractable from .sf file | Medium | S-graph may need netlist-level info; check if .sf has enough connectivity |
-| Sequential ATPG too slow on large circuits | High | Limit evaluation to small/medium circuits (s27–s5378); use timeout |
-| Deadline pressure (June 16/17) | High | Prioritize: coverage measurement first, S-graph second, MFVS third |
-
----
-
-## 14. Immediate Next Actions
-
-1. **Verify FAN_ATPG partial scan mode** — can it accept a partial scan config and return actual coverage?
-2. **Check .sf file for S-graph info** — does it have FF-to-FF connectivity, or do we need the netlist?
-3. Replace SCOAP coverage proxy with actual coverage in existing pipeline
-4. Implement S-graph construction
-5. Implement MFVS heuristic
-6. Run comparison experiment: random vs co vs mfvs on small circuits
-7. Update progress_report.md with new direction
-
----
-
-## 15. What to Keep from Old Implementation
-
-| Component | Keep? | Note |
-|-----------|-------|------|
-| .sf parser | ✅ | SCOAP data still needed |
-| SCOAP CO/combined selection | ✅ | Now a baseline, not the main method |
-| Random selection | ✅ | Still baseline |
-| Scan simulation (toggle counting) | ❌ | Not needed for new direction |
-| Stress metrics | ❌ | Not relevant |
-| Segment stress / hotspot | ❌ | Not relevant |
-| co_wear / co_wear_leveling | ❌ | Not relevant |
-| Sweep mode | ✅ | Reuse infrastructure, change metrics |
-| CSV export | ✅ | Reuse |
-| FAN_ATPG integration | ✅ | Extend to get actual fault coverage |
+### Task C. Sequential ATPG design
+
+- define the bounded sequential recovery flow
+- integrate depth control and result collection
+- support coverage-oriented comparison against the no-recovery baseline
+
+### Task D. Evaluation and reporting
+
+- run experiments across benchmark circuits and exclusion ratios
+- summarize coverage, runtime, and pattern-count trends
+- produce final tables, plots, and discussion
+
+## 8. Scope
+
+The main scope of the project is limited to:
+
+- timing-driven scan exclusion
+- single-chain partial-scan modeling
+- stuck-at fault coverage recovery through sequential ATPG
+
+The following items are outside the main scope:
+
+- random scan-exclusion baselines
+- multi-chain architecture comparison
+- scan-power optimization
+- diagnosis-oriented scan placement
+- test compression and physical scan routing
