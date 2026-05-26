@@ -1,622 +1,151 @@
-# ScanForge Paper Spec
+# ScanForge Project Specification
 
-## 1. Scope
+## 1. Motivation
 
-This document defines the target scope for turning **ScanForge** into a publishable paper project.
+**Working title:** Sequential ATPG for Partial-Scan Circuits Under Timing-Driven Scan Exclusion
 
-**Paper focus:** partial scan chain selection  
-**Primary angle:** stress-aware partial scan selection with testability preservation  
+Modern industrial testing flows aim to insert scan on as many flip-flops (FFs) as possible. In practice, however, a subset of FFs may remain non-scan because converting them to scan FFs can worsen timing or violate implementation constraints. Once this happens, scan-based ATPG loses full controllability and observability over circuit state, and stuck-at fault coverage may drop accordingly.
 
-The paper should not be written as a general "DFT toolbox" paper. It should be written as a focused method paper on **partial scan selection under testability-stress tradeoffs**.
+This project focuses on that practical setting. Rather than studying generic scan selection under area overhead assumptions, the project investigates how much fault coverage is lost when timing-critical FFs are excluded from scan, and how much of that loss can be recovered through a sequential ATPG flow designed for partial-scan circuits.
 
----
+## 2. Problem Statement
 
-## 2. Target Paper Claim
+The target problem can be stated as follows:
 
-**Core claim**
+> Given a sequential circuit in which a timing-critical subset of FFs cannot be converted to scan FFs, construct a partial-scan test model and develop a sequential ATPG flow that recovers as much stuck-at fault coverage as possible.
 
-> A stress-aware partial scan selection framework can preserve testability better than naive low-stress selection, while reducing scan-shift stress or stress imbalance better than standard SCOAP-only selection.
+The project assumes:
 
-**Important framing**
+- a gate-level benchmark circuit
+- a stuck-at fault model
+- an open-source technology library with cell-delay information
+- a user-defined scan-exclusion ratio `x%`
 
-- Exact fault coverage is preferred when available.
-- If exact fault coverage is not yet available, the paper must explicitly state that the current method uses a **SCOAP-derived coverage proxy**.
-- Do **not** oversell the proxy as true fault coverage.
+To emulate timing-driven scan exclusion, the project will perform timing-criticality ranking using a library-based timing proxy. FFs will be ranked by timing criticality using metrics such as slack or critical-path participation, and the top `x%` FFs will be treated as non-scan FFs. This setup is intended as a practical timing-sensitivity model rather than a claim of full post-layout timing realism.
 
----
+All remaining FFs will be treated as scan-capable FFs and connected into a single scan chain. The main research objective is not scan-chain architecture exploration, but sequential test generation under constrained scan access.
 
-## 3. Why Stress Reduction Matters
+## 3. Research Questions
 
-Partial scan selection should not be evaluated only by testability preservation. During scan shifting, some flip-flops or local chain regions can experience disproportionately high switching activity. Even when overall testability remains good, concentrated scan activity can create undesirable operating conditions.
+### RQ1. Coverage loss under timing-driven scan exclusion
 
-### Why this matters
+How much stuck-at fault coverage is lost when the top `x%` timing-critical FFs are left as non-scan FFs?
 
-1. High scan-shift activity increases unnecessary switching burden during test.
-2. Uneven activity creates local hotspots, not just global average cost.
-3. Repeated concentration of scan activity on the same cells or segments may increase long-term reliability risk.
-4. Therefore, a useful partial-scan method should preserve testability **while also reducing or redistributing stress**.
+### RQ2. Coverage recovery by sequential ATPG
 
-### Terminology rule
+How much of that lost coverage can be recovered by a sequential ATPG flow for the resulting partial-scan circuit?
 
-- **Stress** = directly measured from scan-shift simulation
-- **Wear** = long-term consequence inferred from stress history
+### RQ3. Sensitivity to sequential search depth
 
-Accordingly, the preferred framing is:
+How do fault coverage, pattern count, and runtime vary as the sequential ATPG depth increases?
 
-> We optimize stress-related metrics and interpret them as proxies for wear risk.
+## 4. Proposed Method
 
-ScanForge reduces **stress**, **stress imbalance**, or **hotspot tendency** during scan shifting. It should not claim direct measurement of physical aging or lifetime unless additional reliability modeling is added.
+The proposed flow consists of four main stages.
 
----
+### 4.1 Timing-driven non-scan FF identification
 
-## 4. Research Questions
+The circuit will be analyzed using an open-source timing flow and technology library. Based on a timing-criticality ranking, the top `x%` FFs will be marked as non-scan FFs. The output of this stage is a non-scan mask for each benchmark circuit.
 
-### RQ1. Testability preservation
-How well do different partial-scan selection strategies preserve testability as scan ratio decreases?
+### 4.2 Partial-scan modeling
 
-### RQ2. Stress reduction
-How much scan-shift stress, stress variance, and segment hotspot behavior can be reduced by stress-aware selection?
+After the non-scan set is determined, all remaining FFs will be modeled as scan-capable FFs and connected into one scan chain. This produces the constrained partial-scan architecture that will be used for ATPG and evaluation.
 
-### RQ3. Global-sort vs greedy segment-aware selection
-When does segment-aware greedy stress-leveling outperform simple per-FF stress-aware ranking, and when does it not?
+### 4.3 Sequential ATPG strategy
 
-### RQ4. Robustness to hyperparameters
-How sensitive are the conclusions to `lambda`, scan ratio, and segment window size?
+The project will study a sequential ATPG flow for partial-scan circuits with the following high-level structure:
 
-### RQ5. Scalability
-How does runtime scale with flip-flop count, pattern count, and selection mode?
+1. solve faults that are manageable through the scanned portion of the circuit first
+2. apply sequential recovery to residual faults that depend on non-scan state
+3. increase sequential search depth in a bounded manner and observe the resulting coverage gain and computational cost
 
----
+At the current stage, the exact sequential ATPG algorithm is not fixed. The project scope is to design and evaluate a bounded sequential recovery strategy suitable for partial-scan circuits under timing-driven scan exclusion.
 
-## 5. Proposed Contributions
+### 4.4 Success criteria
 
-The paper should claim only contributions that are actually supported by implementation and experiments.
+The project will be considered successful if it can:
 
-### Candidate contribution list
+- quantify the coverage loss introduced by timing-driven scan exclusion
+- demonstrate measurable fault-coverage recovery over the no-recovery partial-scan baseline
+- report the runtime and pattern-count cost associated with deeper sequential search
 
-1. A standalone partial-scan analysis framework built on top of FAN_ATPG-exported scan data.
-2. A unified selection framework covering:
-   - SCOAP-CO
-   - SCOAP-Combined
-   - Random baseline
-   - Per-FF stress-aware ranking
-   - Segment-aware greedy stress-leveling
-3. A scan-shift stress model with:
-   - per-FF stress metrics
-   - segment-level stress profiling
-   - hotspot counting
-4. A benchmark-driven comparison across ISCAS'89 circuits.
-5. A reproducible evaluation flow using command-line scripts and CSV outputs.
-
-### Contributions that need stronger evidence before claiming in the paper
-
-1. "Improves fault coverage" if only proxy results are available.
-2. "Reduces power" unless power is explicitly defined and validated beyond switching/stress metrics.
-3. "Outperforms prior art" before implementing or reproducing meaningful baselines from literature.
-
----
-
-## 6. Current Implemented Feature Inventory
-
-This section is the implementation-side source of truth for the paper.
-
-| Area | Current status | Notes for paper |
-|---|---|---|
-| `.sf` parser | Implemented | Reads FF names, SCOAP metrics, PPI/PPO patterns |
-| Full-scan simulation | Implemented | Produces toggles and switching activity |
-| Per-FF stress metrics | Implemented | CSV export supported |
-| Segment stress profiling | Implemented | Sliding-window metrics and hotspot count |
-| Partial scan selection: `co` | Implemented | Main classical baseline |
-| Partial scan selection: `combined` | Implemented | Alternative SCOAP-based baseline |
-| Partial scan selection: `random` | Implemented | Required baseline |
-| Stress-aware ranking: `co_wear`, `combined_wear` | Implemented | Global sort with stress penalty |
-| Stress-leveling: `co_wear_leveling`, `combined_wear_leveling` | Implemented | Greedy segment-aware selection |
-| Sweep mode | Implemented | Ratio sweeps and CSV output |
-| Coverage proxy | Implemented | SCOAP-derived proxy, not exact fault coverage |
-| Pareto tags in sweep CSV | Implemented | Useful for paper figures |
-| Exact fault coverage for partial scan | Not implemented | Important publication gap |
-| Runtime study tables | Not yet documented | Needed for paper |
-| Literature-backed baseline reproduction | Not yet done | Needed for stronger submission |
-
----
-
-## 7. Paper Scope Boundaries
-
-### In scope
-
-- Partial scan chain selection
-- Testability-driven FF ranking
-- Stress-aware scan selection
-- Segment-aware stress-leveling
-- Tradeoff analysis among coverage proxy, toggles, stress, and hotspots
-- Benchmark evaluation on ISCAS'89 circuits
-
-### Explicitly out of scope
-
-- Scan-chain diagnosis
-- Fault localization
-- Defect diagnosis metrics
-- Multi-chain scan architecture
-- Chain reordering optimization
-- Physical-layout-aware routing cost
-- Silicon measurement
-
-### Optional stretch scope
-
-- Exact partial-scan fault coverage evaluation
-- ATPG regeneration after partial-scan selection
-- Additional public benchmarks beyond ISCAS'89
-
----
-
-## 8. Method Section Structure
-
-The method section of the paper should be organized as follows.
-
-### 8.1 Problem definition
-
-Define:
-- circuit with `N` flip-flops
-- selected partial-scan set of size `K`
-- scan ratio `r = K / N`
-- objective: preserve testability while reducing stress-related cost
-
-### 8.2 Data extraction pipeline
-
-Describe:
-- FAN_ATPG export
-- SCOAP computation
-- `.sf` file contents
-- pattern information used by ScanForge
-
-### 8.3 Scan-shift simulation
-
-Describe:
-- shift-in process
-- capture
-- toggle counting
-- switching activity formula
-
-### 8.4 Stress metrics
-
-Define exactly:
-- per-FF toggle-based stress
-- duty/run-length terms
-- composite `stress_score`
-- segment average stress
-- segment variance
-- hotspot count
-
-### 8.5 Selection methods
-
-Document each mode formally:
-
-1. `co`
-2. `combined`
-3. `random`
-4. `co_wear`
-5. `combined_wear`
-6. `co_wear_leveling`
-7. `combined_wear_leveling`
-
-### 8.6 Coverage metric
-
-Two cases:
-
-- **Current paper-safe version:** define this as a **coverage proxy**
-- **Preferred upgraded version:** replace or complement with exact fault coverage
-
-### 8.7 Complexity discussion
-
-Add time complexity for:
-- global-sort methods
-- greedy stress-leveling
-- sweep execution
-
----
-
-## 9. Equations and Definitions Needed
-
-The paper should include explicit equations for:
-
-1. `combined_score = CC0 + CC1 + 2 * CO`
-2. normalized stress-aware score
-3. stress-leveling greedy score
-4. switching activity
-5. stress imbalance
-6. segment stress summary
-7. coverage proxy
-8. tradeoff score, if used in paper
-
-If the tradeoff score is heuristic only, label it clearly as a ranking aid rather than a scientific metric.
-
----
-
-## 10. Comparison Matrix
-
-The paper needs a precise comparison plan.
-
-### 10.1 Baselines to include
-
-| Baseline | Include? | Why |
-|---|---|---|
-| Random | Yes | Minimum credible baseline |
-| SCOAP-CO | Yes | Classical and intuitive reference |
-| SCOAP-Combined | Yes | Stronger testability baseline |
-| Per-FF stress-aware ranking | Yes | Direct comparison to your main idea |
-| Segment-aware stress-leveling | Yes | Main proposed method |
-
-### 10.2 Comparisons to report
-
-For each benchmark and scan ratio:
-
-1. Coverage proxy or exact fault coverage
-2. Coverage loss
-3. Total toggles
-4. Switching activity
-5. Max per-FF stress
-6. Stress variance
-7. Stress imbalance
-8. Max segment stress
-9. Segment variance
-10. Hotspot count
-11. Runtime
-
-### 10.3 Ablations to include
-
-| Ablation | Purpose |
-|---|---|
-| `lambda = 0` | Confirm reduction to pure testability ranking |
-| multiple `lambda` values | Show tradeoff sensitivity |
-| multiple segment windows | Show locality sensitivity |
-| `co` vs `combined` | Show effect of controllability terms |
-| stress-aware vs stress-leveling | Separate global-sort and greedy effects |
-
----
-
-## 11. Experiment Matrix
+## 5. Experimental Plan
 
 ### Benchmarks
 
-Primary benchmark pool:
+- ISCAS'89 sequential benchmark circuits
 
-- s27
-- s208
-- s510
-- s953
-- s1196
-- s1238
-- s5378
-- s9234
-- s15850
-- s35932
-- s38417
-- s38584
+### Main parameter sweeps
 
-### Ratios
+1. **non-scan ratio:** `x ∈ {5%, 10%, 15%, 20%}`
+2. **sequential depth limit:** `T ∈ {0, 1, 2, 4, 8}` or a similar bounded sequence
 
-Mandatory:
-- 25%
-- 50%
-- 75%
-- 100%
+### Baselines
 
-Preferred for final plots:
-- 5% step fine sweep for selected representative circuits
+- full-scan ATPG
+- partial-scan ATPG without sequential recovery
+- partial-scan ATPG with sequential recovery
 
-### Modes
+### Evaluation metrics
 
-Mandatory:
-- `random`
-- `co`
-- `combined`
-- `co_wear`
-- `combined_wear`
-- `co_wear_leveling`
-- `combined_wear_leveling`
-
-### Hyperparameters
-
-Mandatory:
-- `lambda ∈ {0, 0.25, 0.5, 0.75, 1.0}`
-- `segment_window ∈ {8, 16}`
-
-Stretch:
-- larger window study
-
-### Representative circuit subsets for paper figures
-
-At minimum choose:
-
-- **small:** s27 or s208
-- **medium:** s953 or s1238
-- **large:** s5378 or s9234
-- **very large:** s15850 / s35932 / s38417 / s38584
-
----
-
-## 12. Tables Required in the Paper
-
-### Table T1. Benchmark summary
-- circuit
-- FF count
-- pattern count
-- full-scan shift cycles
-
-### Table T2. Method summary
-- mode
-- formula
-- optimization target
-- computational style (sort vs greedy)
-
-### Table T3. Main benchmark results
-- per circuit, per ratio, best mode(s)
-- include coverage and stress metrics
-
-### Table T4. Hyperparameter sensitivity
-- selected circuits
-- lambda / window effect
-
-### Table T5. Runtime / scalability
-- circuit
-- mode
-- runtime
-
-### Table T6. Literature comparison table
-- prior work
-- objective
-- metrics
-- benchmark type
-- whether open-source / reproducible
-- difference from ScanForge
-
----
-
-## 13. Figures Required in the Paper
-
-### Figure F1. Overall framework
-FAN_ATPG export -> `.sf` -> ScanForge selection -> simulation -> metrics
-
-### Figure F2. Metric illustration
-Example of per-FF and segment stress on a small chain
-
-### Figure F3. Coverage-stress Pareto plot
-Representative circuits, different modes on same plot
-
-### Figure F4. Lambda sensitivity
-Coverage proxy vs stress metric across `lambda`
-
-### Figure F5. Window sensitivity
-Segment-aware method under different segment windows
-
-### Figure F6. Scalability trend
-Runtime vs FF count
-
-### Figure F7. Case study
-One benchmark where stress-aware ranking helps, and one where stress-leveling changes the frontier
-
----
-
-## 14. Literature Review Plan
-
-The literature review should be structured by **problem family**, not by random paper order.
-
-### Bucket A. Classical partial scan selection
-
-Need papers on:
-- SCOAP-driven partial scan
-- testability-based scan FF selection
-- partial scan under area/test cost constraints
-
-Questions to answer:
-- What metrics are traditionally used?
-- Do they optimize coverage only, or also test time / overhead?
-- What baselines are standard?
-
-### Bucket B. Power-aware / toggle-aware scan
-
-Need papers on:
-- scan power reduction
-- switching activity reduction during scan shift
-- low-power DFT / low-power scan methodologies
-
-Questions to answer:
-- Are they minimizing peak power, average power, or toggles?
-- Do they optimize chain ordering, pattern ordering, X-filling, or scan-cell selection?
-
-### Bucket C. Stress-aware / reliability-aware DFT
-
-Need papers on:
-- aging-aware scan
-- reliability-aware test
-- stress balancing or hotspot mitigation during scan
-
-Questions to answer:
-- Is wear modeled at per-cell or segment level?
-- Is there prior work on balancing stress spatially along a chain?
-- What is genuinely novel in your segment-aware stress-leveling method?
-
-### Bucket D. Multi-objective optimization in test
-
-Need papers on:
-- Pareto optimization in DFT
-- multi-objective scan design
-- heuristics balancing coverage and cost
-
-Questions to answer:
-- How do prior works present tradeoffs?
-- What evaluation style is accepted by the venue?
-
-### Deliverable from literature review
-
-Create a comparison table with:
-
-| Paper | Objective | Method | Metrics | Benchmarks | Limitation | Difference vs ours |
-|---|---|---|---|---|---|---|
-
----
-
-## 15. Claims That Must Be Supported by Evidence
-
-If the paper says one of the following, the experiments must support it directly.
-
-| Claim | Required evidence |
+| Metric | Purpose |
 |---|---|
-| preserves testability | coverage proxy or exact coverage table |
-| reduces stress | max stress / variance / hotspot reduction |
-| balances wear spatially | segment metrics and case study |
-| scales to large circuits | runtime table on large ISCAS'89 |
-| robust to parameters | lambda/window ablation |
-| better than conventional methods | direct baseline comparison |
+| Fault coverage | Primary success metric |
+| Undetected / aborted faults | Remaining ATPG gap |
+| Pattern count | Test-cost proxy |
+| ATPG runtime | Practicality of the method |
+| Sequential depth used | Search difficulty indicator |
+| Scan shift cycles | Secondary test-time metric |
 
----
+The core comparison will measure how coverage changes as the timing-driven non-scan ratio increases, and how much of that loss can be recovered as the sequential ATPG depth increases.
 
-## 16. Current Gaps Before Writing the Paper
+## 6. Expected Contributions
 
-### High priority
+This project is expected to contribute:
 
-1. Cleanly define the paper contribution in one sentence.
-2. Decide whether the paper uses:
-   - only coverage proxy, or
-   - coverage proxy + exact fault coverage validation.
-3. Run a complete experiment matrix for all required modes.
-4. Add runtime logging.
-5. Create publication-quality figures from CSV outputs.
-6. Perform literature review and build the comparison table.
+1. a timing-driven scan-exclusion setup for evaluating partial-scan testability on sequential benchmark circuits
+2. a sequential ATPG flow aimed at recovering fault coverage under non-scan constraints
+3. an experimental study of the tradeoff among fault coverage, runtime, pattern count, and sequential depth
 
-### Medium priority
+## 7. Implementation Plan
 
-1. Refine stress metric explanation.
-2. Verify that README/docs match the implementation exactly.
-3. Add a reproducibility section and exact command lines.
-4. Clarify where heuristic scores are used.
+The implementation work is organized into four tasks:
 
-### Low priority
+### Task A. Timing analysis and non-scan mask generation
 
-1. Expand to more benchmark families.
-2. Add extra sensitivity studies.
-3. Package artifact for public release.
+- build the timing-analysis flow
+- rank FFs by timing criticality
+- generate non-scan masks for each benchmark and exclusion ratio
 
----
+### Task B. Partial-scan circuit modeling
 
-## 17. Risks and Threats to Validity
+- represent scan-capable FFs and non-scan FFs explicitly
+- construct the one-chain partial-scan model used for ATPG
 
-The paper should include a limitations / threats section.
+### Task C. Sequential ATPG design
 
-### Construct validity
+- define the bounded sequential recovery flow
+- integrate depth control and result collection
+- support coverage-oriented comparison against the no-recovery baseline
 
-- Coverage may currently be estimated by a SCOAP proxy rather than exact stuck-at fault coverage.
-- Stress score is a model-derived metric, not direct silicon degradation.
+### Task D. Evaluation and reporting
 
-### Internal validity
+- run experiments across benchmark circuits and exclusion ratios
+- summarize coverage, runtime, and pattern-count trends
+- produce final tables, plots, and discussion
 
-- Different modes may optimize different objectives; a method should not be judged only on metrics it was not designed to optimize.
-- Segment-aware greedy selection uses a static full-scan stress profile as input.
+## 8. Scope
 
-### External validity
+The main scope of the project is limited to:
 
-- Results are currently limited to ISCAS'89 benchmark circuits.
-- Real industrial scan architectures may include multiple chains and additional physical constraints.
+- timing-driven scan exclusion
+- single-chain partial-scan modeling
+- stuck-at fault coverage recovery through sequential ATPG
 
----
+The following items are outside the main scope:
 
-## 18. Paper Outline
-
-### 1. Introduction
-- problem importance
-- why partial scan still matters
-- why stress-aware selection matters
-- contributions
-
-### 2. Related Work
-- partial scan
-- low-power scan
-- reliability / stress-aware DFT
-- gap statement
-
-### 3. Preliminaries
-- SCOAP
-- scan-shift activity
-- stress metrics
-
-### 4. Proposed Framework
-- data flow
-- selection methods
-- stress-aware and stress-leveling formulations
-
-### 5. Experimental Setup
-- benchmarks
-- ratios
-- hyperparameters
-- baselines
-- metrics
-
-### 6. Results and Discussion
-- overall comparison
-- ablations
-- case studies
-- runtime
-
-### 7. Threats to Validity
-
-### 8. Conclusion
-
----
-
-## 19. Publication Deliverables Checklist
-
-### Writing deliverables
-
-- [ ] title options
-- [ ] abstract
-- [ ] introduction
-- [ ] related work
-- [ ] method section
-- [ ] experiment section
-- [ ] results discussion
-- [ ] threats to validity
-- [ ] conclusion
-
-### Experimental deliverables
-
-- [ ] full benchmark result CSVs
-- [ ] fine-sweep CSVs for representative circuits
-- [ ] runtime measurements
-- [ ] final tables
-- [ ] final figures
-
-### Literature deliverables
-
-- [ ] paper collection
-- [ ] comparison table
-- [ ] citation database in IEEE format
-
-### Artifact deliverables
-
-- [ ] reproducibility commands
-- [ ] script inventory
-- [ ] versioned result files
-- [ ] release checklist
-
----
-
-## 20. Immediate Next Actions
-
-1. Finalize the exact one-sentence contribution claim.
-2. Decide whether exact fault coverage will be added before submission.
-3. Complete literature review table for partial scan / low-power scan / stress-aware DFT.
-4. Run the full mode × ratio × lambda × window experiment matrix.
-5. Generate summary CSVs and plots for representative circuits.
-6. Build the paper outline from this spec.
-
----
-
-## 21. Spec Maintenance Rule
-
-When the implementation or paper direction changes, update this file first so it remains the source of truth for:
-
-- paper scope
-- feature inventory
-- experiment requirements
-- literature review targets
-- publication readiness
+- random scan-exclusion baselines
+- multi-chain architecture comparison
+- scan-power optimization
+- diagnosis-oriented scan placement
+- test compression and physical scan routing

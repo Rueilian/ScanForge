@@ -1,3 +1,4 @@
 *.o
 scanforge
 *.sf.tmp
+results/experiments/

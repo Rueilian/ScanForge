@@ -6,6 +6,7 @@
 #include "segment_stress.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <fstream>
 #include <iomanip>
@@ -102,6 +103,8 @@ struct SweepRowRaw {
     double max_segment_stress = 0.0;
     double segment_variance = 0.0;
     int    hotspot_count = 0;
+    double selection_time_ms = 0.0;
+    double simulation_time_ms = 0.0;
 };
 
 bool paretoMaxCovMinStress(const std::vector<SweepRowRaw> &rows, std::size_t i)
@@ -296,46 +299,86 @@ std::vector<int> selectFFsWearLeveling(const ScanData &data, int k, bool useCo,
     for (double s : stressByFF)
         stressMax = std::max(stressMax, s);
 
+    // Candidate pruning: only consider top min(2k, N) FFs by testability score.
+    // Low-testability FFs cannot win the greedy objective regardless of stress penalty
+    // (penalty in [0,1], so nt[f] dominates for large nt gaps).
+    int M = std::min(2 * k, N);
+    std::vector<int> candidates(N);
+    std::iota(candidates.begin(), candidates.end(), 0);
+    std::partial_sort(candidates.begin(), candidates.begin() + M, candidates.end(),
+                      [&](int a, int b){ return nt[a] > nt[b]; });
+    candidates.resize(M);
+
     std::vector<char> chosen(N, 0);
-    std::vector<int> selected;
+    // selected and chainStress kept in sync, both sorted by FF index.
+    // This allows O(log K) insertion-point lookup and O(K) inline sliding-window
+    // max-segment computation without allocating per-candidate temp vectors.
+    std::vector<int>    selected;
+    std::vector<double> chainStress;
     selected.reserve(k);
+    chainStress.reserve(k);
+
+    int W = std::max(1, segment_window);
 
     for (int step = 0; step < k; ++step) {
         int bestF = -1;
         double bestScore = -1e300;
         double bestNt = -1e300;
 
-        for (int f = 0; f < N; ++f) {
+        int chainLen = (int)selected.size();
+
+        for (int f : candidates) {
             if (chosen[f]) continue;
 
-            std::vector<int> temp = selected;
-            temp.push_back(f);
-            std::sort(temp.begin(), temp.end());
+            // Insertion position in sorted chain
+            int pos = (int)(std::lower_bound(selected.begin(), selected.end(), f)
+                            - selected.begin());
 
-            std::vector<FFStress> perChain((int)temp.size());
-            for (int p = 0; p < (int)temp.size(); ++p)
-                perChain[p].stress_score = stressByFF[temp[p]];
+            // Augmented chain length
+            int augLen = chainLen + 1;
+            int wEff   = std::min(W, augLen);
 
-            SegmentSummary seg = summarizeSegmentStress(perChain, segment_window);
+            // Inline sliding-window max-avg over augmented chain without allocation.
+            // augStress(i): maps index i in new chain to stress value.
+            // Uses the already-sorted chainStress[] with a virtual insert at pos.
+            auto augStress = [&](int i) -> double {
+                if (i < pos)  return chainStress[i];
+                if (i == pos) return stressByFF[f];
+                return chainStress[i - 1];
+            };
+
+            double windowSum = 0.0;
+            for (int i = 0; i < wEff; ++i) windowSum += augStress(i);
+            double maxAvg = windowSum / wEff;
+            for (int start = 1; start + wEff <= augLen; ++start) {
+                windowSum -= augStress(start - 1);
+                windowSum += augStress(start + wEff - 1);
+                double avg = windowSum / wEff;
+                if (avg > maxAvg) maxAvg = avg;
+            }
+
             // Scale-free penalty vs min–max testability: divide by max full-scan stress.
-            double penalty = seg.max_segment_stress / (stressMax + kEps);
-            double score = nt[f] - lambda * penalty;
+            double penalty = maxAvg / (stressMax + kEps);
+            double score   = nt[f] - lambda * penalty;
 
             if (score > bestScore + kEps
                 || (std::abs(score - bestScore) <= kEps && nt[f] > bestNt + kEps)
                 || (std::abs(score - bestScore) <= kEps && std::abs(nt[f] - bestNt) <= kEps
                     && (bestF < 0 || f < bestF))) {
                 bestScore = score;
-                bestNt = nt[f];
-                bestF = f;
+                bestNt    = nt[f];
+                bestF     = f;
             }
         }
         if (bestF < 0) break;
+
+        int pos = (int)(std::lower_bound(selected.begin(), selected.end(), bestF)
+                        - selected.begin());
+        selected.insert(selected.begin() + pos, bestF);
+        chainStress.insert(chainStress.begin() + pos, stressByFF[bestF]);
         chosen[bestF] = 1;
-        selected.push_back(bestF);
     }
 
-    std::sort(selected.begin(), selected.end());
     return selected;
 }
 
@@ -372,9 +415,12 @@ void sweepPartialScan(const ScanData &data,
              mode == SelectionMode::SCOAP_COMBINED_WEAR ||
              mode == SelectionMode::SCOAP_CO_WEAR_LEVELING ||
              mode == SelectionMode::SCOAP_COMBINED_WEAR_LEVELING) ? &fullStress : nullptr;
+        auto t0 = std::chrono::steady_clock::now();
         auto chain = selectFFs(data, k, mode, cfg.random_seed, stressPtr, cfg.wear_lambda,
                               cfg.segment_window);
+        auto t1 = std::chrono::steady_clock::now();
         auto res   = simulate(data, chain);
+        auto t2 = std::chrono::steady_clock::now();
         if (cfg.segment_window > 0)
             applySegmentProfile(res, cfg.segment_window);
 
@@ -390,6 +436,8 @@ void sweepPartialScan(const ScanData &data,
         row.max_segment_stress = res.max_segment_stress;
         row.segment_variance     = res.segment_variance;
         row.hotspot_count        = res.hotspot_count;
+        row.selection_time_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+        row.simulation_time_ms = std::chrono::duration<double, std::milli>(t2 - t1).count();
         rawRows.push_back(row);
     }
 
@@ -424,7 +472,8 @@ void sweepPartialScan(const ScanData &data,
                        "max_stress,stress_variance,stress_imbalance,"
                        "max_segment_stress,segment_variance,hotspot_count,"
                        "tradeoff_score,"
-                       "pareto_cov_maxstress,pareto_cov_activity\n";
+                       "pareto_cov_maxstress,pareto_cov_activity,"
+                       "selection_time_ms,simulation_time_ms\n";
         }
     }
 
@@ -502,7 +551,10 @@ void sweepPartialScan(const ScanData &data,
                     << row.segment_variance << ','
                     << row.hotspot_count << ','
                     << trade << ','
-                    << p_ms << ',' << p_ac << '\n';
+                    << p_ms << ',' << p_ac << ','
+                    << std::setprecision(3)
+                    << row.selection_time_ms << ','
+                    << row.simulation_time_ms << '\n';
         }
 
         if (showHuman) {
