@@ -27,8 +27,8 @@ This paper presents **ScanForge**, a partial scan selection framework that joint
 **Contributions:**
 1. A unified partial scan selection framework with seven modes covering SCOAP-only, stress-penalized, and segment-aware greedy strategies.
 2. A two-level stress model comprising per-FF toggle rate and sliding-window segment stress with hotspot detection.
-3. Empirical evidence that segment-aware greedy leveling achieves up to **20.8% reduction in max per-FF stress with zero coverage loss** on circuits with sufficient stress spread, while global stress-penalized ranking degrades coverage with no reliable stress benefit.
-4. An O(M·K²) greedy implementation (W-fold improvement over naïve O(M·K²·W)) that runs in under 10 ms for circuits up to 534 FFs.
+3. Empirical evidence that segment-aware greedy leveling achieves up to **20.8% reduction in max per-FF stress with zero SCOAP proxy coverage loss** on circuits with sufficient stress spread, while global stress-penalized ranking degrades proxy coverage with no reliable stress benefit.
+4. An O(N·K²) greedy implementation (W-fold improvement over naïve O(N·K²·W)) that runs in under 10 ms for circuits up to 534 FFs.
 5. A characterization of when stress-leveling benefits are bounded by intrinsic circuit stress spread, providing a practical guideline for applying the method.
 
 The remainder of this report is organized as follows. Section 2 describes the proposed technique. Section 3 presents the method formally. Section 4 reports experimental results. Section 5 discusses implications and limitations. Section 6 concludes.
@@ -43,7 +43,7 @@ The remainder of this report is organized as follows. Section 2 describes the pr
 > This work presents a partial-scan FF selection framework that jointly optimizes SCOAP-derived testability and scan-shift stress distribution, and shows that segment-aware greedy selection can improve the stress-testability tradeoff relative to global stress-penalized ranking on selected ISCAS'89 benchmarks.
 
 **Problem:**
-Given a circuit with N flip-flops, select K ≈ r × N FFs for partial scan (scan ratio r ∈ (0,1], K = round(rN) ≥ 1) such that testability is preserved, per-FF scan-shift stress is reduced, and spatial stress concentration along the chain is minimized.
+Given a circuit with N flip-flops, select K FFs for partial scan (scan ratio r ∈ (0,1], K = max(1, round(r × N))) such that testability is preserved, per-FF scan-shift stress is reduced, and spatial stress concentration along the chain is minimized.
 
 ---
 
@@ -93,7 +93,7 @@ This metric is used as a testability-preservation proxy rather than as an exact 
 
 ### 3.1 Problem Definition
 
-Let circuit *C* contain *N* flip-flops (FFs). A partial scan selects a subset *S* ⊆ {FF₁, …, FF_N} of size *K* = ⌊*r* × *N*⌋ to enter the scan chain, where *r* ∈ (0, 1] is the scan ratio. The selected FFs are ordered according to their circuit routing order into a single-chain scan register.
+Let circuit *C* contain *N* flip-flops (FFs). A partial scan selects a subset *S* ⊆ {FF₁, …, FF_N} of size *K* = max(1, round(*r* × *N*)) to enter the scan chain, where *r* ∈ (0, 1] is the scan ratio. The selected FFs are ordered according to their circuit routing order into a single-chain scan register.
 
 The selection problem is:
 
@@ -134,13 +134,15 @@ Let *t_i* denote the total toggle count for FF_i across all patterns and all shi
 
 Two stress metrics are defined — one per-FF (point metric) and one spatial (segment metric). They address different physical concerns and are used in different selection modes.
 
+**Model scope.** We do not claim to model physical aging (NBTI, HCI) directly. Toggle rate is used as a first-order proxy because scan-shift switching activity is a dominant contributor to dynamic power and local thermal stress during test. Segment stress approximates the spatial concentration of switching activity, which is relevant to thermal-hotspot formation. Physical aging requires separate reliability modeling beyond this scope.
+
 #### 3.4.1 Per-FF Stress
 
 The **per-FF stress score** for FF_i is its normalized toggle rate during scan shift:
 
 > *stress_i* = *t_i* / *T*
 
-where *T* = total shift cycles (same as *P* × *chain_length* for full scan). This directly measures the fraction of clock cycles in which FF_i changes state during scan. It corresponds to switching activity at the cell level — the primary cost driver in low-power scan literature [Cho & Pan, VTS'06; Remersaro et al., D&T'07].
+where *T* = total shift cycles (same as *P* × *chain_length* for full scan). This directly measures the fraction of clock cycles in which FF_i changes state during scan. It corresponds to switching activity at the cell level — the primary cost driver in low-power scan literature [1][4].
 
 #### 3.4.2 Segment Stress and Hotspot Detection
 
@@ -157,7 +159,9 @@ Summary metrics reported per run:
 - **Segment variance**: σ²_seg
 - **Hotspot count**: |{j : *seg_j* > μ_seg + σ_seg}|
 
-Segment stress captures spatial clustering of high-stress FFs — a concentration that per-FF average alone would miss. This is motivated by the thermal hotspot model in PEAKASO [Cho & Pan, VTS'06].
+Segment stress captures spatial clustering of high-stress FFs — a concentration that per-FF average alone would miss. This is motivated by the thermal hotspot model in PEAKASO [1].
+
+**Small-chain handling.** For circuits where the partial chain length K is smaller than W, the effective window size is w_eff = min(W, K), ensuring the segment computation is always valid. When K < W (e.g., small circuits at low scan ratios), all K selected FFs fall in a single segment, and max segment stress equals the mean stress of the selected set.
 
 ---
 
@@ -222,7 +226,7 @@ The coverage proxy for a selected set *S* is:
 
 > *cov_proxy*(S) = Σ_{i ∈ S} (CC0_i + CC1_i + 2·CO_i) / Σ_{i=1}^{N} (CC0_i + CC1_i + 2·CO_i)
 
-This measures the fraction of total SCOAP "difficulty weight" captured by the selected FFs. It approximates how much of the circuit's testability budget is preserved under partial scan. This proxy is consistent with the classic rationale for SCOAP-based selection [Agrawal et al., JETA'92; Cheng & Agrawal, JETA'92] and is used with explicit acknowledgement of its limitations.
+This measures the fraction of total SCOAP "difficulty weight" captured by the selected FFs. It approximates how much of the circuit's testability budget is preserved under partial scan. This proxy is consistent with the classic rationale for SCOAP-based selection [2][3] and is used with explicit acknowledgement of its limitations.
 
 ---
 
@@ -235,7 +239,7 @@ This measures the fraction of total SCOAP "difficulty weight" captured by the se
 | `co_wear`, `combined_wear` | O(N log N) | Sort by stress-penalized score |
 | `co_wear_leveling`, `combined_wear_leveling` | O(N·K²) | Greedy with inline segment update |
 
-For N ≤ 534 (s15850), the greedy runs in < 10 ms after the O(M·K²) → O(M·K²) sliding-window optimization (W-fold speedup vs. naive implementation). For N = 1728 (s35932), runtime is < 300 ms — practical for design-time use.
+For N ≤ 534 (s15850), the greedy runs in < 10 ms after the O(N·K²·W) → O(N·K²) sliding-window optimization (W-fold speedup vs. naive implementation). For N = 1728 (s35932), runtime is < 300 ms — practical for design-time use.
 
 ---
 
@@ -252,7 +256,7 @@ For N ≤ 534 (s15850), the greedy runs in < 10 ms after the O(M·K²) → O(M·
 | Runtime logging (selection + simulation) | ✅ Complete |
 | Coverage proxy | ✅ Complete |
 | Multi-mode sweep script (`scripts/run_experiment.sh`) | ✅ Complete |
-| Greedy O(M·K²·W) → O(M·K²) optimization | ✅ Complete — ~26× speedup on s35932 |
+| Greedy O(N·K²·W) → O(N·K²) optimization | ✅ Complete — ~26× speedup on s35932 |
 | Full experiment matrix (12 circuits × 7 modes × λ sweep) | ✅ Complete — 7,920 data rows |
 | Publication-quality figures (F1–F7) | ✅ Complete — generated in `figures/` |
 | Literature comparison table (Table T6) | ✅ Complete — 11 papers |
@@ -269,17 +273,17 @@ For N ≤ 534 (s15850), the greedy runs in < 10 ms after the O(M·K²) → O(M·
 
 The experiment matrix covers 12 ISCAS'89 circuits, 7 modes, 5 λ values, and a ratio sweep from 5% to 100% in 5% increments with segment window W=16. All results are recorded in `results/all_experiments.csv`.
 
-### Finding 1: `co_wear_leveling` preserves coverage while reducing max stress on several medium circuits
+### Finding 1: `co_wear_leveling` preserves SCOAP proxy coverage while reducing stress on medium circuits
 
-At 50% scan ratio, λ=0.5:
+At 50% scan ratio, λ=0.5, W=16:
 
-| Circuit | FFs | `co` CovProxy | `co_wear_leveling` CovProxy | `co` MaxStress | `co_wear_leveling` MaxStress |
-|---------|-----|--------------|----------------------------|---------------|------------------------------|
-| s510    | 6   | 0.6000       | 0.6000                     | 0.5085        | **0.4859 (−4.4%)** |
-| s953    | 29  | 0.8667       | 0.8667                     | 0.4607        | **0.3648 (−20.8%)** |
-| s1238   | 18  | 0.8258       | 0.8258                     | 0.5808        | **0.5609 (−3.4%)** |
+| Circuit | FFs | SCOAP CovProxy (co / lev) | MaxStress (co / lev) | MaxSegStress (co / lev) | MaxStress Δ |
+|---------|-----|--------------------------|---------------------|------------------------|-------------|
+| s510    | 6   | 0.6000 / 0.6000          | 0.5085 / 0.4859     | 0.4915 / 0.4859        | **−4.4%** |
+| s953    | 29  | 0.8667 / 0.8667          | 0.4607 / 0.3648     | 0.3818 / 0.3235        | **−20.8%** |
+| s1238   | 18  | 0.8258 / 0.8258          | 0.5808 / 0.5609     | 0.5004 / 0.4633        | **−3.4%** |
 
-On these medium circuits, `co_wear_leveling` matches the SCOAP-derived coverage of the `co` baseline while reducing per-FF maximum switching stress by **3.4%–20.8%**.
+On these circuits, `co_wear_leveling` matches the SCOAP proxy coverage of the `co` baseline while reducing per-FF maximum switching stress by **3.4%–20.8%** and reducing max segment stress by **1.1%–15.3%**. The SCOAP proxy coverage is not exact stuck-at fault coverage; the disclaimer in §3.6 applies.
 
 ### Finding 2: `co_wear` shows inconsistent tradeoffs across circuits
 
@@ -323,7 +327,7 @@ These results suggest that the effectiveness of stress-leveling depends on the c
 
 ### Finding 5: Runtime scalability
 
-The initial greedy implementation recomputed segment summaries for each candidate at every step, resulting in O(M·K²·W) total complexity. An inline sliding-window evaluation reduces the greedy implementation to **O(M·K²)**.
+The initial greedy implementation recomputed segment summaries for each candidate at every step, resulting in O(N·K²·W) total complexity. An inline sliding-window evaluation reduces the greedy implementation to **O(N·K²)**.
 
 | Circuit | N    | Selection time (`co_wear_leveling`, 50%) |
 |---------|------|------------------------------------------|
@@ -347,6 +351,32 @@ The hypothesis fails: partial-scan stress spread is consistently *smaller* than 
 | Partial-scan stress spread (same FFs) | 0.0019 | similar or smaller |
 
 Per-FF toggle rate is driven by each FF's own PI↔PPO transition pattern across ATPG vectors, not by neighboring FFs. Reducing chain length from N to K compresses the stress distribution rather than expanding it. Furthermore, the greedy penalizes segment-level (sliding-window) stress while the bootstrap only updates per-FF scalar values — these are structurally decoupled, so per-FF substitution cannot inform spatial effects. Empirically, bootstrapped refinement produces no improvement at any ratio and degrades performance by up to 10% at ratios above 25% due to non-convergent oscillation. The static full-scan stress prior is already near-optimal for the greedy leveling objective.
+
+### Finding 7: Aggregate win/loss summary across all 12 ISCAS'89 circuits
+
+The table below summarizes overall performance at 50% scan ratio, λ=0.5, W=16, comparing each stress-aware mode against the `co` baseline. "No proxy cov loss" means the SCOAP proxy coverage is unchanged (not exact fault coverage).
+
+| Mode | Avg SCOAP proxy cov Δ | No proxy cov loss | Avg MaxStress Δ | Stress improved | Pareto-improved |
+|------|-----------------------|-------------------|-----------------|-----------------|-----------------|
+| `co_wear` | −8.0 pp | 1 / 12 | −0.2% | 5 / 12 | 0 / 12 |
+| `combined_wear` | −8.0 pp | 1 / 12 | −0.2% | 5 / 12 | 0 / 12 |
+| `co_wear_leveling` | **0.0 pp** | **12 / 12** | −0.8% | 5 / 12 | **5 / 12** |
+| `combined_wear_leveling` | **0.0 pp** | **12 / 12** | −0.8% | 5 / 12 | **5 / 12** |
+
+"Pareto-improved" means proxy coverage is unchanged AND max per-FF stress is reduced. Although the greedy objective targets segment stress, max per-FF stress is also reported as a conservative secondary metric because a single highly stressed FF still indicates local scan-shift risk. The global-sort modes (`co_wear`, `combined_wear`) degrade proxy coverage on 11/12 circuits while failing to reliably reduce stress, yielding zero Pareto improvements. The greedy leveling modes preserve SCOAP proxy coverage on all 12 circuits. They achieve Pareto improvement on 5 of 12 circuits, remain effectively unchanged on several circuits, and can slightly increase max per-FF stress when the segment-level objective does not align with the per-FF max-stress metric (e.g., s1196 +8.3%).
+
+Per-circuit breakdown for `co_wear_leveling`:
+
+| Circuit | N FFs | MaxStress Δ | Outcome |
+|---------|-------|-------------|---------|
+| s510    | 6     | −4.4%       | Pareto improved |
+| s953    | 29    | −20.8%      | Pareto improved |
+| s1238   | 18    | −3.4%       | Pareto improved |
+| s35932  | 1728  | −1.2%       | Pareto improved |
+| s38584  | 1452  | −0.1%       | Pareto improved |
+| s1196   | 18    | +8.3%       | Stress increased (no cov loss) |
+| s27, s208, s9234, s15850, s38417 | 3–534 | ≈0% | No change |
+| s5378   | 179   | +0.1%       | No change |
 
 ---
 
@@ -387,6 +417,12 @@ The global-sort approach (`co_wear`, `combined_wear`) applies a uniform stress p
 
 Segment-aware greedy leveling resolves both issues by targeting the segment-level max directly, making the penalty spatial rather than per-FF.
 
+### On the relationship to scan-chain reordering
+
+Scan-chain reordering [4][5] addresses spatial stress concentration by changing the order of FFs in an existing chain, rather than which FFs are selected. Since spatial clustering of high-stress FFs could in principle be resolved by reordering the chain after selection, it is natural to ask whether our segment-aware greedy selection is necessary.
+
+The two approaches are orthogonal. ScanForge targets the **FF selection stage**, before scan stitching, under the assumption that chain order is constrained by routing or the FAN_ATPG default. Reordering operates after insertion and cannot change which FFs are in the chain. In practice, combining stress-aware selection with post-insertion reordering is possible future work; the current study establishes whether stress-awareness at the selection stage alone provides measurable benefit.
+
 ### Threats to Validity
 
 **Construct validity — Coverage proxy.** The coverage proxy (SCOAP-derived) is a testability preservation measure, not true stuck-at fault coverage. Circuits where CO does not correlate with detection probability (e.g., reconvergent fanout, equivalent faults) may show misleading proxy values. Exact fault coverage integration remains future work.
@@ -404,11 +440,11 @@ Segment-aware greedy leveling resolves both issues by targeting the segment-leve
 We presented **ScanForge**, a partial scan FF selection framework that jointly optimizes SCOAP-derived testability preservation and scan-shift stress distribution. The framework implements seven selection modes ranging from classical SCOAP ranking to a novel segment-aware greedy stress-leveling algorithm, evaluated across 12 ISCAS'89 benchmarks with a full hyperparameter sweep.
 
 **Key findings:**
-1. `co_wear_leveling` achieves up to **20.8% reduction in max per-FF stress** on s953 at zero coverage penalty.
-2. Global-sort stress penalization (`co_wear`) is unreliable: it reduces testability on all circuits while failing to consistently reduce stress on 7 of 12.
+1. `co_wear_leveling` achieves up to **20.8% reduction in max per-FF stress** on s953 at zero SCOAP proxy coverage penalty.
+2. Global-sort stress penalization (`co_wear`) is unreliable: it reduces SCOAP proxy coverage on 11 of 12 circuits while failing to consistently reduce stress.
 3. The leveling method is **robust to λ** — any λ > 0 achieves the optimal tradeoff on s953, with no benefit from tuning beyond λ = 0.25.
-4. On large circuits with near-uniform stress (s5378 and above), leveling reduces to pure `co` selection — a structural ceiling inherent to the circuit topology, not an algorithmic limitation.
-5. After greedy optimization (O(M·K²) sliding-window update), selection runs in **< 10 ms** for up to 534 FFs and **< 300 ms** for 1728 FFs.
+4. On many larger circuits with near-uniform stress, leveling often reduces to pure or near-pure `co` selection, producing little measurable stress improvement — a structural ceiling inherent to circuit topology, not an algorithmic limitation.
+5. After greedy optimization (O(N·K²) sliding-window update), selection runs in **< 10 ms** for up to 534 FFs and **< 300 ms** for 1728 FFs.
 6. Bootstrapped iterative refinement (negative result) confirms that static full-scan stress is already a near-optimal prior — partial-scan stress compresses the distribution rather than expanding it, offering no additional information to the greedy.
 
 **Limitations and future work:** The current method relies on a SCOAP-derived coverage proxy rather than exact fault coverage, and uses a toggle-rate stress model without physical aging parameters. Future work should integrate exact SAF coverage simulation and evaluate on modern industrial benchmarks with multi-chain scan architectures.
@@ -470,7 +506,7 @@ We presented **ScanForge**, a partial scan FF selection framework that jointly o
 | 10 | Lin et al., DATE'16 | Simultaneous reordering + X-filling for power | Joint chain reordering and X-filling | Scan shift power | ISCAS'89, industrial | Post-insertion optimization; our method works at selection stage |
 | 11 | Firouzi et al., ICCAD'15 | Aging prediction via DfT monitoring | Fine-grained stress monitoring using existing DfT | Aging stress, NBTI/HCI | Industrial | Monitors stress at runtime; we minimize stress concentration at design |
 
-**Summary of gap:** All prior work either (a) optimizes testability without stress awareness [1–4], (b) reduces scan power via pattern/vector manipulation after scan insertion [5–10], or (c) monitors aging post-silicon [11]. **ScanForge is the first framework to integrate SCOAP-based testability and segment-level stress distribution into the FF selection criterion itself**, enabling Pareto-optimal tradeoffs at design time.
+**Summary of gap:** All prior work either (a) optimizes testability without stress awareness [1–4], (b) reduces scan power via pattern/vector manipulation after scan insertion [5–10], or (c) monitors aging post-silicon [11]. To the best of our knowledge, prior work does not combine SCOAP-based FF selection with segment-level scan-shift stress awareness at the selection stage. ScanForge occupies this intermediate point: segment-level stress is incorporated directly into the partial-scan FF selection criterion, enabling design-time tradeoffs between testability proxy and stress concentration. The key insight is not that a stress term is added, but that **naive global stress penalization is unreliable** while **segment-aware greedy selection provides Pareto improvement on circuits with sufficient stress spread**.
 
 ---
 
