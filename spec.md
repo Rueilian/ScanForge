@@ -2,149 +2,162 @@
 
 ## 1. Motivation
 
-**Working title:** Sequential ATPG for Partial-Scan Circuits Under Timing-Driven Scan Exclusion
+**Working title:** Sequential ATPG Coverage Recovery for Timing-Driven Partial-Scan Circuits
 
 Modern industrial testing flows aim to insert scan on as many flip-flops (FFs) as possible. In practice, however, a subset of FFs may remain non-scan because converting them to scan FFs can worsen timing or violate implementation constraints. Once this happens, scan-based ATPG loses full controllability and observability over circuit state, and stuck-at fault coverage may drop accordingly.
 
-This project focuses on that practical setting. Rather than studying generic scan selection under area overhead assumptions, the project investigates how much fault coverage is lost when timing-critical FFs are excluded from scan, and how much of that loss can be recovered through a sequential ATPG flow designed for partial-scan circuits.
+This project focuses on that practical setting. Rather than studying generic scan selection, the project investigates how much fault coverage is lost when timing-critical FFs are excluded from scan, and how much of that loss can be recovered through a sequential ATPG flow designed for partial-scan circuits.
 
 ## 2. Problem Statement
-
-The target problem can be stated as follows:
 
 > Given a sequential circuit in which a timing-critical subset of FFs cannot be converted to scan FFs, construct a partial-scan test model and develop a sequential ATPG flow that recovers as much stuck-at fault coverage as possible.
 
 The project assumes:
 
-- a gate-level benchmark circuit
-- a stuck-at fault model
-- an open-source technology library with cell-delay information
-- a user-defined scan-exclusion ratio `x%`
+- gate-level ITC'99 benchmark circuits synthesized with NanGate45
+- stuck-at fault model (SAF)
+- NanGate45 open-source technology library for both synthesis and timing analysis
+- user-defined scan-exclusion ratio `x%`
 
-To emulate timing-driven scan exclusion, the project will perform timing-criticality ranking using a library-based timing proxy. FFs will be ranked by timing criticality using metrics such as slack or critical-path participation, and the top `x%` FFs will be treated as non-scan FFs. This setup is intended as a practical timing-sensitivity model rather than a claim of full post-layout timing realism.
+To emulate timing-driven scan exclusion, FFs are ranked by timing criticality using static timing analysis. The top `x%` most timing-critical FFs are treated as non-scan FFs. This is a practical timing-sensitivity proxy rather than a claim of full post-layout accuracy.
 
-All remaining FFs will be treated as scan-capable FFs and connected into a single scan chain. The main research objective is not scan-chain architecture exploration, but sequential test generation under constrained scan access.
+All remaining FFs are treated as scan-capable and connected into a single scan chain. The research objective is sequential test generation under constrained scan access, not scan-chain architecture exploration.
 
 ## 3. Research Questions
 
 ### RQ1. Coverage loss under timing-driven scan exclusion
 
-How much stuck-at fault coverage is lost when the top `x%` timing-critical FFs are left as non-scan FFs?
+How much stuck-at fault coverage is lost when the top `x%` timing-critical FFs are left as non-scan FFs, compared to the full-scan baseline?
 
 ### RQ2. Coverage recovery by sequential ATPG
 
-How much of that lost coverage can be recovered by a sequential ATPG flow for the resulting partial-scan circuit?
+How much of that lost coverage can be recovered by a sequential ATPG flow (T=8 time frames) for the resulting partial-scan circuit?
 
-### RQ3. Sensitivity to sequential search depth
+### RQ3. Scalability across circuit sizes
 
-How do fault coverage, pattern count, and runtime vary as the sequential ATPG depth increases?
+Do the coverage loss and recovery trends from RQ1–RQ2 hold consistently across circuits of different sizes and sequential complexities?
 
 ## 4. Proposed Method
 
-The proposed flow consists of four main stages.
-
 ### 4.1 Timing-driven non-scan FF identification
 
-The circuit will be analyzed using an open-source timing flow and technology library. Based on a timing-criticality ranking, the top `x%` FFs will be marked as non-scan FFs. The output of this stage is a non-scan mask for each benchmark circuit.
+The ITC'99 benchmark circuits are synthesized to gate-level netlists using Yosys with the NanGate45 library. Static timing analysis (OpenSTA) is then run on each netlist using NanGate45 timing data. Each FF is assigned a criticality score equal to the minimum path slack on any timing path passing through it. FFs are sorted by ascending slack (most timing-critical first), and the top `x%` are marked as non-scan. The output of this stage is a non-scan mask — a list of FF cell names — for each `(circuit, x)` pair.
 
-### 4.2 Partial-scan modeling
+**Owner: Rueilian**
 
-After the non-scan set is determined, all remaining FFs will be modeled as scan-capable FFs and connected into one scan chain. This produces the constrained partial-scan architecture that will be used for ATPG and evaluation.
+### 4.2 Partial-scan circuit modeling
 
-### 4.3 Sequential ATPG strategy
+Non-scan FF state is modeled across T=8 time frames using a `PARTIAL_SEQUENTIAL` unrolling mode implemented in FAN_ATPG. In this mode:
 
-The project will study a sequential ATPG flow for partial-scan circuits with the following high-level structure:
+- **Non-scan FFs**: each frame's PPI is driven by the previous frame's PPO (state carries across frames via a BUF connection)
+- **Scan FFs**: each frame's PPI is free (independently controlled, equivalent to a primary input)
 
-1. solve faults that are manageable through the scanned portion of the circuit first
-2. apply sequential recovery to residual faults that depend on non-scan state
-3. increase sequential search depth in a bounded manner and observe the resulting coverage gain and computational cost
+The initial state of non-scan FFs at frame 0 is treated as **unknown (X)**, following standard sequential ATPG convention. The ATPG engine uses the T−1 preceding frames as initialization cycles to drive non-scan FF state toward the values needed to sensitize faults, with the fault observed in the final frame. T=8 is chosen as a fixed depth sufficient for the sequential complexity of the benchmark circuits.
 
-At the current stage, the exact sequential ATPG algorithm is not fixed. The project scope is to design and evaluate a bounded sequential recovery strategy suitable for partial-scan circuits under timing-driven scan exclusion.
+T=1 is not a valid partial-scan model: with a single frame, non-scan FF PPIs are free inputs and the ATPG can assign them any value, artificially reproducing full-scan coverage regardless of the non-scan constraint.
 
-### 4.4 Success criteria
+**Owner: swear01 — DONE**
 
-The project will be considered successful if it can:
+### 4.3 Sequential ATPG flow
 
-- quantify the coverage loss introduced by timing-driven scan exclusion
-- demonstrate measurable fault-coverage recovery over the no-recovery partial-scan baseline
-- report the runtime and pattern-count cost associated with deeper sequential search
+FAN_ATPG performs stuck-at ATPG on the T=8-frame unrolled partial-scan circuit. The flow is:
+
+```
+read_lib techlib/mod_nangate45.mdt
+read_netlist mod_netlist/<circuit>.v
+set_nonscan_ff <ff1> <ff2> ...
+build_circuit --frame 8
+set_fault_type saf
+add_fault --all
+set_static_compression on
+set_dynamic_compression on
+run_atpg
+report_statistics > rpt/<circuit>_x<x>.rpt
+exit
+```
+
+**Owner: swear01 — DONE**
+
+### 4.4 Experiment automation
+
+A Python runner iterates all `(circuit, x)` combinations, generates a FAN_ATPG script per combination using the non-scan mask from Task A, invokes the FAN binary, parses the `report_statistics` output, and appends one row per run to a CSV log.
+
+**CSV schema:**
+```
+circuit, nonscan_ratio, fault_coverage, test_coverage, DT, AU, AB, UD, patterns, runtime_s
+```
+
+**Owner: swear01 — Pending**
 
 ## 5. Experimental Plan
 
 ### Benchmarks
 
-- ISCAS'89 sequential benchmark circuits
+ITC'99 sequential benchmark circuits synthesized with NanGate45. Specific circuits are selected after synthesis, filtered to those with at least 20 FFs (to ensure at least one non-scan FF at x=5%).
 
-### Main parameter sweeps
+### Parameter sweep
 
-1. **non-scan ratio:** `x ∈ {5%, 10%, 15%, 20%}`
-2. **sequential depth limit:** `T ∈ {0, 1, 2, 4, 8}` or a similar bounded sequence
+| Parameter | Values |
+|---|---|
+| Non-scan ratio `x` | 5%, 10%, 15%, 20% |
+| Sequential ATPG depth | T=8 (fixed) |
+
+Total runs: `|circuits| × 4`. Approximately 28–40 runs depending on final circuit selection.
 
 ### Baselines
 
-- full-scan ATPG
-- partial-scan ATPG without sequential recovery
-- partial-scan ATPG with sequential recovery
+| Baseline | Description |
+|---|---|
+| Full-scan | All FFs scan, x=0, standard 1-frame ATPG — ceiling coverage |
+| Partial-scan + sequential ATPG | Non-scan FFs present, T=8 |
 
 ### Evaluation metrics
 
 | Metric | Purpose |
 |---|---|
 | Fault coverage | Primary success metric |
+| Test coverage | Secondary coverage view |
 | Undetected / aborted faults | Remaining ATPG gap |
 | Pattern count | Test-cost proxy |
 | ATPG runtime | Practicality of the method |
-| Sequential depth used | Search difficulty indicator |
-| Scan shift cycles | Secondary test-time metric |
 
-The core comparison will measure how coverage changes as the timing-driven non-scan ratio increases, and how much of that loss can be recovered as the sequential ATPG depth increases.
+The core comparison measures how coverage drops as `x` increases (RQ1) and how much of that gap remains after sequential ATPG recovery (RQ2). RQ3 checks whether the trend holds across all benchmark circuits.
 
 ## 6. Expected Contributions
 
-This project is expected to contribute:
+1. A timing-driven scan-exclusion setup using NanGate45 STA on ITC'99 benchmarks
+2. A `PARTIAL_SEQUENTIAL` multi-frame unrolling mode in FAN_ATPG enabling sequential ATPG for partial-scan circuits
+3. An experimental study of fault coverage loss and recovery as a function of timing-driven scan exclusion ratio
 
-1. a timing-driven scan-exclusion setup for evaluating partial-scan testability on sequential benchmark circuits
-2. a sequential ATPG flow aimed at recovering fault coverage under non-scan constraints
-3. an experimental study of the tradeoff among fault coverage, runtime, pattern count, and sequential depth
+## 7. Implementation Status
 
-## 7. Implementation Plan
+| Task | Description | Owner | Status |
+|---|---|---|---|
+| A | Yosys synthesis + OpenSTA timing, non-scan mask generation | Rueilian | In progress |
+| B | `PARTIAL_SEQUENTIAL` mode in FAN_ATPG | swear01 | **Done** |
+| C | `set_nonscan_ff` command, script integration | swear01 | **Done** |
+| D | Python experiment runner, CSV logging | swear01 | Pending |
+| E | Full experiment run + analysis | Both | Pending |
 
-The implementation work is organized into four tasks:
+**Verified pilot results (FAN_ATPG, s27, NanGate45):**
 
-### Task A. Timing analysis and non-scan mask generation
+| Circuit | Mode | x | T | Fault coverage |
+|---|---|---|---|---|
+| s27 | Full scan | 0% | 1 | 94.55% |
+| s27 | Partial scan | 67% | 8 | 79.25% |
+| s208 | Full scan | 0% | 1 | 97.43% |
 
-- build the timing-analysis flow
-- rank FFs by timing criticality
-- generate non-scan masks for each benchmark and exclusion ratio
-
-### Task B. Partial-scan circuit modeling
-
-- represent scan-capable FFs and non-scan FFs explicitly
-- construct the one-chain partial-scan model used for ATPG
-
-### Task C. Sequential ATPG design
-
-- define the bounded sequential recovery flow
-- integrate depth control and result collection
-- support coverage-oriented comparison against the no-recovery baseline
-
-### Task D. Evaluation and reporting
-
-- run experiments across benchmark circuits and exclusion ratios
-- summarize coverage, runtime, and pattern-count trends
-- produce final tables, plots, and discussion
+The s27 partial-scan result (AU=16, UD=6) reflects the realistic sequential constraint: 16 faults require non-scan FF states that cannot be reached through 8 cycles of circuit initialization.
 
 ## 8. Scope
 
-The main scope of the project is limited to:
-
-- timing-driven scan exclusion
+In scope:
+- timing-driven scan exclusion (NanGate45 STA, minimum path slack metric)
 - single-chain partial-scan modeling
-- stuck-at fault coverage recovery through sequential ATPG
+- stuck-at fault coverage recovery through sequential ATPG (T=8 fixed depth)
 
-The following items are outside the main scope:
-
-- random scan-exclusion baselines
+Out of scope:
+- random or optimization-driven scan-exclusion baselines
 - multi-chain architecture comparison
 - scan-power optimization
 - diagnosis-oriented scan placement
