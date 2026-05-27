@@ -1,7 +1,7 @@
 CXX      := g++
 CXXFLAGS := -std=c++14 -O2 -Wall -Wextra
 TARGET   := scanforge
-SRCS     := main.cpp scan_chain.cpp partial_scan.cpp segment_stress.cpp
+SRCS     := main.cpp scan_chain.cpp partial_scan.cpp segment_stress.cpp timing_exclusion.cpp netlist_timing_proxy.cpp
 OBJS     := $(SRCS:.cpp=.o)
 
 .PHONY: all clean
