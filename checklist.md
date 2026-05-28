@@ -381,3 +381,45 @@ Make the current `--exclude-summary-csv` path emit the row-oriented evaluation-c
 - Changing the CSV header in-place can break existing scripts if the new schema is not propagated consistently.
 - Follow-up:
 - This path is now in place for the current implemented case; the next sequential-recovery prototype should target the same row schema directly.
+
+---
+
+## Task: Repository hygiene for generated artifacts
+
+Related spec task: `Task D`
+
+### Goal
+
+Classify current generated files and local-only changes so the repository keeps reproducible experiment outputs while avoiding accidental commits of temporary or build-only artifacts.
+
+### Acceptance Criteria
+
+- [x] `FAN_ATPG` submodule changes are classified into source changes versus generated/build artifacts
+- [x] `progress_report.md` local edits are reviewed and their status is explicitly recorded
+- [x] Root-level temporary result files are either ignored or folded into the formal result path
+
+### TDD Plan
+
+- [x] Define the smallest failing check first
+- [x] Run the failing check and record the result
+- [x] Implement the minimum code change
+- [x] Re-run the same check until it passes
+- [x] Run adjacent regression checks
+
+### Checks
+
+| Check | Command / Method | Expected Result | Status |
+|---|---|---|---|
+| FAN_ATPG state reviewed | inspect `git status` inside `FAN_ATPG` | build artifacts and generated reports are separated from source changes | `passed` |
+| progress report diff reviewed | inspect `git diff -- progress_report.md` | local report edits are classified as keep/edit/discard | `passed` |
+| temp result policy enforced | inspect `.gitignore` and `git status` | root-level temporary `s27` result files no longer show as untracked | `passed` |
+
+### Notes
+
+- Findings:
+- `FAN_ATPG` currently contains generated `.pat`, `.stil`, `.rpt`, `results/`, and many compiled binaries/objects under `bin/`, `lib/`, and `pkg/*/lib/opt/`.
+- No FAN_ATPG source-file edits were observed in the current status output; the dirty state was dominated by generated/build artifacts and a checked-out submodule commit that did not match the parent repo.
+- `progress_report.md` had been heavily rewritten toward the new project topic, but it still contained outdated and contradictory content such as `timing-driven vs random` comparison language.
+- `results/s27_exclude_sweep.csv` and `results/s27_timing_proxy.csv` are now ignored as temporary root-level artifacts; the tracked canonical outputs remain under `results/timing_exclusion/`.
+- Follow-up:
+- Keep `progress_report.md` as a local draft for now instead of committing it with implementation changes.

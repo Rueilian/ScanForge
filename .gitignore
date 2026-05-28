@@ -2,3 +2,5 @@
 scanforge
 *.sf.tmp
 results/experiments/
+results/s27_exclude_sweep.csv
+results/s27_timing_proxy.csv
