@@ -1,3 +1,6 @@
 [submodule "FAN_ATPG"]
 	path = FAN_ATPG
 	url = https://github.com/Rueilian/FAN_ATPG.git
+[submodule "itc99_rtl"]
+	path = itc99_rtl
+	url = https://github.com/ccsl-uaegean/ITC99-RTL-Verilog
