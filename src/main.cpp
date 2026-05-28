@@ -205,7 +205,13 @@ int main(int argc, char *argv[])
 
     if (doExcludeSweep) {
         struct ExcludeRow {
+            std::string circuit;
+            std::string case_name;
             double ratio = 0.0;
+            int depth = 0;
+            double coverage = 0.0;
+            int pattern_count = 0;
+            double runtime_sec = 0.0;
             int non_scan = 0;
             int scan_ff = 0;
             double cov_co = 0.0;
@@ -220,7 +226,9 @@ int main(int argc, char *argv[])
         std::vector<double> ratios = {0.05, 0.10, 0.15, 0.20};
         std::vector<ExcludeRow> rows;
         rows.reserve(ratios.size());
+        const std::string circuitName = basenameSf(sfPath);
         for (double ratio : ratios) {
+            auto rowStart = std::chrono::steady_clock::now();
             auto nonScan = ScanForge::selectNonScanFFs(timingRanking, data.numFF, ratio);
             auto chain = ScanForge::buildScanChainFromNonScan(nonScan, data.numFF);
             auto covCombined = ScanForge::computeCoverageProxy(
@@ -231,9 +239,16 @@ int main(int argc, char *argv[])
             auto result = ScanForge::simulate(data, chain);
             if (segmentWindow > 0)
                 ScanForge::applySegmentProfile(result, segmentWindow);
+            auto rowEnd = std::chrono::steady_clock::now();
 
             ExcludeRow row;
+            row.circuit = circuitName;
+            row.case_name = "partial_scan_no_recovery";
             row.ratio = ratio;
+            row.depth = 0;
+            row.coverage = covCombined.proxy;
+            row.pattern_count = est.applicablePatterns;
+            row.runtime_sec = std::chrono::duration<double>(rowEnd - rowStart).count();
             row.non_scan = (int)nonScan.size();
             row.scan_ff = (int)chain.size();
             row.cov_co = covCO.proxy;
@@ -294,12 +309,18 @@ int main(int argc, char *argv[])
                           << excludeSummaryCsvPath << "\n";
                 return 1;
             }
-            out << "ratio,non_scan_ff,scan_ff,coverage_proxy_co,"
-                   "coverage_proxy_combined,pattern_applicability,"
-                   "switching_activity,max_segment_stress,segment_variance,"
-                   "hotspot_count\n";
+            out << "circuit,case,ratio,depth,coverage,pattern_count,runtime_sec,"
+                   "non_scan_ff,scan_ff,coverage_proxy_co,coverage_proxy_combined,"
+                   "pattern_applicability,switching_activity,max_segment_stress,"
+                   "segment_variance,hotspot_count\n";
             for (const auto &row : rows) {
-                out << row.ratio << ','
+                out << row.circuit << ','
+                    << row.case_name << ','
+                    << row.ratio << ','
+                    << row.depth << ','
+                    << row.coverage << ','
+                    << row.pattern_count << ','
+                    << row.runtime_sec << ','
                     << row.non_scan << ','
                     << row.scan_ff << ','
                     << row.cov_co << ','
@@ -328,7 +349,7 @@ int main(int argc, char *argv[])
             excluded[idx] = 1;
 
         std::cout << "====================================================\n";
-        std::cout << "  ScanForge — Timing-Driven Scan Exclusion Baseline\n";
+        std::cout << "  ScanForge — Timing-Driven Scan Exclusion Case\n";
         std::cout << "====================================================\n";
         if (!timingRankingPath.empty())
             std::cout << "  Timing ranking CSV    : " << timingRankingPath << "\n";

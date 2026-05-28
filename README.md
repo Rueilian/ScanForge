@@ -3,7 +3,7 @@
 **ScanForge** is an open-source scan-chain DFT analysis tool.  
 It uses [FAN_ATPG](https://github.com/NTU-LaDS-II/FAN_ATPG) as a backend to export circuit data, then performs scan-chain simulation and partial-scan analysis in a standalone C++ engine.
 
-The repository is currently being refocused toward **sequential ATPG for partial-scan circuits under timing-driven scan exclusion**. The first implemented baseline is a timing-driven non-scan modeling flow: given a timing-criticality ranking, ScanForge excludes the top `x%` FFs from scan and analyzes the resulting single-chain partial-scan architecture.
+The repository is currently being refocused toward **sequential ATPG for partial-scan circuits under timing-driven scan exclusion**. The first implemented evaluation case is a timing-driven non-scan modeling flow: given a timing-criticality ranking, ScanForge excludes the top `x%` FFs from scan and analyzes the resulting single-chain partial-scan architecture.
 
 Development in this repository should follow a **checklist-first, TDD-oriented workflow**. Before implementing a feature, create or update [checklist.md](./checklist.md) with the project-specific task definition, failing checks, implementation steps, and verification results.
 
@@ -16,7 +16,7 @@ Development in this repository should follow a **checklist-first, TDD-oriented w
 | **Full scan analysis** | Simulate all FFs in scan chain, report switching activity |
 | **Per-FF stress CSV** | Optional `--stress-csv` export: toggles, duty, run-length, composite stress score |
 | **Segment stress CSV** | Sliding-window stress along the **current scan chain** (`--segment-window`, `--segment-csv`); hotspot flag from mean+1σ over segment averages |
-| **Timing-driven scan exclusion baseline** | Load a timing-ranking CSV, exclude top `x%` FFs as non-scan, and analyze the remaining one-chain partial-scan architecture |
+| **Timing-driven scan exclusion case** | Load a timing-ranking CSV, exclude top `x%` FFs as non-scan, and analyze the remaining one-chain partial-scan architecture |
 | **Partial scan selection** | SCOAP-CO, SCOAP-Combined, Random, **wear-aware** (`co_wear`, `combined_wear`), or **wear-leveling** (`co_wear_leveling`, `combined_wear_leveling`) greedy selection using segment max stress along the chain |
 | **Ratio sweep** | Sweep 25/50/75/100% ratios in one command (`--sweep`) |
 | **SCOAP export** | FAN_ATPG fork computes CC0/CC1/CO and exports them to `.sf` format |
@@ -100,7 +100,7 @@ cd ..
 # Full scan
 ./src/scanforge FAN_ATPG/results/s27.sf
 
-# Timing-driven scan exclusion baseline
+# Timing-driven scan exclusion case
 ./src/scanforge FAN_ATPG/results/s27.sf \
   --timing-netlist FAN_ATPG/mod_netlist/s27.v \
   --exclude-ratio 0.10
@@ -207,7 +207,7 @@ Values: 0=L, 1=H, 2=X, 3=D, 4=B, 5=Z
 
 ## Timing Ranking CSV Format
 
-The timing-driven baseline accepts a simple two-column CSV:
+The timing-driven exclusion flow accepts a simple two-column CSV:
 
 ```csv
 ff_name,score
@@ -235,7 +235,109 @@ If you do not already have a timing-ranking CSV, ScanForge can build a first-ord
 - trace the combinational logic feeding each FF `D` input
 - use the resulting logic depth as a timing-criticality score
 
-This is a library-agnostic structural timing proxy, not full STA. It is intended for the `timing-driven scan exclusion` baseline defined in the project spec.
+This is a library-agnostic structural timing proxy, not full STA. It is intended for the `timing-driven scan exclusion` evaluation case defined in the project spec.
+
+## Current Evaluation Cases
+
+For the current project spec, the intended comparison is among three evaluation cases:
+
+- `full-scan ATPG`
+- `partial-scan ATPG without sequential recovery`
+- `partial-scan ATPG with sequential recovery`
+
+At the current implementation stage, only the second case is concretely available in this repository's timing-driven exclusion flow:
+
+- apply timing-driven scan exclusion at a chosen ratio `x`
+- keep the excluded FFs as non-scan FFs
+- connect all remaining FFs into the default single scan chain
+- report the resulting partial-scan behavior without any sequential recovery step
+
+In other words, the current implemented case corresponds to the exclusion flow with **no sequential state justification, no bounded sequential search, and no residual-fault recovery**. In the spec language, this is the `T = 0` comparison point for later sequential ATPG work.
+
+### Canonical artifact for the current implemented case
+
+The canonical per-circuit artifact for `partial-scan ATPG without sequential recovery` is one row in:
+
+- `results/timing_exclusion/timing_exclusion_master.csv`
+
+That row is produced by running:
+
+```bash
+./src/scanforge FAN_ATPG/results/<circuit>.sf \
+  --timing-netlist FAN_ATPG/mod_netlist/<circuit>.v \
+  --exclude-sweep \
+  --exclude-summary-csv results/timing_exclusion/<circuit>_exclude_sweep.csv
+```
+
+The batch version is:
+
+```bash
+bash scripts/run_timing_exclusion_sweep.sh
+```
+
+### Comparison fields for the current implemented case
+
+The current row currently contains these fields:
+
+| Field | Meaning | Role in later comparison |
+|---|---|---|
+| `circuit` | benchmark name | grouping key |
+| `case` | current evaluation case identifier | pairwise comparison key |
+| `ratio` | timing-driven non-scan ratio | independent variable |
+| `depth` | sequential depth; `0` for the current implemented case | pairwise comparison key |
+| `coverage` | current primary coverage value | primary comparison field |
+| `pattern_count` | number of directly applicable patterns | primary comparison field |
+| `runtime_sec` | runtime for this row | primary comparison field |
+| `non_scan_ff` | number of excluded FFs | architecture context |
+| `scan_ff` | number of remaining scan FFs | architecture context |
+| `coverage_proxy_combined` | combined SCOAP-based coverage proxy | primary comparison field |
+| `coverage_proxy_co` | observability-oriented coverage proxy | secondary comparison field |
+| `pattern_applicability` | fraction of existing patterns that remain directly usable | diagnostic field for the current implemented case |
+| `switching_activity` | scan-shift activity proxy | cost/context field |
+| `max_segment_stress` | worst segment stress under current chain model | structural context field |
+| `segment_variance` | spread of segment stress | structural context field |
+| `hotspot_count` | number of high-stress chain segments | structural context field |
+
+For the current spec, later sequential recovery work should preserve pairwise comparability on:
+
+- `circuit`
+- `case`
+- `ratio`
+- `depth`
+- `coverage`
+- `pattern_count`
+- `runtime_sec`
+
+If the recovery flow later adds extra diagnostic fields, those should be added without changing the meaning of the columns above.
+
+## Planned Sequential-Recovery Result Artifact
+
+Before the sequential ATPG algorithm is fixed, the repository will treat the future `partial-scan ATPG with sequential recovery` result as a row-oriented CSV artifact.
+
+The intended minimum row schema is:
+
+| Field | Meaning |
+|---|---|
+| `circuit` | benchmark name |
+| `case` | one of `full_scan`, `partial_scan_no_recovery`, `partial_scan_with_recovery` |
+| `ratio` | timing-driven non-scan ratio |
+| `depth` | sequential search depth; `0` means no sequential recovery |
+| `coverage` | primary coverage result for the case |
+| `pattern_count` | number of generated or retained test patterns |
+| `runtime_sec` | runtime for the case |
+
+The intended comparison logic is:
+
+- `full_scan` vs `partial_scan_no_recovery`
+- `partial_scan_no_recovery` vs `partial_scan_with_recovery`
+- `partial_scan_with_recovery` vs `full_scan`
+
+For this schema, the current timing-driven exclusion flow corresponds to:
+
+- `case = partial_scan_no_recovery`
+- `depth = 0`
+
+If the first sequential-recovery prototype still relies on proxy coverage rather than true fault coverage, the column name may temporarily map to a proxy quantity internally, but the row shape above should remain unchanged so later reporting scripts do not need to be redesigned.
 
 ---
 

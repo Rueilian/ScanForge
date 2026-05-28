@@ -32,7 +32,7 @@ if [ ! -x "${SCANFORGE}" ]; then
 fi
 
 MASTER_CSV="${RESULT_DIR}/timing_exclusion_master.csv"
-printf 'circuit,ratio,non_scan_ff,scan_ff,coverage_proxy_co,coverage_proxy_combined,pattern_applicability,switching_activity,max_segment_stress,segment_variance,hotspot_count\n' > "${MASTER_CSV}"
+printf 'circuit,case,ratio,depth,coverage,pattern_count,runtime_sec,non_scan_ff,scan_ff,coverage_proxy_co,coverage_proxy_combined,pattern_applicability,switching_activity,max_segment_stress,segment_variance,hotspot_count\n' > "${MASTER_CSV}"
 
 done_count=0
 for circuit in "${CIRCUITS[@]}"; do
@@ -56,7 +56,7 @@ for circuit in "${CIRCUITS[@]}"; do
     --exclude-sweep \
     --exclude-summary-csv "${sweep_csv}" >/dev/null
 
-  tail -n +2 "${sweep_csv}" | sed "s/^/${circuit},/" >> "${MASTER_CSV}"
+  tail -n +2 "${sweep_csv}" >> "${MASTER_CSV}"
   done_count=$((done_count + 1))
   echo "[${done_count}] ${circuit} -> $(basename "${sweep_csv}")"
 done

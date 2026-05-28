@@ -7,6 +7,8 @@ from pathlib import Path
 
 
 EXPECTED_RATIOS = ["0.05", "0.1", "0.15", "0.2"]
+CASE_NAME = "partial_scan_no_recovery"
+DEPTH_VALUE = "0"
 
 
 def read_rows(path: Path):
@@ -20,6 +22,10 @@ def read_rows(path: Path):
 def summarize(rows):
     grouped = defaultdict(dict)
     for row in rows:
+        if row.get("case") != CASE_NAME:
+            continue
+        if row.get("depth") != DEPTH_VALUE:
+            continue
         grouped[row["circuit"]][row["ratio"]] = row
 
     summary = []
@@ -32,8 +38,8 @@ def summarize(rows):
         r05 = ratios["0.05"]
         r20 = ratios["0.2"]
 
-        cov05 = float(r05["coverage_proxy_combined"])
-        cov20 = float(r20["coverage_proxy_combined"])
+        cov05 = float(r05["coverage"])
+        cov20 = float(r20["coverage"])
         act05 = float(r05["switching_activity"])
         act20 = float(r20["switching_activity"])
 
