@@ -43,7 +43,7 @@ Do the coverage loss and recovery trends from RQ1–RQ2 hold consistently across
 
 The ITC'99 benchmark circuits are synthesized to gate-level netlists using Yosys with the NanGate45 library. Static timing analysis (OpenSTA) is then run on each netlist using NanGate45 timing data. Each FF is assigned a criticality score equal to the minimum path slack on any timing path passing through it. FFs are sorted by ascending slack (most timing-critical first), and the top `x%` are marked as non-scan. The output of this stage is a non-scan mask — a list of FF cell names — for each `(circuit, x)` pair.
 
-**Owner: Rueilian**
+**Owner: swear01**
 
 ### 4.2 Partial-scan circuit modeling
 
@@ -93,16 +93,32 @@ circuit, nonscan_ratio, fault_coverage, test_coverage, DT, AU, AB, UD, patterns,
 
 ### Benchmarks
 
-ITC'99 sequential benchmark circuits synthesized with NanGate45. Specific circuits are selected after synthesis, filtered to those with at least 20 FFs (to ensure at least one non-scan FF at x=5%).
+11 ITC'99 sequential benchmark circuits synthesized to NanGate45 gate-level Verilog using Yosys. Synthesized netlists are stored in `FAN_ATPG/mod_netlist/b*.v` and serve as the shared benchmark source for all tasks.
+
+| Circuit | FFs | Source RTL |
+|---|---|---|
+| b03 | 31 | `itc99_rtl/b03.v` |
+| b04 | 67 | `itc99_rtl/b04.v` |
+| b05 | 88 | `itc99_rtl/b05.v` |
+| b07 | 45 | `itc99_rtl/b07.v` |
+| b08 | 28 | `itc99_rtl/b08.v` |
+| b09 | 30 | `itc99_rtl/b09.v` |
+| b11 | 58 | `itc99_rtl/b11.v` |
+| b12 | 192 | `itc99_rtl/b12.v` |
+| b13 | 65 | `itc99_rtl/b13.v` |
+| b14 | 219 | `itc99_rtl/b14.v` |
+| b15 | 839 | `itc99_rtl/b15.v` |
+
+All circuits have ≥20 FFs, ensuring at least one non-scan FF at x=5%.
 
 ### Parameter sweep
 
 | Parameter | Values |
 |---|---|
-| Non-scan ratio `x` | 5%, 10%, 15%, 20% |
-| Sequential ATPG depth | T=8 (fixed) |
+| Non-scan ratio `x` | 0% (full-scan baseline), 5%, 10%, 15%, 20% |
+| Sequential ATPG depth | T=8 (fixed; T=1 for x=0% baseline) |
 
-Total runs: `|circuits| × 4`. Approximately 28–40 runs depending on final circuit selection.
+Total runs: 11 circuits × 5 ratios = **55 runs**.
 
 ### Baselines
 
@@ -133,11 +149,11 @@ The core comparison measures how coverage drops as `x` increases (RQ1) and how m
 
 | Task | Description | Owner | Status |
 |---|---|---|---|
-| A | Yosys synthesis + OpenSTA timing, non-scan mask generation | Rueilian | In progress |
+| A | Yosys synthesis + OpenSTA timing, non-scan mask generation | swear01 | Pending |
 | B | `PARTIAL_SEQUENTIAL` mode in FAN_ATPG | swear01 | **Done** |
 | C | `set_nonscan_ff` command, script integration | swear01 | **Done** |
 | D | Python experiment runner, CSV logging | swear01 | Pending |
-| E | Full experiment run + analysis | Both | Pending |
+| E | Full experiment run + analysis | swear01 | Pending |
 
 **Verified pilot results (FAN_ATPG, s27, NanGate45):**
 

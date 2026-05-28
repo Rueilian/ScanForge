@@ -1,0 +1,6 @@
+circuit,nonscan_ratio,fault_coverage,test_coverage,DT,AU,AB,UD,patterns,runtime_s
+b03,0.0,,,,,,,,
+b03,0.05,,,,,,,,
+b03,0.1,,,,,,,,
+b03,0.15,,,,,,,,
+b03,0.2,,,,,,,,
