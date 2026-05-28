@@ -1,7 +1,11 @@
 # ScanForge
 
-**ScanForge** is an open-source scan chain DFT (Design for Testability) analysis tool.  
-It uses [FAN_ATPG](https://github.com/NTU-LaDS-II/FAN_ATPG) as a backend to export circuit data, then performs scan chain simulation and **partial scan selection** via SCOAP testability metrics — all in a standalone C++ engine.
+**ScanForge** is an open-source scan-chain DFT analysis tool.  
+It uses [FAN_ATPG](https://github.com/NTU-LaDS-II/FAN_ATPG) as a backend to export circuit data, then performs scan-chain simulation and partial-scan analysis in a standalone C++ engine.
+
+The repository is currently being refocused toward **sequential ATPG for partial-scan circuits under timing-driven scan exclusion**. The first implemented baseline is a timing-driven non-scan modeling flow: given a timing-criticality ranking, ScanForge excludes the top `x%` FFs from scan and analyzes the resulting single-chain partial-scan architecture.
+
+Development in this repository should follow a **checklist-first, TDD-oriented workflow**. Before implementing a feature, create or update [checklist.md](./checklist.md) with the project-specific task definition, failing checks, implementation steps, and verification results.
 
 ---
 
@@ -12,6 +16,7 @@ It uses [FAN_ATPG](https://github.com/NTU-LaDS-II/FAN_ATPG) as a backend to expo
 | **Full scan analysis** | Simulate all FFs in scan chain, report switching activity |
 | **Per-FF stress CSV** | Optional `--stress-csv` export: toggles, duty, run-length, composite stress score |
 | **Segment stress CSV** | Sliding-window stress along the **current scan chain** (`--segment-window`, `--segment-csv`); hotspot flag from mean+1σ over segment averages |
+| **Timing-driven scan exclusion baseline** | Load a timing-ranking CSV, exclude top `x%` FFs as non-scan, and analyze the remaining one-chain partial-scan architecture |
 | **Partial scan selection** | SCOAP-CO, SCOAP-Combined, Random, **wear-aware** (`co_wear`, `combined_wear`), or **wear-leveling** (`co_wear_leveling`, `combined_wear_leveling`) greedy selection using segment max stress along the chain |
 | **Ratio sweep** | Sweep 25/50/75/100% ratios in one command (`--sweep`) |
 | **SCOAP export** | FAN_ATPG fork computes CC0/CC1/CO and exports them to `.sf` format |
@@ -33,8 +38,23 @@ ScanForge/
 ├── scripts/           # run_all.sh batch runner + per-circuit atpg scripts
 ├── results/           # Generated .sf files + sweep result tables (includes `leveling_demo.sf` for wear-leveling docs)
 ├── docs/              # Detailed flow, architecture, and results
+├── checklist.md       # TDD-oriented development checklist for this project
 └── README.md
 ```
+
+---
+
+## Development Workflow
+
+For every code change:
+
+1. define the task and acceptance criteria in `checklist.md`
+2. identify the smallest failing check first
+3. implement only enough code to make that check pass
+4. rerun verification and record the result in `checklist.md`
+5. only then move to the next checklist item
+
+This project is not supposed to skip directly from idea to implementation. The checklist is the development contract.
 
 ---
 
@@ -79,6 +99,25 @@ cd ..
 ```bash
 # Full scan
 ./src/scanforge FAN_ATPG/results/s27.sf
+
+# Timing-driven scan exclusion baseline
+./src/scanforge FAN_ATPG/results/s27.sf \
+  --timing-netlist FAN_ATPG/mod_netlist/s27.v \
+  --exclude-ratio 0.10
+
+# Exclusion sweep for the main spec ratios
+./src/scanforge FAN_ATPG/results/s27.sf \
+  --timing-netlist FAN_ATPG/mod_netlist/s27.v \
+  --exclude-sweep \
+  --exclude-summary-csv exclude_sweep.csv
+
+# Batch sweep across multiple ISCAS'89 benchmarks
+bash scripts/run_timing_exclusion_sweep.sh
+
+# Summarize the master timing-exclusion CSV into one report-oriented row per circuit
+python3 scripts/summarize_timing_exclusion.py \
+  results/timing_exclusion/timing_exclusion_master.csv \
+  results/timing_exclusion/report_summary.csv
 
 # Per-FF stress profile (CSV) + segment-level sliding-window CSV (W=16)
 ./src/scanforge FAN_ATPG/results/s27.sf --stress-csv stress.csv \
@@ -127,6 +166,17 @@ Options:
   --segment-csv <path>      Write segment stress CSV (needs --segment-window > 0; full/--partial only)
   --segment-window <n>      Sliding window along chain for segment metrics (0 = off; also used in --sweep CSV)
   --partial <ratio>         Partial scan at given ratio (0.0–1.0)
+  --timing-ranking <csv>    Timing-criticality CSV (ff_name,score or score,ff_name)
+  --timing-netlist <v>      Gate-level netlist used to build a timing-depth proxy
+  --exclude-ratio <ratio>   Mark top ratio of timing-critical FFs as non-scan and
+                            analyze the remaining one-chain partial-scan architecture
+  --exclude-sweep           Run timing-driven exclusion sweep at 5/10/15/20%
+  --non-scan-csv <path>     Export aligned timing scores and the generated non-scan mask
+  --timing-ranking-out <path>
+                            Write the generated timing ranking to CSV when using
+                            --timing-netlist
+  --exclude-summary-csv <path>
+                            Write exclusion-sweep summary CSV
   --mode <co|combined|random|co_wear|combined_wear|
                             co_wear_leveling|combined_wear_leveling>
                             FF selection strategy (default: co)
@@ -154,6 +204,38 @@ PPO <val0> <val1> ... <valN-1>
 ```
 
 Values: 0=L, 1=H, 2=X, 3=D, 4=B, 5=Z
+
+## Timing Ranking CSV Format
+
+The timing-driven baseline accepts a simple two-column CSV:
+
+```csv
+ff_name,score
+U_G5,0.10
+U_G6,0.90
+U_G7,0.30
+```
+
+or equivalently:
+
+```csv
+score,ff_name
+0.10,U_G5
+0.90,U_G6
+0.30,U_G7
+```
+
+The top `round(x% × N)` FFs are treated as **non-scan FFs**, and the remaining FFs are connected into the default single scan chain.
+
+## Timing Proxy from Netlist
+
+If you do not already have a timing-ranking CSV, ScanForge can build a first-order timing proxy directly from the gate-level netlist:
+
+- identify scan FF instances (`SDFF_*`)
+- trace the combinational logic feeding each FF `D` input
+- use the resulting logic depth as a timing-criticality score
+
+This is a library-agnostic structural timing proxy, not full STA. It is intended for the `timing-driven scan exclusion` baseline defined in the project spec.
 
 ---
 
@@ -275,4 +357,3 @@ For each test pattern:
 ## License
 
 MIT License — see [LICENSE](LICENSE).
-

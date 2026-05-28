@@ -1,0 +1,5 @@
+ratio,non_scan_ff,scan_ff,coverage_proxy_co,coverage_proxy_combined,pattern_applicability,switching_activity,max_segment_stress,segment_variance,hotspot_count
+0.05,82,1554,0.97538,0.975132,0,0.475762,0,0,0
+0.1,164,1472,0.933066,0.932742,0,0.476525,0,0,0
+0.15,245,1391,0.892809,0.892396,0,0.476026,0,0,0
+0.2,327,1309,0.878541,0.877779,0,0.475038,0,0,0
