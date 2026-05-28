@@ -9,6 +9,7 @@ This file is the required entry point before writing code for this project.
 - Do not mark an item complete unless the corresponding check has actually been run.
 - If a task is exploratory and no automated test exists yet, define the smallest reproducible command or artifact check first.
 - Keep this checklist aligned with [spec.md](./spec.md). Do not let completed sub-tasks imply that the entire spec is complete.
+- Any important decision must be written down here and, when it changes project definition, also reflected in [spec.md](./spec.md).
 
 ---
 
@@ -26,6 +27,16 @@ Current alignment to Section 7 `Implementation Plan`:
 | Task D | Evaluation and reporting | `in progress` |
 
 Important: the project is **not** done. So far, the implemented work mainly covers the timing-driven exclusion evaluation case and its reporting pipeline. The sequential ATPG part required by `Task C` is still missing.
+
+## Decision Log
+
+- `partial_scan_no_recovery` remains defined as:
+  - `T = 1`
+  - non-scan FF initial state modeled as `X`
+- `partial_scan_no_recovery` must not use extra initialization cycles outside the modeled time frames
+- A valid `partial_scan_no_recovery` implementation must treat non-scan FFs as unknown and uncontrollable at the single modeled frame
+- `partial_scan_with_recovery` will be tackled only after the above `T = 1` model is verified to behave differently from `full_scan`
+- Important decisions must not remain only in chat history; they must be reflected in both `spec.md` and `checklist.md` when applicable.
 
 ---
 
@@ -70,6 +81,8 @@ Use this board to show what the spec still requires, not only what has already b
 - [x] The minimum row-oriented result artifact for the future sequential-recovery case is defined
 - In progress:
 - [ ] Narrow the first bounded sequential recovery target to the smallest runnable experiment
+- [ ] Make the `partial_scan_no_recovery` `T = 1, X-initial-state` definition behave as a true unknown-uncontrollable boundary instead of collapsing to `full_scan`
+- [ ] Record the exact internal FAN_ATPG modification points required for the `T = 1, X-initial-state` no-recovery model
 - Next:
 - [ ] Decide whether the first prototype should emit a new CSV directly or adapt the current exclusion master CSV into the new schema
 - [ ] Decide how unrecovered faults will be represented once the first sequential-recovery prototype exists
@@ -218,6 +231,90 @@ Turn the raw timing-exclusion experiment outputs into a smaller report-oriented 
 
 - [x] A reproducible summary flow exists for `results/timing_exclusion/timing_exclusion_master.csv`
 - [x] The summary highlights coverage and activity trends across exclusion ratios
+
+---
+
+## Task: T=1 X-source no-recovery model audit
+
+Related spec task: `Task C`
+
+### Goal
+
+Identify the exact FAN_ATPG internal paths that must be changed so that `partial_scan_no_recovery` with `T = 1` and non-scan initial state `X` behaves as a true unknown-uncontrollable model instead of collapsing to `full_scan`.
+
+### Acceptance Criteria
+
+- [ ] The controllability boundary points for `TIEX` are explicitly listed
+- [ ] The line-type / headline classification impact is explicitly listed
+- [ ] The SCOAP impact is explicitly listed
+- [ ] The pattern / simulation consistency impact is explicitly listed
+- [ ] A minimum modification set is written down before deeper ATPG edits begin
+
+### TDD Plan
+
+- [x] Define the smallest failing check first
+- [x] Run the failing check and record the result
+- [x] Implement the minimum code change
+- [x] Re-run the same check after each minimum patch
+- [ ] Run adjacent regression checks
+
+### Checks
+
+| Check | Command / Method | Expected Result | Status |
+|---|---|---|---|
+| Stage-1 s27 check | `python3 scripts/run_stage1_fan_cases.py --circuit s27 --ratio 0.67 --timing-csv results/timing_exclusion/s27_timing_proxy.csv --out results/stage1_s27_cases_x67.csv` | `partial_scan_no_recovery` should differ from `full_scan`; currently fails because both rows are identical | `failed as expected` |
+| ATPG boundary audit | read `FAN_ATPG/pkg/core/src/atpg.cpp`, `atpg.h` | list all places where `PI/PPI` are treated as controllable or stopping boundaries | `passed` |
+| SCOAP audit | read `FAN_ATPG/pkg/core/src/atpg.cpp` | locate `cc0/cc1/co` handling for `PPI` and note missing `TIEX` handling | `passed` |
+| Simulation audit | read `FAN_ATPG/pkg/core/src/simulator.h` | confirm `TIEX/TIEZ` already evaluate to `X` in good/fault simulation | `passed` |
+| Pattern/simulation interface audit | read `FAN_ATPG/pkg/core/src/atpg.h`, `simulator.h`, `simulator.cpp` | identify whether `pattern.PPI_` still treats non-scan PPI as scan-controllable | `passed` |
+
+### Notes
+
+- Assumptions:
+- `TIEX` is the intended representation of an unknown non-scan source at `T = 1`.
+- Risks:
+- Updating only gate type semantics is insufficient; ATPG backtrace and heuristic logic may still collapse the model to `full_scan`.
+- Minimum modification set currently identified:
+- treat `TIEX/TIEZ` as uncontrollable stopping boundaries in backward implication and fanout-free backtrace
+- update line-type classification so `TIEX` is not treated like an ordinary internal gate
+- update SCOAP controllability handling so `TIEX` is not scored like `PI/PPI`
+- verify whether pattern export should continue writing `TIEX`-backed PPIs into `pattern.PPI_`
+- split scan and non-scan semantics at the ATPG/pattern boundary: non-scan PPI bits must not be exported as controllable `pattern.PPI_`
+- split scan and non-scan semantics at the simulation boundary: single-pattern and packed fault simulation must not re-apply `pattern.PPI_` values onto non-scan PPIs
+- prevent X-fill from assigning `0/1` to non-scan `pattern.PPI_` entries
+- Verification update:
+- A first minimum patch covering ATPG boundary checks, line-type classification, and SCOAP was applied and rebuilt.
+- `s27` still produced identical `full_scan` and `partial_scan_no_recovery` rows at `67%` non-scan ratio, so the current no-recovery model remains invalid.
+- Second-round audit located the main remaining leak in the ATPG-to-pattern and pattern-to-simulation interfaces:
+  - `writeAtpgValToPatternPI()` exported all `PPI` bits uniformly
+  - `randomFill()` / `adjacentFill()` filled all `PPI` `X` bits uniformly
+  - `Simulator::assignPatternToCircuitInputs()` and the packed-fault-sim path in `simulator.cpp` re-applied all `pattern.PPI_` bits uniformly
+- A valid next patch must split those paths using `isPpiNonscan_`.
+- Third-round verification update:
+  - the `isPpiNonscan_` split was applied to pattern export, X-fill, single-pattern fault simulation, and packed-pattern fault simulation
+  - rebuild succeeded
+  - `python3 scripts/run_stage1_fan_cases.py --circuit s27 --ratio 0.67 --timing-csv results/timing_exclusion/s27_timing_proxy.csv --out results/stage1_s27_cases_x67_after_ppi_split.csv` now yields:
+    - `full_scan`: `coverage=94.55`, `pattern_count=7`
+    - `partial_scan_no_recovery`: `coverage=94.55`, `pattern_count=8`
+  - interpretation: the new patch changed ATPG behavior enough to alter pattern count/runtime, but the current coverage oracle still does not separate the two cases.
+  - a no-DTC control run also kept the same coverage:
+    - `full_scan`: `coverage=94.55`, `pattern_count=9`
+    - `partial_scan_no_recovery`: `coverage=94.55`, `pattern_count=8`
+  - interpretation: the remaining mismatch is not only a dynamic-compression artifact; the deeper ATPG / fault-simulation semantics still need audit.
+- Fourth-round verification update:
+  - a `final objective` guard was added so `TIEX/TIEZ` no longer enter `finalObjectives_` and are skipped by `assignAtpgValToFinalObjectiveGates()`
+  - rebuild succeeded, but `python3 scripts/run_stage1_fan_cases.py --circuit s27 --ratio 0.67 --timing-csv results/timing_exclusion/s27_timing_proxy.csv --out results/stage1_s27_cases_x67_after_finalobj_fix.csv` still yielded:
+    - `full_scan`: `coverage=94.55`, `pattern_count=7`
+    - `partial_scan_no_recovery`: `coverage=94.55`, `pattern_count=8`
+  - interpretation: the `final objective / decision tree` leak was real but not the dominant remaining cause of the full-scan collapse.
+- Fifth-round verification update:
+  - the decisive remaining leak was observability, not controllability alone: ATPG propagation checks and fault simulation still treated all `PPO`s as observable even when the corresponding FF was declared non-scan
+  - the observability fix now masks non-scan `PPO`s in ATPG propagation (`checkIfFaultHasPropagatedToPO()`, `xPathTracing()`, `doUniquePathSensitization()`, `depthFromPo_`, `co_`) and in both fault-simulation detection loops
+  - rebuild succeeded
+  - `python3 scripts/run_stage1_fan_cases.py --circuit s27 --ratio 0.67 --timing-csv results/timing_exclusion/s27_timing_proxy.csv --out results/stage1_s27_cases_x67_after_observability_fix.csv` now yields:
+    - `full_scan`: `coverage=94.55`, `pattern_count=7`
+    - `partial_scan_no_recovery`: `coverage=85.45`, `pattern_count=6`, `AU=10`, `UD=6`
+  - interpretation: the `T = 1` no-recovery case now separates from `full_scan` in the expected direction, so non-scan FFs are no longer receiving full-scan observability through `PPO` endpoints
 - [x] The output format is concise enough to use in the report or slides without manual cleanup
 - [x] The summary flow is documented in the repository
 
@@ -423,3 +520,102 @@ Classify current generated files and local-only changes so the repository keeps 
 - `results/s27_exclude_sweep.csv` and `results/s27_timing_proxy.csv` are now ignored as temporary root-level artifacts; the tracked canonical outputs remain under `results/timing_exclusion/`.
 - Follow-up:
 - Keep `progress_report.md` as a local draft for now instead of committing it with implementation changes.
+
+---
+
+## Task: Stage-1 FAN runner for full_scan and partial_scan_no_recovery
+
+Related spec task: `Task C` and `Task D`
+
+### Goal
+
+Build a minimal single-point runner that uses the existing ISCAS'89 assets to emit two real FAN_ATPG result rows in the evaluation-case CSV schema: `full_scan` and `partial_scan_no_recovery`.
+
+### Acceptance Criteria
+
+- [x] One command can run `full_scan` for `s27`
+- [x] One command can run a candidate `partial_scan_no_recovery` flow for `s27` at ratio `0.10`
+- [x] Both rows are written in the evaluation-case CSV schema
+- [ ] `coverage`, `pattern_count`, and `runtime_sec` come from FAN_ATPG `report_statistics`
+- [ ] The non-scan FF set is derived from the existing timing-ranking CSV using the same selection rule as the current timing-exclusion flow
+
+### TDD Plan
+
+- [x] Define the smallest failing check first
+- [x] Run the failing check and record the result
+- [x] Implement the minimum code change
+- [x] Re-run the same check until it passes
+- [x] Run adjacent regression checks
+
+### Checks
+
+| Check | Command / Method | Expected Result | Status |
+|---|---|---|---|
+| Runner exists | inspect `scripts/` | a dedicated stage-1 FAN runner script exists | `passed` |
+| full_scan row works | `python3 scripts/run_stage1_fan_cases.py --circuit s27 --ratio 0.10 --timing-csv results/timing_exclusion/s27_timing_proxy.csv --out results/stage1_s27_cases.csv` | one CSV row is emitted with real FAN_ATPG values | `passed` |
+| candidate no_recovery row works | same command as above | one CSV row is emitted for the candidate no-recovery definition | `passed` |
+| Schema matches | inspect `results/stage1_s27_cases.csv` | row shape matches `circuit,case,ratio,depth,coverage,pattern_count,runtime_sec` plus extra context fields if present | `passed` |
+
+### Notes
+
+- Assumptions:
+- Stage 1 is being executed on the currently available `ISCAS'89` assets because the local worktree does not contain runnable ITC'99 netlists.
+- The current candidate definition for `partial_scan_no_recovery` was `set_nonscan_ff ...` with `build_circuit --frame 1`.
+- Risks:
+- The older `run_atpg_sweep.py` uses a different benchmark family and CSV schema, so it should not be modified casually for this stage-1 proof point.
+- Evidence now shows that `set_nonscan_ff` has no effect when `frame = 1` in the current FAN_ATPG implementation: `s27` full-scan and candidate no-recovery reports are numerically identical.
+- Follow-up:
+- Decide a revised definition for `partial_scan_no_recovery` before extending the runner to `partial_scan_with_recovery`.
+
+---
+
+## Task: Partial-scan sequential ATPG correctness criteria
+
+Related spec task: `Task C`
+
+### Goal
+
+Define the semantic correctness criteria for partial-scan sequential ATPG before continuing deeper implementation debugging, so later implementation checks are judged against stable model requirements instead of expected numbers alone.
+
+### Decision State
+
+- Current active decision: `correctness criteria before implementation audit`
+- Chosen option: `approved by user objective`
+- Approval evidence: `user objective: 先訂 correctness critieria，再開始查implementation`
+
+### Acceptance Criteria
+
+- [ ] The criteria distinguish scan FF controllability from non-scan FF controllability
+- [ ] The criteria define what `T = 1` and `T > 1` mean in this project
+- [ ] The criteria define the role of unknown initial state `X`
+- [ ] The criteria define the sequential justification requirement
+- [ ] The criteria define expected ordering constraints among full-scan and partial-scan cases
+
+### TDD Plan
+
+- [x] Define the smallest failing check first
+- [x] Run the failing check and record the result
+- [ ] Implement the minimum code change
+- [ ] Re-run the same check until it passes
+- [ ] Run adjacent regression checks
+
+### Checks
+
+| Check | Command / Method | Expected Result | Status |
+|---|---|---|---|
+| Model evidence review | compare `spec.md`, `FAN_s27_partial.rpt`, and `results/stage1_s27_cases_x67.csv` | criteria are based on actual observed mismatch, not only intuition | `passed` |
+| Criteria publication | update `spec.md` and `checklist.md` | correctness criteria become explicit project artifacts | `passed` |
+
+### Notes
+
+- Assumptions:
+- The current observed mismatch is between intended semantics and current engine behavior, not proof that the intended semantics are wrong.
+- Risks:
+- If criteria are vague, later implementation work may optimize for expected numbers rather than correct semantics.
+- Follow-up:
+- After criteria are written down, inspect FAN_ATPG implementation against each criterion one by one.
+- Preliminary implementation audit against the criteria:
+- Criterion 1 and 2 are partially represented in `circuit.cpp`: non-scan FF names are captured and `PARTIAL_SEQUENTIAL` connects non-scan PPO->next-frame PPI only when `T > 1`.
+- Criterion 3 is only approximated for `T = 1`: frame-0 non-scan PPIs are converted to `TIEX`, but observed behavior still matches `full_scan`, so the intended unknown-uncontrollable semantics are not yet reflected at the ATPG result level.
+- Criterion 4 is the main open gap: current evidence suggests the engine still does not realize a meaningful sequential-justification penalty at `T = 1`, even after the first boundary/SCOAP patch.
+- Criteria 5 and 6 remain the audit oracle for future checks: if a later implementation violates monotonic depth or full-scan dominance, treat that as a correctness bug, not a new model definition.
