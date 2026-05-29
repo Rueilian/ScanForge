@@ -88,17 +88,33 @@ The project uses the following correctness criteria to judge whether the partial
    - For partial-scan circuits, a required non-scan FF value at the observation frame is valid only if the ATPG model can justify it through the modeled preceding frames.
    - If the required state cannot be justified within the modeled depth, the fault may remain undetected or ATPG-untestable.
 
-5. **Monotonic depth expectation**
+5. **Scan/non-scan observability separation**
+   - Scan FF `PPO`s may be used as direct scan-observation endpoints.
+   - Non-scan FF `PPO`s must not be treated as direct scan-observation endpoints at `T = 1`.
+   - The same non-scan `PPO` may still participate as a structural pseudo-output of the FF data input and, for `T > 1`, as the state source that feeds the next modeled frame.
+   - Therefore, implementation checks must distinguish between:
+     - `PPO` used as an observation endpoint
+     - `PPO` used as a structural single-input gate inside the unrolled circuit
+
+6. **Monotonic depth expectation**
    - For a fixed partial-scan circuit and fault model, increasing sequential depth should not reduce the reachable state space available to ATPG.
    - Therefore, `coverage(T_large)` is expected to be at least as good as `coverage(T_small)` for the same partial-scan configuration, barring tool bugs.
 
-6. **Full-scan dominance expectation**
+7. **Full-scan dominance expectation**
    - For the same circuit and fault model, a correct partial-scan ATPG model should not provide more controllability than the corresponding full-scan model.
    - Therefore, `coverage(full_scan)` is expected to be at least as good as `coverage(partial_scan, T)` for the same benchmark and ratio setup, barring measurement or implementation error.
 
-7. **Implementation-independence of criteria**
+8. **Implementation-independence of criteria**
    - These criteria define the intended semantics even if the current FAN_ATPG implementation does not yet satisfy them.
    - Any implementation result that violates these criteria should be treated as evidence of a modeling or engine issue, not as a new definition.
+
+9. **Multi-frame stuck-at fault placement**
+   - For `SA0/SA1` ATPG on a multi-frame unrolled circuit, the target stuck-at fault must be modeled on the final observation frame, not on frame 0.
+   - The same final-frame mapping must be used consistently in:
+     - ATPG target generation
+     - DTC activation / objective setup
+     - fault-simulation activation and injection
+   - Otherwise the ATPG core, pattern replay, and fault classification can disagree about whether a multi-frame SAF pattern is valid.
 
 ### 4.3 Sequential ATPG flow
 
@@ -208,6 +224,22 @@ The core comparison measures how coverage drops as `x` increases (RQ1) and how m
 
 The s27 partial-scan result (AU=16, UD=6) reflects the realistic sequential constraint: 16 faults require non-scan FF states that cannot be reached through 8 cycles of circuit initialization.
 
+**Multi-frame SAF correctness note**
+
+For `PARTIAL_SEQUENTIAL` stuck-at ATPG with `T > 2`, correctness requires the
+post-ATPG infrastructure to preserve the full multi-frame pattern, not only the
+first one or two frames.
+
+- ATPG may internally solve a fault on an unfolded `T`-frame circuit
+- if `Pattern` only stores `PI1/PI2` and `Simulator` only replays those frames,
+  then fault dropping, detection classification, and reported coverage become
+  semantically invalid for `T > 2`
+- therefore `Pattern`, `writeAtpgValToPatternPI()`, and the simulator-side
+  pattern application logic must carry all PI frames used by the ATPG solution
+
+This is now treated as a correctness requirement, not an optional reporting
+improvement.
+
 ## 8. Scope
 
 In scope:
@@ -240,3 +272,10 @@ Important decisions include, but are not limited to:
 - scope changes and fallback choices
 
 No important decision should remain only in chat history.
+- Multi-frame head-line justification note:
+  - In `PARTIAL_SEQUENTIAL` ATPG, a head line whose value has already been fixed by
+    fault activation or propagation must still be eligible for upstream
+    justification.
+  - `findFinalObjective()` must not silently discard non-`X` head lines if they
+    still need justification; otherwise a valid multi-frame sequence can be
+    misclassified as `AU` before any real search occurs.

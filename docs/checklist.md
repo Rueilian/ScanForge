@@ -248,6 +248,7 @@ Identify the exact FAN_ATPG internal paths that must be changed so that `partial
 - [ ] The line-type / headline classification impact is explicitly listed
 - [ ] The SCOAP impact is explicitly listed
 - [ ] The pattern / simulation consistency impact is explicitly listed
+- [ ] The remaining `PPO` shortcut paths are classified into observation semantics vs structural gate semantics
 - [ ] A minimum modification set is written down before deeper ATPG edits begin
 
 ### TDD Plan
@@ -315,6 +316,175 @@ Identify the exact FAN_ATPG internal paths that must be changed so that `partial
     - `full_scan`: `coverage=94.55`, `pattern_count=7`
     - `partial_scan_no_recovery`: `coverage=85.45`, `pattern_count=6`, `AU=10`, `UD=6`
   - interpretation: the `T = 1` no-recovery case now separates from `full_scan` in the expected direction, so non-scan FFs are no longer receiving full-scan observability through `PPO` endpoints
+- Sixth-round semantic audit update:
+  - the current observability mask is not enough to declare the implementation correct, because several ATPG paths still special-case all `PPO`s as generic single-input endpoints without checking whether the `PPO` is scan-observable
+  - the main remaining paths are:
+    - `doOneGateBackwardImplication()`
+    - `findEasiestInput()`
+    - the `pFaultyGate->gateType_ == ... || Gate::PPO` branches in fault activation / output-fault handling
+    - the `pFaultyLine->gateType_ == ... || Gate::PPO` branch in faulty-line handling
+  - audit conclusion:
+    - the observability fix itself is semantically plausible
+    - but these residual `PPO` shortcuts are not yet aligned with the new scan/non-scan observability criterion
+    - they must be split into:
+      - `PPO` as scan-observation endpoint
+      - `PPO` as structural pseudo-output of the FF data input
+  - next implementation step:
+    - patch those three `atpg.cpp` paths only after each one is classified by role, so we do not accidentally break legitimate structural use of `PPO`
+  - additional audit clue:
+    - converting frame-0 non-scan FF sources from `PPI` to `TIEX` may also bypass code paths that are keyed only on `gateType_ == Gate::PPI`, especially in `fault.cpp`
+    - this is not yet a confirmed bug, but it is now a tracked semantic-audit item because `TIEX` may need explicit handling wherever the engine distinguishes scan-FF pseudo-input semantics from ordinary internal-gate semantics
+- Seventh-round semantic audit update:
+  - a stronger bug class is now confirmed: several ATPG paths still perform direct `X -> 0/1` assignments on `TIEX/TIEZ`
+  - this is a semantic violation independent of observability, because `TIEX/TIEZ` are supposed to model `unknown and uncontrollable` frame-0 non-scan FF sources
+  - the first guard patch must block direct assignment into `TIEX/TIEZ` in:
+    - `doOneGateBackwardImplication()`
+    - `doUniquePathSensitization()`
+    - `setFaultyGate()`
+    - `setUpFirstTimeFrame()`
+  - re-run `s27` stage-1 sanity after this patch and specifically inspect whether the `G17/U_G17/G11` cone is still being justified through frame-0 non-scan state
+  - new structural root cause found while tracing `G17 SA1`:
+    - `build_circuit` resolved `nonscanCellNames_` too late
+    - `createCircuitPPI()` therefore built frame-0 non-scan PPIs as ordinary `PPI`, not `TIEX`
+    - this explains why a single-fault run could still report `ppi: 1XX` for `partial_scan_no_recovery`
+  - next patch moves non-scan PPI resolution ahead of `createCircuitGates()` so `T = 1` frame-0 pseudo-inputs are born with partial-sequential semantics instead of being patched after the fact
+  - follow-up execution fix:
+    - once frame-0 non-scan PPIs become real `TIEX`, `doOneGateBackwardImplication()` must treat required assignments into those sources as immediate `CONFLICT`
+    - leaving them as generic `unjustified` objectives causes the ATPG loop to spin on impossible final-objective decisions instead of backtracking cleanly
+  - next convergence fix:
+    - `findFinalObjective()` previously had no explicit failure return when every remaining objective ultimately depended on `TIEX`
+    - this let the engine re-enter objective selection forever instead of surfacing a dead end to `generateSinglePatternOnTargetFault()`
+    - patch it to return `false` when no assignable final objective exists, and let the caller backtrack or mark the fault untestable
+- Eighth-round convergence audit update:
+  - after the `build_circuit` ordering fix and the first `TIEX` guards, `partial_scan_no_recovery` stopped collapsing to `full_scan`, but bounded `run_atpg` runs now hang before report generation
+  - the remaining hang is no longer explained by `findFinalObjective()` alone:
+    - `multipleBacktrace()` now reports `finalObjectiveId < 0` for `TIEX/TIEZ` dead ends
+    - but the `numGatesInDFrontier == 1` branch still treats `doUniquePathSensitization() == 0` as unconditional progress
+  - semantic interpretation:
+    - `doUniquePathSensitization() == 0` only means `no backward implication level is required`
+    - it does not guarantee that any new event or assignment was created
+    - when no event is pending, unconditional `continue` causes ATPG to spin on the same d-frontier without progress
+  - next patch:
+    - add an explicit `hasPendingEvents()` check
+    - in the single-d-frontier path, if unique sensitization returns `0` and there are no pending events, fall through to `findFinalObjective()` instead of looping
+  - stronger loop diagnosis:
+    - `UNIQUE_PATH_SENSITIZE_FAIL` is still handled as a blind `continue`
+    - this relies on the next `countEffectiveDFrontiers()` pass to remove the frontier, but that assumption is not valid when the failure is caused by a `TIEX` side-input requirement rather than by loss of structural x-path
+    - in that case ATPG can revisit the same unique-sensitization failure forever
+  - next patch refinement:
+    - when `doUniquePathSensitization()` returns `UNIQUE_PATH_SENSITIZE_FAIL` in the single-d-frontier branch, treat it like a local dead end:
+      - clear events
+      - try backtrack
+      - otherwise mark `FAULT_UNTESTABLE`
+  - verification after the convergence fixes:
+    - bounded `run_atpg` no longer hangs for either:
+      - `script/fanScripts/s27_partial_g17_sa1.script`
+      - `script/fanScripts/s27_partial_scan_no_recovery_x67.script`
+    - the repaired ordering is now monotone in the expected direction on `s27` with `U_G5 U_G6` as non-scan FFs:
+      - `full_scan, T=1`: `fault coverage = 94.55%`
+      - `partial_scan, T=4`: `fault coverage = 79.25%`
+      - `partial_scan_no_recovery, T=1`: `fault coverage = 39.36%`
+    - interpretation:
+      - the latest fixes restored termination and the expected `full_scan >= larger-T partial scan >= T=1 no-recovery` ordering
+      - but the new `39.36%` result is a strong semantic change, so it still needs follow-up logic review rather than being accepted only because it dropped
+  - ninth-round audit finding:
+    - direct `add_fault <type> <pin>` single-fault checks are currently not trustworthy when fault collapsing is enabled
+    - root cause:
+      - `AddFaultCmd::addPinFault()` and `addCellFault()` index into `extractedFaults_` using `gateIndexToFaultIndex_`
+      - but `gateIndexToFaultIndex_` is built for the uncollapsed ordering, while `extractedFaults_` is a separately constructed collapsed list
+    - consequence:
+      - targeted debug runs such as `add_fault SA1 G17` may select the wrong fault object
+      - this explains why some single-fault checks contradicted the all-fault reports
+    - next patch:
+      - resolve specific faults by semantic match `(gateID, faultType, faultyLine)` against `extractedFaults_`, not by positional offset from `gateIndexToFaultIndex_`
+  - tenth-round audit finding:
+    - direct single-fault checks for top-level output ports originally selected the wrong semantic fault:
+      - `add_fault SA1 G17` was using `faultyLine = 0`
+      - but the extracted stuck-at fault corresponding to a `PO` is the single `PO` input-line fault (`faultyLine = 1`)
+    - after fixing that mapping, direct `T=4` `add_fault SA1 G17` now consistently reports:
+      - `AU`
+      - `#Patterns = 0`
+    - interpretation:
+      - the earlier contradiction between single-fault and all-fault results for `G17` was partly a tooling bug
+      - after the fix, the `G17` inconsistency is now between:
+        - FAN_ATPG's own ATPG result (`AU`)
+        - an independent state-space reachability check that found a robust `T=4` sequence
+      - therefore the remaining contradiction is now much more likely to be a real ATPG-core bug, not just a reporting/debug-command issue
+  - eleventh-round audit finding:
+    - `T=4` direct debug and all-fault runs expose a new infrastructure-level mismatch for stuck-at ATPG:
+      - ATPG can produce a pattern for `build_circuit --frame 4` + `add_fault SA1 G17`
+      - but the surrounding pattern/report flow still does not classify the fault consistently
+    - root cause candidate:
+      - `Pattern` stores only `PI1_` and `PI2_`
+      - simulator-side pattern replay only re-applies those first two PI frames
+      - for `T > 2`, later PI frames of a valid ATPG solution are dropped before fault simulation / reporting
+  - twelfth-round semantic audit finding:
+    - the stronger root cause is now narrowed to inconsistent fault-frame mapping for multi-frame SAF
+    - `TransitionDelayFaultATPG()` already shifts the target fault into a later frame, but `StuckAtFaultATPG()` still targeted frame-0 faults on an unrolled circuit
+    - the simulator activation/injection paths also still used the original extracted SAF gate id, so ATPG generation and fault simulation were not operating on the same frame
+    - semantic decision:
+      - for multi-frame `SA0/SA1`, the fault belongs to the final observation frame
+      - this same mapping must be shared by:
+        - single-pattern ATPG target selection
+        - DTC fault activation checks
+        - parallel fault simulation activation / injection
+        - parallel pattern simulation activation / injection
+    - minimum implementation patch:
+      - add a shared final-frame SAF mapping helper in ATPG
+      - add the same mapping helper in simulator
+      - re-run `G17 SA1 @ T=4` and the `s27` partial-scan sanity checks
+  - twelfth-round verification update:
+    - after the SAF final-frame mapping patch:
+      - direct `build_circuit --frame 4` + `add_fault SA1 G17` no longer returns `AU`
+      - the same debug case now reports:
+        - `DT = 1`
+        - `AU = 0`
+        - `fault coverage = 100%`
+        - `#Patterns = 1`
+    - `s27` sanity checks also changed:
+      - `full_scan, T=1`: `fault coverage = 94.55%`, `#Patterns = 7`
+      - `partial_scan_no_recovery, T=1`: `fault coverage = 39.36%`, `#Patterns = 5`
+      - `partial_scan, T=4`: `fault coverage = 88.68%`, `#Patterns = 4`
+    - interpretation:
+      - the final-frame SAF mapping fixes a real multi-frame consistency bug, not only a single-fault debug path
+      - the ordering is now semantically plausible:
+        - `full_scan >= partial_scan(T=4) >= partial_scan_no_recovery(T=1)`
+      - the previous `79.25%` `T=4` figure should no longer be treated as current behavior after this patch
+    - residual-`AU` audit:
+      - `report_fault -s AU` on `s27`, `partial_scan`, `T=4` now shows the remaining collapsed `AU` faults are concentrated at `U_G10`:
+        - `SA0 U_G10/A1`
+        - `SA0 U_G10/A2`
+        - `SA0 U_G10/ZN`
+        - `SA1 U_G10/ZN`
+      - representative spot checks:
+        - `full_scan, T=1`, `SA0 U_G10/ZN`: `DT`, `100%`, `#Patterns = 1`
+        - `full_scan, T=1`, `SA1 U_G10/ZN`: `DT`, `100%`, `#Patterns = 1`
+        - `partial_scan, T=4`, `SA0 U_G10/ZN`: `AU`, `0%`, `#Patterns = 0`
+        - `partial_scan, T=8`, `SA0 U_G10/ZN`: still `AU`, `0%`, `#Patterns = 0`
+        - `partial_scan, T=8`, `SA1 U_G10/ZN`: still `AU`, `0%`, `#Patterns = 0`
+      - interpretation:
+        - after the `G17` / final-frame SAF fix, the remaining `AU` behavior is no longer a broad multi-frame mismatch
+        - it is localized to the `U_G10 -> G5 -> G11/G17` sequential cone and may be a genuine partial-scan limitation rather than the same infrastructure bug
+    - `U_G10` cone logic audit:
+      - `U_G10/ZN` drives only the `D` input of `U_G5`
+      - in `full_scan, T=1`, `U_G5` remains scan-observable through its `PPO`, so `U_G10` stuck-at faults are still detectable
+      - direct full-scan spot checks confirm this:
+        - `SA0 U_G10/ZN`: `DT`, one pattern, with `ppi: 1XX` and `ppo: 10X`
+        - `SA1 U_G10/ZN`: `DT`, one pattern, with `ppo: 0XX`
+      - in partial scan, `U_G5` is explicitly non-scan:
+        - its frame-local `PPO` is no longer a legal scan observation endpoint
+        - the final-frame stuck-at model places the fault on the observation frame itself, so the fault effect cannot wait one more frame and then be observed through `G5`
+      - consequence:
+        - `U_G10` stuck-at faults lose their only direct observation path once `U_G5` becomes non-scan
+        - this explains why `SA0/SA1 U_G10/ZN` are detectable in full scan but remain `AU` in partial scan even when `T` increases from `4` to `8`
+      - audit conclusion:
+        - these residual `AU` faults are consistent with the intended sequential semantics and do not currently indicate the same multi-frame implementation bug that affected `G17`
+    - consequence:
+      - even if the ATPG core solves a multi-frame stuck-at objective correctly,
+        fault dropping and final fault classification may still be wrong
+    - next implementation step:
+      - extend the SAF pattern/simulator path to preserve and replay all PI frames
+      - update reporting so multi-frame PI assignments are visible during debug
 - [x] The output format is concise enough to use in the report or slides without manual cleanup
 - [x] The summary flow is documented in the repository
 
@@ -619,3 +789,15 @@ Define the semantic correctness criteria for partial-scan sequential ATPG before
 - Criterion 3 is only approximated for `T = 1`: frame-0 non-scan PPIs are converted to `TIEX`, but observed behavior still matches `full_scan`, so the intended unknown-uncontrollable semantics are not yet reflected at the ATPG result level.
 - Criterion 4 is the main open gap: current evidence suggests the engine still does not realize a meaningful sequential-justification penalty at `T = 1`, even after the first boundary/SCOAP patch.
 - Criteria 5 and 6 remain the audit oracle for future checks: if a later implementation violates monotonic depth or full-scan dominance, treat that as a correctness bug, not a new model definition.
+- Twelfth-round audit finding:
+  - `G17 SA1 @ T=4` still returns `AU` almost immediately in single-fault mode.
+  - Current strongest root-cause hypothesis: `findFinalObjective()` only turns
+    `X` head lines into final objectives and silently skips head lines already
+    fixed to `H/L` by fault activation.
+  - For multi-frame ATPG this is too aggressive: a decided head line may still
+    require upstream justification and must not be dropped from the objective
+    flow.
+  - Follow-up refinement: in the failing `G17` path, the stronger issue may be
+    even earlier: when fault activation fixes a head line before any unjustified
+    bound line exists, that head line may never enter `initialObjectives_` at
+    all.

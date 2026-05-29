@@ -138,18 +138,23 @@ Total runs: 11 circuits × 5 ratios = **55 runs**
 | D | Python experiment runner, CSV logging | Script done; blocked on FAN ATPG bug |
 | E | Full experiment run + analysis | Pending |
 
-**Verified pilot results:**
+**Verified `s27` sequential-ATPG sanity results:**
 
-| Circuit | Mode | x | T | Fault coverage |
-|---------|------|---|---|----------------|
-| s27 | Full scan | 0% | 1 | 94.55% |
-| s27 | Partial scan | 67% | 8 | 79.25% (AU=16) |
+| Circuit | Mode | x | T | Fault coverage | Patterns |
+|---------|------|---|---|----------------|----------|
+| s27 | Full scan | 0% | 1 | 94.55% | 7 |
+| s27 | Partial scan, no recovery | 67% | 1 | 39.36% | 5 |
+| s27 | Partial scan, bounded recovery | 67% | 4 | 88.68% | 4 |
 
-ITC'99 full sweep results pending (blocked on FAN ATPG bug — see below).
+These three cases now satisfy the intended ordering `full_scan >= bounded partial-scan >= no-recovery partial-scan`.
+
+The key backend fix was a consistent **final-frame stuck-at fault mapping** for multi-frame SAF ATPG. Before this correction, representative faults such as `G17 SA1` were falsely classified as ATPG-untestable at `T=4`. After aligning ATPG target selection and fault simulation to the final observation frame, the same fault becomes detected with one generated pattern. The remaining `T=4` ATPG-untestable faults on `s27` are localized to the `U_G10 -> U_G5` cone and are consistent with the intended partial-scan observability limit rather than the earlier infrastructure bug.
+
+ITC'99 full sweep results remain pending; the current validated pilot is `s27`.
 
 ### Current Blocker
 
-`b03` full-scan gives `fault_coverage = 36.48%` (expected ≥ 90%). Root cause traced to the `findFinalObjective()` / `finalObjectives_.empty()` handling in `atpg.cpp`. Under investigation.
+The main blocker is no longer the `s27` FAN_ATPG core path. The remaining work is to extend the same validated sequential-ATPG reporting flow from the `s27` pilot to the broader benchmark matrix and integrate those outputs into the final evaluation tables.
 
 ---
 
