@@ -1,311 +1,289 @@
-# ScanForge — Detailed Flow, Architecture & Results
+# ScanForge — Pipeline Flow and Architecture
 
 ## 1. Project Overview
 
-ScanForge implements a **partial scan chain selection** flow for VLSI design-for-testability (DFT).  
-Given a circuit netlist and its ATPG test patterns, ScanForge:
+ScanForge studies fault coverage loss and recovery when timing-critical flip-flops are excluded from scan. The pipeline:
 
-1. Computes **SCOAP** (Sandia Controllability/Observability Analysis Program) metrics for every flip-flop
-2. Selects the **K most testability-critical FFs** (partial scan) using CC0, CC1, CO values
-3. Simulates the **scan-shift sequence** and reports switching activity
-
-The tool is evaluated on all 12 ISCAS'89 benchmark circuits.
+1. Synthesizes ITC'99 benchmark circuits to NanGate45 gate-level Verilog (Yosys)
+2. Ranks FFs by timing criticality via OpenSTA minimum-path-slack analysis
+3. Marks the top `x%` most timing-critical FFs as non-scan
+4. Runs FAN_ATPG with a `PARTIAL_SEQUENTIAL` T=8-frame unrolled model
+5. Collects stuck-at fault coverage across 11 circuits × 5 ratios = 55 runs
 
 ---
 
 ## 2. System Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│  FAN_ATPG (Rueilian/FAN_ATPG — submodule)                           │
-│                                                                      │
-│   Script commands:                                                   │
-│     build_circuit <netlist.v>                                        │
-│     add_fault                                                        │
-│     run_atpg                                                         │
-│     add_scan_chains -o results/<circuit>.sf   ← key export step     │
-│                                                                      │
-│   add_scan_chains -o:                                                │
-│     • calls Atpg::calSCOAP() to compute CC0/CC1/CO for all gates    │
-│     • extracts PPI gates (FF Q-outputs) at indices [numPI..numPI+N) │
-│     • writes .sf file: FF names, SCOAP values, PPI/PPO patterns     │
-└────────────────────────────┬─────────────────────────────────────────┘
-                             │  <circuit>.sf
-┌────────────────────────────▼─────────────────────────────────────────┐
-│  ScanForge Engine (src/)                                             │
-│                                                                      │
-│  parseScanData(path)  → ScanData { numFF, ffs[], patterns[] }       │
-│                                                                      │
-│  selectFFs(data, K, mode, …):                                        │
-│    SCOAP_CO / SCOAP_COMBINED / RANDOM / *_wear → global sort        │
-│    *_wear_leveling → greedy using full-scan stress + segment proxy  │
-│    → returns sorted chain[K] of FF indices (circuit order)          │
-│                                                                      │
-│  simulate(data, chain):                                              │
-│    for each pattern:                                                 │
-│      shift-in PPI values through chain (K cycles)                   │
-│      count toggles per shift; optional per-FF duty / run-length     │
-│    → ScanResult { shiftCycles, toggles, switchActivity, perFF[] }  │
-│                                                                      │
-│  sweepPartialScan(data, {0.25,0.5,0.75,1.0}, mode):                 │
-│    → prints ratio/K/cycles/toggles/activity table                   │
-└──────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│  Stage A: Synthesis + Timing Analysis                               │
+│                                                                     │
+│  itc99_rtl/b*.v                                                     │
+│       │ Yosys (synth_itc99.sh)                                      │
+│       ▼                                                             │
+│  FAN_ATPG/mod_netlist/b*.v    (NanGate45 gate-level, post-fixup)   │
+│       │ OpenSTA (sta_extract_slack.tcl)                             │
+│       ▼                                                             │
+│  masks/<circuit>_slack.csv    (per-FF min path slack)              │
+│       │ gen_mask_from_slack.py                                      │
+│       ▼                                                             │
+│  masks/<circuit>_x*.mask      (FF cell names, top x% by slack)     │
+└─────────────────────────────────────────────────────────────────────┘
+                              │
+┌─────────────────────────────▼───────────────────────────────────────┐
+│  Stage B/C: FAN_ATPG with PARTIAL_SEQUENTIAL Mode                  │
+│                                                                     │
+│  Script per (circuit, ratio):                                       │
+│    read_lib techlib/mod_nangate45.mdt                               │
+│    read_netlist mod_netlist/<circuit>.v                             │
+│    set_nonscan_ff <names from mask>          ← Task C              │
+│    build_circuit --frame 8                   ← triggers Task B     │
+│    set_fault_type saf                                               │
+│    add_fault --all                                                  │
+│    run_atpg                                                         │
+│    report_statistics > rpt/<circuit>_x<x>.rpt                      │
+│                                                                     │
+│  PARTIAL_SEQUENTIAL unrolling (T=8 frames):                        │
+│    non-scan FF: PPO[t] → BUF → PPI[t+1]  (state propagates)       │
+│    scan FF:     PPI[t] free               (independently driven)   │
+│    frame 0:     all PPIs free             (X initial state)        │
+└─────────────────────────────────────────────────────────────────────┘
+                              │
+┌─────────────────────────────▼───────────────────────────────────────┐
+│  Stage D: Experiment Runner + Results                               │
+│                                                                     │
+│  run_atpg_sweep.py                                                  │
+│    for each (circuit, ratio) in 11 × 5:                            │
+│      generate FAN script                                            │
+│      invoke ./bin/opt/fan -f <script>  (cwd = FAN_ATPG/)           │
+│      parse rpt: fault_coverage, DT, AU, AB, UD, patterns, time     │
+│      append row to results/itc99_partial_scan.csv                  │
+│                                                                     │
+│  Output: results/itc99_partial_scan.csv  (55 rows)                 │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 3. SCOAP Metrics
+## 3. FAN_ATPG Extensions
 
-SCOAP assigns each gate a **controllability** (how hard it is to set to 0/1) and **observability** (how hard it is to observe at a primary output):
+### 3.1 PARTIAL_SEQUENTIAL Mode (Task B)
 
-| Metric | Symbol | Meaning | Good for scan? |
-|--------|--------|---------|---------------|
-| CC0 | Combinational Controllability 0 | Cost to force gate output to 0 | Higher = harder |
-| CC1 | Combinational Controllability 1 | Cost to force gate output to 1 | Higher = harder |
-| CO  | Combinational Observability     | Cost to propagate fault to PO  | Higher = harder |
+`connectMultipleTimeFrame()` in `circuit.cpp` handles three modes:
 
-**Partial scan strategy**: Select FFs with highest CO (or combined score) — these are the hardest FFs to test without scan access, so adding them to the scan chain gives the maximum fault coverage gain per FF scanned.
+| `TIME_FRAME_CONNECT_TYPE` | Behavior |
+|---|---|
+| `COMBINATIONAL` | No inter-frame connections |
+| `SEQUENTIAL` | All PPOs connect to next-frame PPIs via BUF |
+| `PARTIAL_SEQUENTIAL` | Non-scan FF PPOs → BUF → next-frame PPI; scan FF PPIs remain free |
 
-### Computation Fix
+Frame 0 is treated uniformly: all PPIs are free (X initial state). This follows standard sequential ATPG convention.
 
-The original `calSCOAP()` in FAN_ATPG processed gates in forward gateID order for both CC and CO.  
-CC requires a **forward** pass (PI→PO): correct.  
-CO requires a **reverse** pass (PO→PI): the original code was wrong.
+The implementation uses a frame-0 snapshot (`const std::vector<Gate> f0`) to avoid template mutation bugs when expanding gates across frames.
 
-ScanForge's fork fixes this by reversing the CO loop:
-```cpp
-// Fixed: reverse topological order for co_ (PO → PI)
-for (int gateID = pCircuit_->totalGate_ - 1; gateID >= 0; --gateID)
+### 3.2 `set_nonscan_ff` Command (Task C)
+
+FAN script syntax:
+```
+set_nonscan_ff <cell_name_1> <cell_name_2> ...
+set_nonscan_ff --clear
 ```
 
-This yields correct non-zero CO values (e.g. s27: U_G6 CO=13, vs. 0 before fix).
+Flow:
+1. `SetNonscanFfCmd::exec()` stores cell names in `fanMgr_->nonscanFfNames`
+2. `BuildCircuitCmd::exec()` copies to `cir->nonscanCellNames_` before calling `connectMultipleTimeFrame()`
+3. FAN prints `# Non-scan FFs declared: N total` to confirm name matching
+
+### 3.3 Verilog Post-Processing (`fixup_verilog.py`)
+
+Yosys-generated Verilog requires post-processing for FAN compatibility:
+
+| Pass | Problem | Fix |
+|------|---------|-----|
+| Pre-pass | Constant literals (`1'b0`, `1'h0`) in port connections | Discover all `_constN_` names needed |
+| Pass 1–2 | Bus port/wire declarations (`[N:0] name`) | Expand to individual scalars |
+| Pass 3 | Indexed references (`name[n]`) | Rename to `name_n_` |
+| Pass 4 | Module header missing const port names | Append `_const0_` etc. to port list |
+| Pass 5 | Escaped identifiers (`\name[n]`) | Rename |
+| Pass 6 | Constant literals in body | Replace with named `input` ports |
 
 ---
 
-## 4. The `.sf` File Format
+## 4. Evaluation Cases
 
-```
-SCAN_DATA 1.0
-NUM_FF <N>
-FF_NAMES <name0> <name1> ... <nameN-1>
-SCOAP  <cc0_0> <cc1_0> <co_0>  <cc0_1> <cc1_1> <co_1> ...
-PATTERNS <P>
-PPI <val0> <val1> ... <valN-1>
-PPO <val0> <val1> ... <valN-1>
-... (PPI/PPO pair repeated P times)
-```
+The project spec (`spec.md`) defines three evaluation cases for the final comparison:
 
-Value encoding: 0=Low, 1=High, 2=X (unknown), 3=D (fault sensitized), 4=B (D-bar), 5=Z (high-Z)
+| Case | Description | Status |
+|------|-------------|--------|
+| `full_scan` | All FFs scan, x=0%, standard 1-frame ATPG | Works (ISCAS'89) |
+| `partial_scan_no_recovery` | Non-scan FFs present, T=1, X initial state | Under verification |
+| `partial_scan_with_recovery` | Non-scan FFs present, T=8 sequential ATPG | Not yet implemented |
 
----
+### 4.1 `partial_scan_no_recovery` correctness (critical)
 
-## 5. Scan Shift Simulation
+The T=1 no-recovery case must treat non-scan FFs as **unknown and uncontrollable** at the single modeled frame. Any behavior that lets ATPG freely justify non-scan FF values back to 0/1 is an invalid implementation.
 
-For each test pattern:
-- **Load phase** (K shift cycles): shift PPI values through the scan chain  
-  - Cycle t: chain[j] captures chain[j-1]'s state (or SI=0 for j=0)
-  - The chain starts at **all zeros** before the first pattern so the first shift matches SI=0 semantics (same as treating unknowns as L for the first transition).
-- **Capture phase**: latch PPO values into the chain (end of pattern)
-- A **toggle** is counted when a FF's **known** state (L/H) changes to a different known state between consecutive shift edges (X does not contribute to toggles).
+An implementation audit (documented in `checklist.md`) has identified the key modification points. After the most recent observability fix on s27 (ISCAS'89) at 67% non-scan ratio:
 
-Per-FF **stress metrics** (toggle rate, duty, longest run of 0/1, composite `stress_score`) are accumulated over all shift cycles; use CLI `--stress-csv <file>` to export CSV after a full-scan or `--partial` run.
+- `full_scan`: coverage=94.55%
+- `partial_scan_no_recovery`: coverage=85.45% (AU=10, UD=6)
 
-```
-Switching Activity = total_toggles / (K × total_shift_cycles)
-```
+This separation from full-scan is the correct direction. However, full verification on the ITC'99 benchmark set is still pending.
 
-where `total_shift_cycles = K × P` (K FFs × P patterns).
+### 4.2 `partial_scan_with_recovery` (T=8) status
 
----
+The T=8 sequential ATPG flow (`PARTIAL_SEQUENTIAL` mode + `set_nonscan_ff`) exists in FAN_ATPG but has NOT been verified as producing correct sequential recovery behavior. Any T=8 result claims should be treated as preliminary / pilot only until `partial_scan_no_recovery` correctness is verified first.
 
-## 6. Benchmark Results
+Current pilot results (ISCAS'89 s27, not ITC'99):
 
-### 6.1 Full Scan — All 12 ISCAS'89 Circuits
+| Circuit | Mode | x% | T | Fault coverage | Notes |
+|---------|------|----|---|----------------|-------|
+| s27 | Full scan | 0% | 1 | 94.55% | ISCAS'89 baseline |
+| s27 | Partial scan | 67% | 8 | 79.25% | AU=16; pilot only |
 
-| Circuit | FFs | Patterns | Shift Cycles | Toggles     | Switch Activity |
-|---------|-----|----------|--------------|-------------|-----------------|
-| s27     | 3   | 5        | 15           | 19          | 0.4222          |
-| s208    | 8   | 29       | 232          | 555         | 0.2990          |
-| s510    | 6   | 59       | 354          | 984         | 0.4633          |
-| s953    | 29  | 89       | 2,581        | 24,933      | 0.3331          |
-| s1196   | 18  | 134      | 2,412        | 20,854      | 0.4803          |
-| s1238   | 18  | 145      | 2,610        | 22,683      | 0.4828          |
-| s5378   | 179 | 117      | 20,943       | 1,703,514   | 0.4544          |
-| s9234   | 211 | 156      | 32,916       | 3,539,659   | 0.5096          |
-| s15850  | 534 | 133      | 71,022       | 17,928,805  | 0.4727          |
-| s35932  | 1728| 21       | 36,288       | 17,332,183  | 0.2764          |
-| s38417  | 1636| 105      | 171,780      | 133,742,630 | 0.4759          |
-| s38584  | 1426| 133      | 189,658      | 134,638,017 | 0.4978          |
-
-### 6.2 Partial Scan Sweep — s27 (3 FFs)
-
-| Ratio | K | Shift Cycles | Toggles | Activity | Selected FFs |
-|-------|---|--------------|---------|----------|-------------|
-| 25%   | 1 | 5            | 3       | 0.6000   | U_G6        |
-| 50%   | 2 | 10           | 9       | 0.4500   | U_G6, U_G7  |
-| 75%   | 2 | 10           | 9       | 0.4500   | U_G6, U_G7  |
-| 100%  | 3 | 15           | 19      | 0.4222   | U_G5, U_G6, U_G7 |
-
-U_G6 (CO=13) is selected first — it has the highest observability cost.
-
-### 6.3 Partial Scan Sweep — s953 (29 FFs, SCOAP-CO)
-
-| Ratio | K  | Shift Cycles | Toggles | Activity |
-|-------|----|-------------|---------|----------|
-| 25%   | 7  | 623         | 1,690   | 0.3875   |
-| 50%   | 15 | 1,335       | 7,645   | 0.3818   |
-| 75%   | 22 | 1,958       | 15,703  | 0.3645   |
-| 100%  | 29 | 2,581       | 24,933  | 0.3331   |
-
-### 6.4 Partial Scan Sweep — s5378 (179 FFs, SCOAP-CO)
-
-| Ratio | K   | Shift Cycles | Toggles     | Activity |
-|-------|-----|-------------|-------------|----------|
-| 25%   | 45  | 5,265       | 109,220     | 0.4610   |
-| 50%   | 90  | 10,530      | 410,140     | 0.4328   |
-| 75%   | 134 | 15,678      | 945,111     | 0.4499   |
-| 100%  | 179 | 20,943      | 1,703,514   | 0.4544   |
-
-### 6.5 Partial Scan Sweep — s9234 (211 FFs, SCOAP-CO)
-
-| Ratio | K   | Shift Cycles | Toggles     | Activity |
-|-------|-----|-------------|-------------|----------|
-| 25%   | 53  | 8,268       | 211,006     | 0.4815   |
-| 50%   | 106 | 16,536      | 852,578     | 0.4864   |
-| 75%   | 158 | 24,648      | 1,958,384   | 0.5029   |
-| 100%  | 211 | 32,916      | 3,539,659   | 0.5096   |
-
-### 6.6 Partial Scan Sweep — s15850 (534 FFs, SCOAP-CO)
-
-| Ratio | K   | Shift Cycles | Toggles     | Activity |
-|-------|-----|-------------|-------------|----------|
-| 25%   | 134 | 17,822      | 1,116,297   | 0.4674   |
-| 50%   | 267 | 35,511      | 4,489,209   | 0.4735   |
-| 75%   | 401 | 53,333      | 10,138,723  | 0.4741   |
-| 100%  | 534 | 71,022      | 17,928,805  | 0.4727   |
+ITC'99 full sweep results are blocked on a FAN ATPG bug (see Section 5).
 
 ---
 
-## 7. Key Observations
+## 5. Known Issues
 
-1. **Switching activity is relatively stable across ratios** for most circuits (~0.46–0.50). This suggests the ATPG patterns have fairly uniform toggle density across FFs, regardless of which ones are selected.
+### 5.1 FAN_ATPG Fault Coverage Bug (BLOCKING)
 
-2. **s35932 has notably lower activity (~0.26)** — its large number of FFs (1728) relative to few patterns (21) means the scan chain is mostly shifting stable values.
+**Symptom:** b03 full-scan `fault_coverage = 36.48%` (expected ≥ 90%), 915/1104 faults marked AU.
 
-3. **SCOAP-CO selection is meaningful**: for s27, U_G6 is selected first with CO=13 (the only FF not directly feeding a PO), which is the intuitively correct choice.
+**Root cause:** `findFinalObjective()` in `atpg.cpp` returned with empty `finalObjectives_` in a case that is NOT a dead-end. The 3 call sites of `findFinalObjective` inside `generateSinglePatternOnTargetFault` currently force a backtrack → `FAULT_UNTESTABLE` when `finalObjectives_` is empty. This aggressively misclassifies testable faults as untestable.
 
-4. **Shift cycle reduction scales linearly** with ratio, as expected (K × P patterns). This is the primary hardware cost metric for partial scan.
+**Status:** Under investigation. Pilot sweep cannot run until this is fixed.
+
+### 5.2 T=1 no-recovery semantics (IN PROGRESS)
+
+Until `partial_scan_no_recovery` correctness is confirmed on ITC'99 benchmarks with real stuck-at fault coverage numbers that differ from full-scan, T=8 sequential recovery results cannot be trusted. See `checklist.md` for the detailed audit.
 
 ---
 
-## 8. How to Run All Circuits
+## 6. Benchmark Details
+
+| Circuit | FFs | Clock port | Notes |
+|---------|-----|------------|-------|
+| b03 | 31 | `clock` | |
+| b04 | 67 | `CLOCK` | |
+| b05 | 88 | `CLOCK` | |
+| b07 | 45 | `clock` | |
+| b08 | 28 | `clock` | |
+| b09 | 30 | `clock` | |
+| b11 | 58 | `clock` | |
+| b12 | 192 | `clock` | |
+| b13 | 65 | `clock` | |
+| b14 | 219 | `clock` | |
+| b15 | 839 | `CLOCK` | Largest circuit; ATPG may take > 1 hr |
+
+FF cells in synthesized netlists: `DFFR_X1`, `DFFS_X1`, `DFFRS_X1` (NanGate45 standard cells; not `SDFF_X1`).
+
+---
+
+## 7. Experiment Plan
+
+### Parameter sweep
+
+| Parameter | Values |
+|---|---|
+| Non-scan ratio `x` | 0% (full-scan baseline), 5%, 10%, 15%, 20% |
+| Sequential ATPG depth | T=8 (fixed; T=1 for x=0% baseline) |
+
+Total: **11 circuits × 5 ratios = 55 runs**
+
+### Evaluation metrics
+
+| Metric | Purpose |
+|---|---|
+| Fault coverage | Primary success metric |
+| Test coverage | Secondary coverage view |
+| Undetected / aborted faults | Remaining ATPG gap |
+| Pattern count | Test-cost proxy |
+| ATPG runtime | Practicality |
+
+---
+
+## 8. Current Status
+
+### Completed
+
+- [x] Yosys synthesis flow → NanGate45 gate-level Verilog (`scripts/synth_itc99.sh`)
+- [x] OpenSTA timing analysis → per-FF slack ranking (`scripts/gen_nonscan_masks.sh`)
+- [x] Non-scan mask generation at 5/10/15/20% (`gen_mask_from_slack.py`)
+- [x] `PARTIAL_SEQUENTIAL` multi-frame unrolling mode in FAN_ATPG
+- [x] `set_nonscan_ff` command and script integration
+- [x] `partial_scan_no_recovery` semantics audit (ISCAS'89 s27 pilot)
+- [x] Timing-exclusion sweep flow (ISCAS'89, legacy ScanForge engine)
+- [x] FAN_ATPG stability fixes (infrastructure only, not main contribution)
+
+### Not Yet Complete
+
+- [ ] **Verified `partial_scan_no_recovery` semantics on ITC'99 benchmarks** — need to confirm T=1 non-scan FFs are not treated as scan-controllable
+- [ ] Fix `findFinalObjective`/`finalObjectives_.empty()` bug in `atpg.cpp`
+- [ ] Run pilot sweep (b03, 5 ratios) after bug fix
+- [ ] Run full 55-experiment sweep and collect results
+- [ ] T=8 sequential ATPG recovery — not yet validated; blocked on T=1 correctness
+- [ ] Memory-efficient / cone-guided multi-frame simplification
+
+### Immediate Next Task
+
+**Verify that non-scan FFs are not accidentally treated as scan-controllable in the T=1 no-recovery mode on ITC'99 benchmarks.** This must be done before any T=8 recovery results can be trusted.
+
+---
+
+## 9. Legacy Content (deprecated topics)
+
+The sections below describe older project work that has been superseded. They are retained for reference but no longer reflect the current project direction.
+
+### 9.1 ScanForge C++ Engine (ISCAS'89)
+
+The `src/` directory contains a standalone C++ engine that was originally built for:
+- SCOAP-based partial scan FF selection
+- Scan-shift switching activity simulation
+- Stress-aware and wear-leveling partial scan modes
+- Timing-exclusion sweep analysis on ISCAS'89 benchmarks
+
+This engine is **not required** for the current ITC'99 sequential ATPG pipeline. It is kept for the legacy timing-exclusion sweep workflow. See the [README](./README.md) for its CLI reference.
+
+### 9.2 Stress-Aware Partial Scan (progress_report.md)
+
+The initial project topic was "Stress-Aware Partial Scan Selection" targeting ISCAS'89 benchmarks with a SCOAP coverage proxy. This work produced a full experimental study (7 modes, 12 circuits, 7,920 data rows) and is documented in `progress_report.md`.
+
+As of May 2026, the project has been redirected to the current topic: **"Sequential ATPG Coverage Recovery for Timing-Driven Partial-Scan Circuits"** targeting ITC'99 benchmarks with true stuck-at fault coverage via FAN_ATPG.
+
+The `progress_report.md` file has been updated to reflect the new topic. The old stress-aware content is preserved in git history.
+
+---
+
+## 10. Dependencies
+
+| Component | Purpose |
+|---|---|
+| FAN_ATPG | ATPG backend with PARTIAL_SEQUENTIAL mode |
+| Yosys | RTL → NanGate45 gate-level synthesis |
+| OpenSTA | Static timing analysis for FF slack ranking |
+| Python 3 | Experiment runner, mask generation, verilog fixup |
+| g++ (C++14) | ScanForge engine (legacy) |
+| bison, flex | FAN_ATPG build dependencies |
+
+---
+
+## 11. How to Run
 
 ```bash
-cd FAN_ATPG
-mkdir -p results
-for s in s27 s208 s510 s953 s1196 s1238 s5378 s9234 s15850 s35932 s38417 s38584; do
-    ./bin/opt/fan -f script/fanScripts/atpg_$s.script
-done
-cd ..
+# 1. Build FAN_ATPG
+cd FAN_ATPG && make -j$(nproc) && cd ..
 
-for s in s27 s208 s510 s953 s1196 s1238 s5378 s9234 s15850 s35932 s38417 s38584; do
-    echo "=== $s ===" && ./src/scanforge FAN_ATPG/results/$s.sf --sweep
-done
-```
+# 2. Synthesize ITC'99 benchmarks
+bash scripts/synth_itc99.sh
 
----
+# 3. Generate non-scan masks
+bash scripts/gen_nonscan_masks.sh
 
-## 9. Dependencies
+# 4. Run pilot ATPG sweep
+python3 scripts/run_atpg_sweep.py --circuits b03
 
-| Component | Version | Purpose |
-|-----------|---------|---------|
-| g++       | ≥ 7     | Build ScanForge engine |
-| bison, flex | system | Build FAN_ATPG |
-| FAN_ATPG  | fork    | ATPG + SCOAP export backend |
-
----
-
-## 10. Future Work
-
-- **Chain reordering**: reorder FFs in scan chain to minimize switching activity
-- **Multi-chain**: split FFs across K chains (reduces test time at cost of scan-in/out pins)
-- ~~**Fault coverage estimation**: estimate coverage loss from partial scan selection~~ ✅ Implemented (v0.2)
-- **Power-aware selection**: minimize scan shift power as primary objective
-
----
-
-## 11. Fault Coverage Estimation (v0.2)
-
-### 11.1 Methodology
-
-Since FAN_ATPG generates fully-specified patterns (all FF states are 0/1, no X values), a pattern-based metric would always show 0% coverage for partial scan. Instead, ScanForge uses a **SCOAP-weighted observability coverage** metric:
-
-```
-coverage = Σ(CO_i for FFs in scan chain) / Σ(CO_i for all FFs)
-```
-
-**Rationale**: SCOAP CO quantifies how many logic operations are needed to propagate a fault on that FF's output to a primary output. A high CO means the FF is hard to test without scan access. By weighting each FF by its CO value, the metric captures how much of the "test difficulty" is resolved by putting those FFs in the scan chain.
-
-**Baseline**: K/N (simple ratio), equivalent to assuming all FFs are equally hard to test.
-
-The key property: **SCOAP-CO selection always meets or exceeds the baseline**, and typically achieves much higher coverage at the same ratio.
-
-### 11.2 Results — All 12 Circuits
-
-| Circuit | Ratio | K   | CO (SCOAP)    | Random (SCOAP) | Baseline (K/N) |
-|---------|-------|-----|---------------|----------------|----------------|
-| s27     | 25%   | 1   | **72%**       | 72%            | 33%            |
-|         | 50%   | 2   | **89%**       | 83%            | 67%            |
-| s208    | 25%   | 2   | **44%**       | 25%            | 25%            |
-|         | 50%   | 4   | **78%**       | 53%            | 50%            |
-| s510    | 25%   | 2   | **44%**       | 25%            | 33%            |
-|         | 50%   | 3   | **61%**       | 42%            | 50%            |
-|         | 75%   | 5   | **95%**       | 83%            | 83%            |
-| s953    | 25%   | 7   | **100%**      | 36%            | 24%            |
-|         | 50%   | 15  | **100%**      | 89%            | 52%            |
-| s1196   | 25%   | 5   | **55%**       | 25%            | 28%            |
-|         | 50%   | 9   | **84%**       | 54%            | 50%            |
-| s1238   | 25%   | 5   | **53%**       | 23%            | 28%            |
-|         | 50%   | 9   | **83%**       | 55%            | 50%            |
-| s5378   | 25%   | 45  | **53%**       | 28%            | 25%            |
-|         | 50%   | 90  | **81%**       | 51%            | 50%            |
-|         | 75%   | 134 | **96%**       | 74%            | 75%            |
-| s9234   | 25%   | 53  | **65%**       | 23%            | 25%            |
-|         | 50%   | 106 | **92%**       | 43%            | 50%            |
-|         | 75%   | 158 | **99%**       | 70%            | 75%            |
-| s15850  | 25%   | 134 | **71%**       | 20%            | 25%            |
-|         | 50%   | 267 | **90%**       | 45%            | 50%            |
-|         | 75%   | 401 | **99%**       | 75%            | 75%            |
-| s35932  | 25%   | 432 | **81%**       | 28%            | 25%            |
-|         | 50%   | 864 | **89%**       | 52%            | 50%            |
-| s38417  | 25%   | 409 | **83%**       | 27%            | 25%            |
-|         | 50%   | 818 | **97%**       | 52%            | 50%            |
-|         | 75%   | 1227| **100%**      | 77%            | 75%            |
-| s38584  | 25%   | 357 | **46%**       | 26%            | 25%            |
-|         | 50%   | 713 | **71%**       | 50%            | 50%            |
-|         | 75%   | 1070| **92%**       | 73%            | 75%            |
-
-> Note: SCOAP-CO and SCOAP-Combined give identical results because CO dominates the combined score for these circuits. Use `--mode combined` if you also want to weight by controllability.
-
-### 11.3 Key Findings
-
-1. **SCOAP-CO selection achieves disproportionately high coverage at low ratios.** For s953, scanning just 25% of FFs (7 out of 29) captures 100% of the SCOAP-weighted testability. For s38417, 50% scan → 97% coverage.
-
-2. **Random selection closely tracks the K/N baseline**, confirming that SCOAP-guided selection is essential for efficient partial scan.
-
-3. **Large circuits show the biggest gains.** For s15850 and s35932, SCOAP-CO achieves 3× higher coverage than random at 25% ratio (71–81% vs 20–28%).
-
-4. **The "coverage saturation" point** (where adding more FFs gives diminishing returns) is much lower for SCOAP-CO than random. Most circuits reach >90% coverage by 50% ratio with CO selection.
-
-### 11.4 Usage
-
-```bash
-# Interactive coverage table (3 modes vs baseline)
-./scanforge --coverage circuit.sf
-
-# Fine-grained sweep (5% steps)
-./scanforge --coverage --fine circuit.sf
-
-# Machine-readable CSV output
-./scanforge --coverage --csv circuit.sf > coverage.csv
+# 5. Run full sweep (after bug fix confirmed)
+python3 scripts/run_atpg_sweep.py
 ```
