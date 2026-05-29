@@ -4,7 +4,7 @@ Sequential ATPG research pipeline for studying fault coverage loss and recovery 
 
 **Current active work:** ITC'99 benchmarks synthesized with NanGate45, timing-driven scan exclusion via OpenSTA, and multi-frame sequential ATPG (PARTIAL_SEQUENTIAL mode in FAN_ATPG).
 
-Authoritative direction: [`spec.md`](./spec.md) | Task tracker: [`checklist.md`](./checklist.md) | Pipeline details: [`docs/flow_and_results.md`](./docs/flow_and_results.md)
+Authoritative direction: [`docs/spec.md`](./docs/spec.md) | Task tracker: [`docs/checklist.md`](./docs/checklist.md) | Pipeline details: [`docs/flow_and_results.md`](./docs/flow_and_results.md)
 
 ---
 
@@ -26,11 +26,13 @@ ScanForge/
 ├── masks/                 # non-scan masks: masks/<circuit>_x<ratio>.mask
 ├── results/               # experiment output
 │   └── itc99_partial_scan.csv — 55-row results table
+├── docs/                  # Project specification, checklist, agent instructions, flow docs
+│   ├── spec.md
+│   ├── checklist.md
+│   ├── AGENTS.md
+│   ├── progress_report.md
+│   └── flow_and_results.md
 ├── src/                   # ScanForge C++ engine (legacy ISCAS'89 tool)
-├── docs/                  # Detailed flow, architecture, and results
-├── spec.md                # full project specification
-├── checklist.md           # TDD-oriented task checklist
-└── AGENTS.md              # build and run instructions for AI agents
 ```
 
 ---
@@ -128,7 +130,7 @@ grep b03 results/itc99_partial_scan.csv | head -1
 
 **Immediate next task:** Fix FAN ATPG bug → verify full-scan b03 ≥ 90% → verify T=1 `partial_scan_no_recovery` differs from `full_scan` on ITC'99 benchmarks → then run full 55-experiment sweep.
 
-See [`spec.md`](./spec.md) and [`checklist.md`](./checklist.md) for details.
+See [`docs/spec.md`](./docs/spec.md) and [`docs/checklist.md`](./docs/checklist.md) for details.
 
 ---
 
@@ -230,7 +232,7 @@ Full scan switching activity and partial scan sweep tables for s27 through s3858
 
 ### Stress-Aware Partial Scan Study
 
-The initial project topic was "Stress-Aware Partial Scan Selection" targeting ISCAS'89 with a SCOAP coverage proxy. This produced a full experimental study (7 modes, 12 circuits) documented in `progress_report.md`. As of May 2026, the project has been redirected to the current topic: "Sequential ATPG Coverage Recovery for Timing-Driven Partial-Scan Circuits."
+The initial project topic was "Stress-Aware Partial Scan Selection" targeting ISCAS'89 with a SCOAP coverage proxy. This produced a full experimental study (7 modes, 12 circuits) documented in `docs/progress_report.md`. As of May 2026, the project has been redirected to the current topic: "Sequential ATPG Coverage Recovery for Timing-Driven Partial-Scan Circuits."
 
 ---
 
