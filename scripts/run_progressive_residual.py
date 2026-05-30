@@ -1,29 +1,37 @@
 #!/usr/bin/env python3
 """
 True Progressive Residual Multi-Frame ATPG Pipeline.
-
-Phase 1: Run T=1 on all faults, extract DT set D1.
-Phase 2: Build residual fault list R1 = All - D1, run T=2 on R1 only.
-Phase 3: Build residual fault list R2 = R1 - DT(T=2), run T=4 on R2 only.
-Phase 4: Report union coverage over original physical fault denominator.
-
-Usage:
-    python3 scripts/run_progressive_residual.py --circuit s27 --nonscan "U_G5 U_G6"
+Runs T=1 → residual T=2 → residual T=4 and reports union coverage.
+Outputs progressive_residual_summary.csv.
 """
-import argparse, csv, os, re, subprocess, sys, tempfile, time
-from collections import defaultdict
+import argparse, csv, os, re, subprocess, sys, time
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 FAN_DIR = os.path.join(REPO_ROOT, "FAN_ATPG")
 FAN_BIN = os.path.join(FAN_DIR, "bin", "opt", "fan")
 RPT_DIR = os.path.join(FAN_DIR, "rpt")
 SCRIPT_DIR = os.path.join(FAN_DIR, "script", "fanScripts")
+RES_FAULT_DIR = os.path.join(REPO_ROOT, "results", "residual_faults")
+RES_STATUS_DIR = os.path.join(REPO_ROOT, "results", "fault_status")
+SUMMARY_CSV = os.path.join(REPO_ROOT, "results", "progressive_residual_summary.csv")
+
+os.makedirs(RES_FAULT_DIR, exist_ok=True)
+os.makedirs(RES_STATUS_DIR, exist_ok=True)
+
+SUMMARY_FIELDS = [
+    "circuit", "ratio", "excluded_ff", "total_ff", "denominator",
+    "T1_DT", "T1_AU", "T1_AB", "T1_FC",
+    "R1_count", "T2_target", "T2_new_DT", "T2_AU", "T2_AB",
+    "R2_count", "T4_target", "T4_new_DT", "T4_AU", "T4_AB",
+    "final_DT", "FC_T1", "FC_T1_T2", "FC_T1_T2_T4",
+    "gain_T2_pp", "gain_T4_pp", "total_gain_pp",
+    "T1_rt", "T2_rt", "T4_rt", "total_rt",
+    "recovered_per_sec_T2", "recovered_per_sec_T4", "status"
+]
 
 def run_fan(label, circuit, frame, nonscan_ffs, fault_file=None, timeout_s=180):
-    """Run FAN_ATPG. If fault_file is given, use add_fault -f; else add_fault --all."""
     script_path = os.path.join(SCRIPT_DIR, f"{label}.script")
     rpt_path = os.path.join(RPT_DIR, f"{label}.rpt")
-
     lines = [
         "read_lib techlib/mod_nangate45.mdt",
         f"read_netlist mod_netlist/{circuit}.v",
@@ -37,8 +45,7 @@ def run_fan(label, circuit, frame, nonscan_ffs, fault_file=None, timeout_s=180):
     else:
         lines.append("add_fault --all")
     lines += [
-        "set_static_compression off",
-        "set_dynamic_compression off",
+        "set_static_compression off", "set_dynamic_compression off",
         "run_atpg",
         f"report_statistics > {rpt_path}",
         f"report_fault > {os.path.join(RPT_DIR, label + '_faults.txt')}",
@@ -46,22 +53,21 @@ def run_fan(label, circuit, frame, nonscan_ffs, fault_file=None, timeout_s=180):
     ]
     with open(script_path, "w") as f:
         f.write("\n".join(lines) + "\n")
-
-    proc = subprocess.run(
-        [FAN_BIN, "-f", os.path.relpath(script_path, FAN_DIR)],
-        cwd=FAN_DIR, capture_output=True, text=True, timeout=timeout_s
-    )
-
-    # Parse results
+    t0 = time.time()
+    try:
+        proc = subprocess.run(
+            [FAN_BIN, "-f", os.path.relpath(script_path, FAN_DIR)],
+            cwd=FAN_DIR, capture_output=True, text=True, timeout=timeout_s)
+        elapsed = time.time() - t0
+    except subprocess.TimeoutExpired:
+        return {"label": label, "returncode": -1, "elapsed": timeout_s, "status": "TIMEOUT"}
     fc = dt = au = ab = ud = total = None
     if os.path.exists(rpt_path):
         with open(rpt_path) as f:
             text = f.read()
         for key, pat in [
-            ("fc", r"fault coverage\s+([\d.]+)%"),
-            ("dt", r"DT \(detected\)\s+([\d]+)"),
-            ("au", r"AU \(atpg untestable\)\s+([\d]+)"),
-            ("ab", r"AB \(atpg abort\)\s+([\d]+)"),
+            ("fc", r"fault coverage\s+([\d.]+)%"), ("dt", r"DT \(detected\)\s+([\d]+)"),
+            ("au", r"AU \(atpg untestable\)\s+([\d]+)"), ("ab", r"AB \(atpg abort\)\s+([\d]+)"),
             ("ud", r"UD \(undetected\)\s+([\d]+)"),
         ]:
             m = re.search(pat, text)
@@ -71,106 +77,135 @@ def run_fan(label, circuit, frame, nonscan_ffs, fault_file=None, timeout_s=180):
                 elif key == "au": au = int(m.group(1))
                 elif key == "ab": ab = int(m.group(1))
                 elif key == "ud": ud = int(m.group(1))
-        total = dt + au + ab + ud if all(v is not None for v in [dt, au, ab, ud]) else None
-
+        total = (dt or 0) + (au or 0) + (ab or 0) + (ud or 0)
     return {"label": label, "fc": fc, "dt": dt, "au": au, "ab": ab, "ud": ud, "total": total,
-            "returncode": proc.returncode}
-
+            "returncode": proc.returncode, "elapsed": elapsed, "status": "PASS"}
 
 def parse_faults(path):
-    """Parse report_fault output, return {fault_key: status} and list of (gid,line,type,status)."""
-    faults = {}
-    fault_list = []
-    if not os.path.exists(path):
-        return faults, fault_list
+    faults = {}; fault_list = []
+    if not os.path.exists(path): return faults, fault_list
     with open(path) as f:
         for line in f:
             m = re.match(r'#\s+g=(\d+)\s+l=(-?\d+)\s+(SA[01])\s+(DT|AU|AB|UD|TI|RE|PT)\s', line)
             if m:
-                gid = int(m.group(1)); fl = int(m.group(2))
-                ft = m.group(3); st = m.group(4)
-                key = (gid, fl, ft)
-                faults[key] = st
+                gid, fl, ft, st = int(m.group(1)), int(m.group(2)), m.group(3), m.group(4)
+                faults[(gid, fl, ft)] = st
                 fault_list.append((gid, fl, ft, st))
     return faults, fault_list
 
-
-def write_residual_file(residual_faults, path):
-    """Write residual fault list: gateID SA0|SA1 faultyLine per line."""
+def write_fault_list(faults, path):
     with open(path, "w") as f:
-        for gid, fl, ft in sorted(residual_faults):
+        for gid, fl, ft in sorted(faults):
             f.write(f"{gid} {ft} {fl}\n")
-    return path
-
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--circuit", required=True)
-    ap.add_argument("--nonscan", default="", help="space-separated non-scan FF names")
+    ap.add_argument("--ratio", type=float, required=True)
+    ap.add_argument("--nonscan", default="")
     ap.add_argument("--timeout", type=int, default=180)
     args = ap.parse_args()
 
-    circuit = args.circuit
-    nonscan = args.nonscan
-    ns_tag = f"x{nonscan.count(' ')+1}" if nonscan else "x0"
+    c = args.circuit; ratio = args.ratio; ns_ffs = args.nonscan
+    excl = len(ns_ffs.split()) if ns_ffs else 0
+    total_ff = None
+    nl_path = os.path.join(FAN_DIR, "mod_netlist", f"{c}.v")
+    if os.path.exists(nl_path):
+        with open(nl_path) as f:
+            total_ff = len(re.findall(r'DFF[RS]_X1 ', f.read()))
+    pct = int(ratio * 100); tag = f"{c}_x{pct}"
 
-    os.makedirs(RPT_DIR, exist_ok=True)
-    os.makedirs(SCRIPT_DIR, exist_ok=True)
-
-    print(f"{'='*60}")
-    print(f"Progressive Residual ATPG: {circuit} {ns_tag}")
+    print(f"\n{'='*60}")
+    print(f"Progressive Residual: {tag}  excl={excl}/{total_ff or '?'}")
     print(f"{'='*60}")
 
     # ── Phase 1: T=1 all faults ──
-    print("\nPhase 1: T=1 all faults")
-    t1 = run_fan(f"{circuit}_{ns_tag}_t1_all", circuit, 1, nonscan)
-    print(f"  FC={t1['fc']:.2f}% DT={t1['dt']} AU={t1['au']} AB={t1['ab']} TOTAL={t1['total']}")
-
-    t1_faults, t1_list = parse_faults(os.path.join(RPT_DIR, f"{circuit}_{ns_tag}_t1_all_faults.txt"))
-    if not t1_faults:
-        print("  ERROR: no fault data from T=1 run")
+    print("Phase 1: T=1 all faults")
+    t1 = run_fan(f"{tag}_t1_all", c, 1, ns_ffs)
+    if t1["status"] != "PASS":
+        print(f"  {t1['status']}")
         return
+    print(f"  FC={t1['fc']:.2f}% DT={t1['dt']} AU={t1['au']} ({t1['elapsed']:.1f}s)")
 
+    t1_faults, _ = parse_faults(os.path.join(RPT_DIR, f"{tag}_t1_all_faults.txt"))
+    if not t1_faults:
+        print("  ERROR: no T=1 fault data"); return
     D1 = {k for k, v in t1_faults.items() if v == 'DT'}
-    denominator = len(t1_faults)
-    print(f"  D1={len(D1)}/{denominator} detected")
+    denom = len(t1_faults)
 
     # ── Phase 2: T=2 residual ──
     R1 = {k for k, v in t1_faults.items() if v != 'DT'}
-    print(f"\nPhase 2: T=2 on R1 ({len(R1)} residual faults)")
-    r1_file = os.path.join(RPT_DIR, f"{circuit}_{ns_tag}_r1.txt")
-    write_residual_file(R1, r1_file)
-
-    t2 = run_fan(f"{circuit}_{ns_tag}_t2_res", circuit, 2, nonscan, fault_file=r1_file)
-    print(f"  FC={t2['fc']:.2f}% DT={t2['dt']} AU={t2['au']} AB={t2['ab']} TOTAL={t2['total']}")
-
-    t2_faults, _ = parse_faults(os.path.join(RPT_DIR, f"{circuit}_{ns_tag}_t2_res_faults.txt"))
-    D2 = {k for k, v in t2_faults.items() if v == 'DT'}
+    r1_file = os.path.join(RES_FAULT_DIR, f"{tag}_after_T1.faults")
+    write_fault_list(R1, r1_file)
+    print(f"Phase 2: T=2 on {len(R1)} residual faults")
+    t2 = run_fan(f"{tag}_t2_res", c, 2, ns_ffs, fault_file=r1_file)
+    t2_new = D2_au = D2_ab = 0
+    if t2["status"] == "PASS":
+        t2_faults, _ = parse_faults(os.path.join(RPT_DIR, f"{tag}_t2_res_faults.txt"))
+        D2 = {k for k, v in t2_faults.items() if v == 'DT'}
+        D2_au = sum(1 for k, v in t2_faults.items() if v == 'AU')
+        D2_ab = sum(1 for k, v in t2_faults.items() if v == 'AB')
+        t2_new = len(D2 - D1)
+        print(f"  new_DT={t2_new} AU={D2_au} ({t2['elapsed']:.1f}s)")
+    else:
+        print(f"  {t2['status']}")
+        D2 = set()
 
     # ── Phase 3: T=4 residual ──
     R2 = R1 - D2
-    print(f"\nPhase 3: T=4 on R2 ({len(R2)} remaining residual faults)")
-    r2_file = os.path.join(RPT_DIR, f"{circuit}_{ns_tag}_r2.txt")
-    write_residual_file(R2, r2_file)
+    r2_file = os.path.join(RES_FAULT_DIR, f"{tag}_after_T1_T2.faults")
+    write_fault_list(R2, r2_file)
+    print(f"Phase 3: T=4 on {len(R2)} remaining residual faults")
+    t4 = run_fan(f"{tag}_t4_res", c, 4, ns_ffs, fault_file=r2_file)
+    t4_new = D4_au = D4_ab = 0
+    if t4["status"] == "PASS":
+        t4_faults, _ = parse_faults(os.path.join(RPT_DIR, f"{tag}_t4_res_faults.txt"))
+        D4 = {k for k, v in t4_faults.items() if v == 'DT'}
+        D4_au = sum(1 for k, v in t4_faults.items() if v == 'AU')
+        D4_ab = sum(1 for k, v in t4_faults.items() if v == 'AB')
+        t4_new = len(D4 - D1 - D2)
+        print(f"  new_DT={t4_new} AU={D4_au} ({t4['elapsed']:.1f}s)")
+    else:
+        print(f"  {t4['status']}")
+        D4 = set()
 
-    t4 = run_fan(f"{circuit}_{ns_tag}_t4_res", circuit, 4, nonscan, fault_file=r2_file)
-    print(f"  FC={t4['fc']:.2f}% DT={t4['dt']} AU={t4['au']} AB={t4['ab']} TOTAL={t4['total']}")
+    # ── Union ──
+    Du = D1 | D2 | D4
+    fc1 = len(D1)/denom*100; fc12 = len(D1|D2)/denom*100; fc124 = len(Du)/denom*100
+    gain2 = fc12 - fc1; gain4 = fc124 - fc12; total_gain = fc124 - fc1
+    trt = (t1.get("elapsed",0) + t2.get("elapsed",0) + t4.get("elapsed",0))
+    rps2 = t2_new / t2["elapsed"] if t2.get("elapsed") and t2_new else 0
+    rps4 = t4_new / t4["elapsed"] if t4.get("elapsed") and t4_new else 0
+    status = "PASS" if all(r["status"] == "PASS" for r in [t1, t2, t4]) else "PARTIAL"
 
-    t4_faults, _ = parse_faults(os.path.join(RPT_DIR, f"{circuit}_{ns_tag}_t4_res_faults.txt"))
-    D4 = {k for k, v in t4_faults.items() if v == 'DT'}
+    print(f"\nUnion: FC_T1={fc1:.2f}%  T1∪T2={fc12:.2f}%  T1∪T2∪T4={fc124:.2f}%")
+    print(f"  +{t2_new} from T=2, +{t4_new} from T=4, total +{t2_new+t4_new}")
 
-    # ── Union coverage ──
-    print(f"\n{'='*60}")
-    print(f"Union Coverage (denominator={denominator})")
-    D_union = D1 | D2 | D4
-    fc_t1 = len(D1) / denominator * 100
-    fc_t1_t2 = len(D1 | D2) / denominator * 100
-    fc_full = len(D_union) / denominator * 100
-    print(f"  FC_T1              = {fc_t1:.2f}%")
-    print(f"  FC_T1∪T2           = {fc_t1_t2:.2f}% (+{len(D2 - D1)} from T=2)")
-    print(f"  FC_T1∪T2∪T4        = {fc_full:.2f}% (+{len(D4 - D1 - D2)} from T=4)")
-    print(f"  Total new recovered = {len(D_union - D1)}")
+    # CSV row
+    row = {
+        "circuit": c, "ratio": ratio, "excluded_ff": excl, "total_ff": total_ff, "denominator": denom,
+        "T1_DT": len(D1), "T1_AU": sum(1 for v in t1_faults.values() if v == 'AU'),
+        "T1_AB": sum(1 for v in t1_faults.values() if v == 'AB'), "T1_FC": round(fc1, 2),
+        "R1_count": len(R1), "T2_target": len(R1), "T2_new_DT": t2_new,
+        "T2_AU": D2_au, "T2_AB": D2_ab,
+        "R2_count": len(R2), "T4_target": len(R2), "T4_new_DT": t4_new,
+        "T4_AU": D4_au, "T4_AB": D4_ab,
+        "final_DT": len(Du), "FC_T1": round(fc1, 2), "FC_T1_T2": round(fc12, 2),
+        "FC_T1_T2_T4": round(fc124, 2),
+        "gain_T2_pp": round(gain2, 2), "gain_T4_pp": round(gain4, 2),
+        "total_gain_pp": round(total_gain, 2),
+        "T1_rt": round(t1.get("elapsed", 0), 2), "T2_rt": round(t2.get("elapsed", 0), 2),
+        "T4_rt": round(t4.get("elapsed", 0), 2), "total_rt": round(trt, 2),
+        "recovered_per_sec_T2": round(rps2, 2), "recovered_per_sec_T4": round(rps4, 2),
+        "status": status,
+    }
 
+    # Append CSV
+    existed = os.path.exists(SUMMARY_CSV)
+    with open(SUMMARY_CSV, "a", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=SUMMARY_FIELDS)
+        if not existed: w.writeheader()
+        w.writerow(row)
 
 if __name__ == '__main__':
     main()
