@@ -171,17 +171,32 @@ The T=4 result recovers coverage from 39.36% to 88.68%, confirming that multi-fr
 
 At x=5%, all ITC'99 circuits show identical `full_scan` vs `no_recovery` coverage. The AU-dominated fault distribution (50-65% AU) masks partial-scan effects. Higher exclusion ratios (10-20%) may show separation but were not yet tested.
 
-### 5.4 T=4 partial recovery shows counter-intuitive coverage
+### 5.4 Progressive residual multi-frame ATPG evaluation
 
-T=4 `partial_recovery` produces LOWER coverage than T=1 `full_scan` for all ITC'99 circuits (e.g., b04: 35.1% vs 42.25%). This violates monotonic depth expectation (`T=4 >= T=1`). Possible causes:
-- Multi-frame fault list inflation (unfolding adds gates = more faults)
-- T=4 sequential justification not correctly recovering losses
-- Verifying against s27: T=4=94.23% vs T=1=94.55% (0.3pp drop) — minor but present
-- Only s27 has been previously verified as correct for T=4 `partial_recovery`
+Two regimes tested:
+
+**Low-exclusion (x=20%): b07, b13**
+- T=2 adds minimal benefit: 7-8 new faults detected
+- T=4 residual recovers 21-27 faults but naive T=4 loses 83-108 T=1-detected faults
+- Union gain: +1.2 to +1.4pp over T=1
+- AU recovery rate: 0.6-2.2%
+- **Recommendation: T=1 only.** Multi-frame adds marginal value at low exclusion.
+
+**High-exclusion (x=67%): s27**
+- T=1→39.36%, T=2→72.22%, T=4→86.67%
+- T=2 recovers 20 of 39 residual faults (51.3% AU recovery)
+- T=4 recovers 29 of 39 residual faults (74.4% AU recovery), 9 beyond T=2
+- Naive loss is minimal: only 2 faults lost from T=1
+- Union: FC_T1=37.88%, FC_T1∪T2=68.18% (+20), FC_T1∪T2∪T4=81.82% (+9)
+- **Recommendation: T=1 → T=2 → T=4 progressive residual is effective.**
+
+**Priority scoring (both regimes):**
+Simple structural priority (obs/ctrl distance, cone size, fanout) does NOT outperform random ordering. Top-K recovery curves nearly identical regardless of prioritization. More sophisticated features or learned ranking may be needed.
+
+**Budget:**
+BACKTRACK_LIMIT=500 is compile-time constant. AB explosion was not observed (AB=0 for both s27 and b07). The strong s27 recovery was achieved within default budget.
 
 ### 5.5 b03 crashes at T=4 multi-frame ATPG
-
-`build_circuit --frame 4` + `set_nonscan_ff` causes segfault during `run_atpg` for b03 specifically. Same circuit passes T=1.
 
 ---
 
