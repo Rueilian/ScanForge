@@ -245,43 +245,45 @@ Total: **11 circuits × 5 ratios = 55 runs**
 
 ## 8. Current Status
 
-### Completed (with evidence)
+### True Progressive Residual Multi-Frame ATPG Results
 
-- [x] Yosys synthesis → NanGate45 gate-level Verilog (11/11 circuits)
-- [x] OpenSTA timing → per-FF slack ranking + masks (55 files)
-- [x] `PARTIAL_SEQUENTIAL` multi-frame unrolling mode
-- [x] `set_nonscan_ff` command + script integration
-- [x] Multi-frame pattern storage (`PIFrames_`) and simulation replay
-- [x] SAF final-frame fault mapping (ATPG + simulator consistency)
-- [x] T=1 `partial_scan_no_recovery` on s27: 94.55% → 39.36% at x=67% ✅
-- [x] T=4 `partial_scan_with_recovery` on s27: 88.68% (monotonic holds) ✅
-- [x] FAN_ATPG level-indexed array sizing fix (maxGateLevel + 1)
-- [x] 7/12 ITC'99 circuits pass ATPG full-scan (s27,b03,b04,b07,b08,b09,b13)
-- [x] LOGIC0_X1/LOGIC1_X1 tie-cell fix in fixup_verilog.py
-- [x] Bounded partial-scan sweep on 7 ITC'99 circuits
+| Case | Excl | T1 FC% | T1∪T2% | T1∪T2∪T4% | Gain pp | T2 new | T4 new | Conclusion |
+|------|------|--------|---------|------------|---------|--------|--------|------------|
+| s27 x=67% | 2/3 | 37.88 | 68.18 | 81.82 | **+43.94** | 20 | 9 | **STRONG** — run T=2+T=4 |
+| b07 x=20% | 9/45 | 28.91 | 29.26 | 30.27 | +1.36 | 7 | 20 | MARGINAL — T=1 only |
+| b07 x=50% | 22/45 | 19.47 | 19.89 | 20.37 | +0.90 | 8 | 9 | NONE — stop at T=1 |
+| b13 x=20% | 13/65 | 42.20 | 42.74 | 43.64 | +1.44 | 10 | 17 | MARGINAL — T=1 only |
+| b13 x=50% | 32/65 | 30.00 | 30.23 | 30.93 | +0.93 | 4 | 12 | NONE — stop at T=1 |
 
-### Blocked
+**Key finding: higher exclusion DECREASES recovery gain on ITC'99.**
+b07/b13 have high AU from structural untestability, not from sequential constraints.
+Only s27 (ISCAS'89, small, controllability-driven) shows genuine sequential recovery.
 
-| Circuit | Blocker | Type |
-|---------|---------|------|
-| b05 | `assign` syntax in Verilog | Parser compat |
-| b11 | ATPG > 120s timeout | Scalability |
-| b12 | ATPG > 120s timeout | Scalability |
-| b14 | ATPG > 120s timeout | Scalability |
-| b15 | Not yet tested (839 FFs) | Scalability |
+### Final Method: True Progressive Residual Multi-Frame ATPG
 
-### Open Questions
+1. Run T=1 on all faults → D1
+2. Build residual list R1 = All - D1
+3. Run T=2 only on R1 → D2
+4. Build residual list R2 = R1 - D2
+5. Run T=4 only on R2 → D4
+6. Report: D_final = D1 ∪ D2 ∪ D4 over original denominator
 
-- [ ] no_recovery == full_scan for all ITC'99 at x=5% (AU-dominated)
-- [ ] T=4 partial_recovery < T=1 expected? (multi-frame fault inflation?)
-- [ ] b03 crashes at T=4 with set_nonscan_ff
-- [ ] Higher exclusion ratios (10-20%) not yet tested
+`add_fault -f <file>` enables custom residual fault-list targeting.
 
-### Not Yet Started
+### Completed
+- [x] LOGIC0/LOGIC1 tie-cell fix
+- [x] maxGateLevel event-stack sizing
+- [x] `add_fault -f` custom residual fault-list
+- [x] True progressive residual pipeline
+- [x] Full sweep: s27, b07(20/50%), b13(20/50%)
+- [x] Per-fault gateID reporting
+- [x] Fixed-denominator union coverage
 
-- [ ] T=8 sequential ATPG recovery
-- [ ] ITC'99 full 55-run sweep
-- [ ] Cone-guided multi-frame simplification
+### Blocked / Not Started
+- [ ] T=8 recovery (future work)
+- [ ] b11/b12/b14 (timeout), b05 (assign syntax), b15 (untested)
+- [ ] BACKTRACK_LIMIT budget tuning (compile-time constant)
+- [ ] Priority scoring (negative result — abandoned)
 
 ### Immediate Next Task
 
