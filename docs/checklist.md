@@ -479,12 +479,42 @@ Identify the exact FAN_ATPG internal paths that must be changed so that `partial
         - this explains why `SA0/SA1 U_G10/ZN` are detectable in full scan but remain `AU` in partial scan even when `T` increases from `4` to `8`
       - audit conclusion:
         - these residual `AU` faults are consistent with the intended sequential semantics and do not currently indicate the same multi-frame implementation bug that affected `G17`
+    - thirteenth-round correctness-risk fix:
+      - two remaining `PARTIAL_SEQUENTIAL` modeling risks were patched:
+        - frame-0 non-scan PPIs are now created as `TIEX` at every sequential depth, not only at `T = 1`
+        - later-frame PPI handling now uses the PPI layout slot rather than `gateType_ == PPI`, so non-scan state still transfers as `previous-frame PPO -> BUF -> next-frame PPI`
+        - PPO observability now uses a bounds-safe gate-id helper instead of deriving an unchecked index from `totalGate_ - numPPI_`
+      - rebuild succeeded with the existing warning noise
+      - verification after this patch:
+        - `full_scan, T=1`: `fault coverage = 94.55%`, `#Patterns = 7`
+        - `partial_scan_no_recovery, T=1`: `fault coverage = 39.36%`, `#Patterns = 5`
+        - `partial_scan, T=4`: `fault coverage = 86.67%`, `#Patterns = 4`
+      - interpretation:
+        - the expected ordering still holds: `full_scan >= partial_scan(T=4) >= partial_scan_no_recovery(T=1)`
+        - the `T=4` result tightened from `88.68%` to `86.67%` because ATPG no longer receives scan-like control of frame-0 non-scan state or accidental non-final PPO observability
     - consequence:
       - even if the ATPG core solves a multi-frame stuck-at objective correctly,
         fault dropping and final fault classification may still be wrong
     - next implementation step:
       - extend the SAF pattern/simulator path to preserve and replay all PI frames
       - update reporting so multi-frame PI assignments are visible during debug
+    - fourteenth-round correctness fix (PARTIAL_SEQUENTIAL defect audit):
+      - three defects found during a full end-to-end review were patched:
+        - defect 1: `adjacentFill()` PPI bit-0 guard in `atpg.h` was inverted and read `isPpiNonscan_[0]` out of bounds on full-scan; it could also X-fill a non-scan FF bit. Guard changed to `(isPpiNonscan_.empty() || !isPpiNonscan_[0])`, matching `randomFill()` and the sibling loop.
+        - defect 2 (main): scan-FF PPI was only stored/replayed for frame 0, but the unrolled circuit leaves scan PPIs free at every frame, so for `T>1` the ATPG-chosen scan inputs at frames >= 1 were dropped from the saved pattern and replayed as `X`, making reported coverage non-reproducible. Added a per-frame `PPIFrames_` plane to `Pattern` (mirrors `PIFrames_`), populated it in `writeAtpgValToPatternPI()` (non-scan = `X`), and replayed it in both `Simulator::assignPatternToCircuitInputs()` and `Simulator::parallelPatternSetPattern()`, skipping non-scan FFs and falling back to `PPI_`.
+        - defect 3: `writeGoodSimValToPatternPO()` captured the PPO/second-PO response from a hardcoded frame 1 (wrong for `T>2`) and did not mask non-scan PPOs. It now reads PO/PPO from the final observation frame `(numFrame_-1)*numGate_` and writes `X` for non-scan PPOs. The 2-frame on-disk `.pat`/STIL limitation is noted in `pattern_rw.cpp` (reported coverage is unaffected because it is computed from the in-memory multi-frame replay).
+      - files changed: `pkg/core/src/atpg.h`, `pkg/core/src/pattern.h`, `pkg/core/src/simulator.h`, `pkg/core/src/simulator.cpp`, `pkg/core/src/pattern_rw.cpp`
+      - rebuild succeeded (existing `-Wsign-compare` warning noise only); `bin/opt/fan` produced
+      - verification on `s27` with `U_G5 U_G6` non-scan (rebuild, `add_fault --all`, SC+DTC on):
+        - `full_scan, T=1`: `fault coverage = 94.55%`, `#Patterns = 7`
+        - `partial_scan_no_recovery, T=1`: `fault coverage = 39.36%`, `#Patterns = 5`
+        - `partial_scan, T=4`: `fault coverage = 86.67%`, `#Patterns = 4`
+        - `partial_scan, T=8`: `fault coverage = 86.67%`, `#Patterns = 4`
+      - interpretation:
+        - numbers are unchanged from the thirteenth-round baseline, so the pattern/replay consistency fix did not regress coverage on this case
+        - full-scan dominance (criterion 7) holds: `94.55% >= 86.67% >= 39.36%`
+        - monotonic depth (criterion 6) holds: `coverage(T=8) >= coverage(T=4) >= coverage(T=1)`
+        - the defect-2 fix is most impactful for larger circuits with scan FFs whose frame >= 1 state is needed; s27 has a single scan FF so its absolute numbers are stable
 - [x] The output format is concise enough to use in the report or slides without manual cleanup
 - [x] The summary flow is documented in the repository
 

@@ -226,6 +226,8 @@ Expected tables:
 
 **Claude (Anthropic):** C++ implementation and debugging, specification drafting, bug analysis
 
+**Cursor:** AI-assisted code review, implementation, and debugging
+
 **GitHub Copilot:** Code completion during development
 
 **HAPI:** Commit automation and session management
