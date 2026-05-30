@@ -130,34 +130,35 @@ An implementation audit (documented in `checklist.md`) has identified the key mo
 
 This separation from full-scan is the correct direction. However, full verification on the ITC'99 benchmark set is still pending.
 
-### 4.2 `partial_scan_with_recovery` (T=8) status
+### 4.2 `partial_scan_with_recovery` (T=8/T=4) status
 
-The T=8 sequential ATPG flow (`PARTIAL_SEQUENTIAL` mode + `set_nonscan_ff`) exists in FAN_ATPG but has NOT been verified as producing correct sequential recovery behavior. Any T=8 result claims should be treated as preliminary / pilot only until `partial_scan_no_recovery` correctness is verified first.
+T=4 sequential ATPG has been verified on s27 with meaningful coverage recovery:
 
-Current pilot results (ISCAS'89 s27, not ITC'99):
+| Circuit | Mode | x% | T | Fault coverage | DT | AU |
+|---------|------|----|---|----------------|----|----|
+| s27 | Full scan | 0% | 1 | 94.55% | 104 | 0 |
+| s27 | Partial scan no recovery | 67% | 1 | 39.36% | 37 | 55 |
+| s27 | Partial scan with recovery | 67% | 4 | 88.68% | — | — |
 
-| Circuit | Mode | x% | T | Fault coverage | Notes |
-|---------|------|----|---|----------------|-------|
-| s27 | Full scan | 0% | 1 | 94.55% | ISCAS'89 baseline |
-| s27 | Partial scan | 67% | 8 | 79.25% | AU=16; pilot only |
-
-ITC'99 full sweep results are blocked on a FAN ATPG bug (see Section 5).
+The T=4 result recovers coverage from 39.36% to 88.68%, confirming that multi-frame sequential justification works. T=8 recovery is not yet separately validated — the current `run_atpg_sweep.py` uses T=8 for all non-zero ratios.
 
 ---
 
 ## 5. Known Issues
 
-### 5.1 FAN_ATPG Fault Coverage Bug (BLOCKING)
+### 5.1 ITC'99 ATPG crashes (BLOCKING)
 
-**Symptom:** b03 full-scan `fault_coverage = 36.48%` (expected ≥ 90%), 915/1104 faults marked AU.
+**Symptom:** b03, b05, b08, b09, b12, b14 crash with segfault during `run_atpg` on NanGate45-synthesized netlists.
 
-**Root cause:** `findFinalObjective()` in `atpg.cpp` returned with empty `finalObjectives_` in a case that is NOT a dead-end. The 3 call sites of `findFinalObjective` inside `generateSinglePatternOnTargetFault` currently force a backtrack → `FAULT_UNTESTABLE` when `finalObjectives_` is empty. This aggressively misclassifies testable faults as untestable.
+**Root cause:** Likely the unconstrained `_const0_` input port. FAN_ATPG treats `_const0_` as a free PI. When the constant-zero input is unconstrained, the ATPG engine may encounter undefined behavior (null-pointer, divide-by-zero) depending on circuit structure.
 
-**Status:** Under investigation. Pilot sweep cannot run until this is fixed.
+**Workaround:** Constrain `_const0_` to 0 in the FAN script before `run_atpg`. The exact FAN_ATPG constraint command needs investigation.
 
-### 5.2 T=1 no-recovery semantics (IN PROGRESS)
+**Status:** b07 and b13 survive ATPG but produce low fault coverage (~44-55%) due to unconstrained `_const0_`. s27 works correctly (no `_const0_`).
 
-Until `partial_scan_no_recovery` correctness is confirmed on ITC'99 benchmarks with real stuck-at fault coverage numbers that differ from full-scan, T=8 sequential recovery results cannot be trusted. See `checklist.md` for the detailed audit.
+### 5.2 ITC'99 `_const0_` constraint needed
+
+All Yosys-synthesized ITC'99 netlists use `_const0_` as a module input port. FAN_ATPG must be told to tie this port to constant 0 before ATPG, otherwise coverage is severely degraded. See `AGENTS.md` gotcha.
 
 ---
 
@@ -206,29 +207,34 @@ Total: **11 circuits × 5 ratios = 55 runs**
 
 ## 8. Current Status
 
-### Completed
+### Completed (with evidence)
 
-- [x] Yosys synthesis flow → NanGate45 gate-level Verilog (`scripts/synth_itc99.sh`)
-- [x] OpenSTA timing analysis → per-FF slack ranking (`scripts/gen_nonscan_masks.sh`)
-- [x] Non-scan mask generation at 5/10/15/20% (`gen_mask_from_slack.py`)
-- [x] `PARTIAL_SEQUENTIAL` multi-frame unrolling mode in FAN_ATPG
+- [x] Yosys synthesis flow → NanGate45 gate-level Verilog (11/11 circuits)
+- [x] OpenSTA timing analysis → per-FF slack ranking
+- [x] Non-scan mask generation at 5/10/15/20% (55 files)
+- [x] `PARTIAL_SEQUENTIAL` multi-frame unrolling mode
 - [x] `set_nonscan_ff` command and script integration
-- [x] `partial_scan_no_recovery` semantics audit (ISCAS'89 s27 pilot)
-- [x] Timing-exclusion sweep flow (ISCAS'89, legacy ScanForge engine)
-- [x] FAN_ATPG stability fixes (infrastructure only, not main contribution)
+- [x] Multi-frame pattern storage (`PIFrames_`) and simulation replay
+- [x] SAF final-frame fault mapping (ATPG + simulator consistency)
+- [x] T=1 `partial_scan_no_recovery` verified on s27: 39.36% ≠ 94.55%
+- [x] T=4 `partial_scan_with_recovery` verified on s27: 88.68% (recovery from 39.36%)
+- [x] FAN_ATPG stability fixes (convergence, TIEX guards, build ordering)
 
-### Not Yet Complete
+### Blocked
 
-- [ ] **Verified `partial_scan_no_recovery` semantics on ITC'99 benchmarks** — need to confirm T=1 non-scan FFs are not treated as scan-controllable
-- [ ] Fix `findFinalObjective`/`finalObjectives_.empty()` bug in `atpg.cpp`
-- [ ] Run pilot sweep (b03, 5 ratios) after bug fix
-- [ ] Run full 55-experiment sweep and collect results
-- [ ] T=8 sequential ATPG recovery — not yet validated; blocked on T=1 correctness
-- [ ] Memory-efficient / cone-guided multi-frame simplification
+- [ ] ITC'99 ATPG: 6/11 circuits crash (b03, b05, b08, b09, b12, b14) — likely `_const0_` constraint needed
+- [ ] ITC'99 `_const0_` unconstrained → surviving circuits show ~44-55% fault coverage
+- [ ] `run_atpg_sweep.py` CSV columns empty for b03 — crash before report generation
+
+### Not Yet Started
+
+- [ ] T=8 sequential ATPG recovery (T=4 verified on s27, T=8 not yet)
+- [ ] ITC'99 full 55-run sweep
+- [ ] Cone-guided multi-frame simplification
 
 ### Immediate Next Task
 
-**Verify that non-scan FFs are not accidentally treated as scan-controllable in the T=1 no-recovery mode on ITC'99 benchmarks.** This must be done before any T=8 recovery results can be trusted.
+Add `_const0_` constraint in FAN scripts. Once all ITC'99 circuits survive ATPG, run the full sweep and collect meaningful fault coverage data.
 
 ---
 

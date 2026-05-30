@@ -208,37 +208,38 @@ The core comparison measures how coverage drops as `x` increases (RQ1) and how m
 
 | Task | Description | Owner | Status |
 |---|---|---|---|
-| A | Yosys synthesis + OpenSTA timing, non-scan mask generation | swear01 | Pending |
+| A | Yosys synthesis + OpenSTA timing, non-scan mask generation | swear01 | **Done** |
 | B | `PARTIAL_SEQUENTIAL` mode in FAN_ATPG | swear01 | **Done** |
 | C | `set_nonscan_ff` command, script integration | swear01 | **Done** |
 | D | Python experiment runner, CSV logging | swear01 | Pending |
 | E | Full experiment run + analysis | swear01 | Pending |
 
-**Verified pilot results (FAN_ATPG, s27, NanGate45):**
+**Verified results (FAN_ATPG, s27, NanGate45, T=1):**
+
+| Circuit | Mode | x | T | Fault coverage | DT | AU |
+|---|---|---|---|---|---|---|
+| s27 | Full scan | 0% | 1 | 94.55% | 104 | 0 |
+| s27 | Partial scan no recovery | 67% | 1 | 39.36% | 37 | 55 |
+
+The T=1 `partial_scan_no_recovery` case now correctly separates from `full_scan` (94.55% vs 39.36%), confirming non-scan FFs are not treated as scan-controllable. Pattern traces confirm non-scan PPIs are `X` and non-scan PPOs are not observable.
+
+**Verified results (FAN_ATPG, s27, NanGate45, T=4):**
 
 | Circuit | Mode | x | T | Fault coverage |
 |---|---|---|---|---|
-| s27 | Full scan | 0% | 1 | 94.55% |
-| s27 | Partial scan | 67% | 8 | 79.25% |
-| s208 | Full scan | 0% | 1 | 97.43% |
+| s27 | Partial scan with recovery | 67% | 4 | 88.68% |
 
-The s27 partial-scan result (AU=16, UD=6) reflects the realistic sequential constraint: 16 faults require non-scan FF states that cannot be reached through 8 cycles of circuit initialization.
+**ITC'99 pipeline status:**
 
-**Multi-frame SAF correctness note**
+- Synthesis + fixup: 11/11 ITC'99 circuits generated successfully
+- Non-scan masks: 55/55 mask files generated
+- FAN_ATPG: s27 confirmed working; b07, b13 partial (∼50% coverage, `_const0_` unconstrained)
+- b03, b05, b08, b09, b12, b14 crash during `run_atpg` — likely due to unconstrained `_const0_` input port causing divide-by-zero or null-pointer in ATPG core
+- `_const0_` constraint fix needed before any ITC'99 sweep can produce meaningful fault coverage
 
-For `PARTIAL_SEQUENTIAL` stuck-at ATPG with `T > 2`, correctness requires the
-post-ATPG infrastructure to preserve the full multi-frame pattern, not only the
-first one or two frames.
+**Multi-frame SAF correctness note** (resolved in FAN_ATPG commit `f927b34`):
 
-- ATPG may internally solve a fault on an unfolded `T`-frame circuit
-- if `Pattern` only stores `PI1/PI2` and `Simulator` only replays those frames,
-  then fault dropping, detection classification, and reported coverage become
-  semantically invalid for `T > 2`
-- therefore `Pattern`, `writeAtpgValToPatternPI()`, and the simulator-side
-  pattern application logic must carry all PI frames used by the ATPG solution
-
-This is now treated as a correctness requirement, not an optional reporting
-improvement.
+Pattern `PIFrames_` now stores all PI frames. `writeAtpgValToPatternPI()` writes all frames. Simulator replays all frames. SAF faults are mapped to the final observation frame consistently across ATPG, fault injection, and fault simulation.
 
 ## 8. Scope
 

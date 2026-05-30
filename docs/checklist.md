@@ -244,12 +244,12 @@ Identify the exact FAN_ATPG internal paths that must be changed so that `partial
 
 ### Acceptance Criteria
 
-- [ ] The controllability boundary points for `TIEX` are explicitly listed
-- [ ] The line-type / headline classification impact is explicitly listed
-- [ ] The SCOAP impact is explicitly listed
-- [ ] The pattern / simulation consistency impact is explicitly listed
+- [x] The controllability boundary points for `TIEX` are explicitly listed
+- [x] The line-type / headline classification impact is explicitly listed
+- [x] The SCOAP impact is explicitly listed
+- [x] The pattern / simulation consistency impact is explicitly listed
 - [ ] The remaining `PPO` shortcut paths are classified into observation semantics vs structural gate semantics
-- [ ] A minimum modification set is written down before deeper ATPG edits begin
+- [x] A minimum modification set is written down before deeper ATPG edits begin
 
 ### TDD Plan
 
@@ -257,7 +257,7 @@ Identify the exact FAN_ATPG internal paths that must be changed so that `partial
 - [x] Run the failing check and record the result
 - [x] Implement the minimum code change
 - [x] Re-run the same check after each minimum patch
-- [ ] Run adjacent regression checks
+- [x] Run adjacent regression checks
 
 ### Checks
 
@@ -533,6 +533,24 @@ Identify the exact FAN_ATPG internal paths that must be changed so that `partial
 | Summary command exists | `python3 scripts/summarize_timing_exclusion.py results/timing_exclusion/timing_exclusion_master.csv results/timing_exclusion/report_summary.csv` | a deterministic summary can be generated from the master CSV | `passed` |
 | Summary artifact is generated | `python3 - <<'PY' ... Path('results/timing_exclusion/report_summary.csv').exists() ... PY` | a report-oriented CSV is written | `passed` |
 | Regression check | `bash scripts/run_timing_exclusion_sweep.sh s27` | existing exclusion batch flow still works | `passed` |
+
+### Regression verification (2026-05-30)
+
+| Check | Result | Status |
+|---|---|---|
+| s27 full_scan T=1 | fault_coverage=94.55%, DT=104, AU=0, patterns=15 | `passed` |
+| s27 partial_scan_no_recovery T=1 x=67% | fault_coverage=39.36%, DT=37, AU=55 | `passed` |
+| s27 partial_scan T=4 x=67% | fault_coverage=88.68% | `passed` |
+| Non-scan PPI = X in pattern trace | U_G5/U_G6 PPI are X, U_G7 (scan) has values | `passed` |
+| Monotonic ordering | full(94.55%) > T=4(88.68%) > T=1(39.36%) | `passed` |
+
+### ITC'99 pipeline status (2026-05-30)
+
+- 11/11 ITC'99 netlists synthesized
+- 55/55 mask files generated
+- b03, b05, b08, b09, b12, b14: segfault during `run_atpg` — suspected `_const0_` issue
+- b07, b13: survive but low coverage (~44-55%) due to `_const0_` floating
+- `_const0_` constraint fix is the immediate blocker for ITC'99 sweep
 
 ### Notes
 
