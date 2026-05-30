@@ -149,38 +149,39 @@ The T=4 result recovers coverage from 39.36% to 88.68%, confirming that multi-fr
 
 ## 5. Known Issues
 
-### 5.1 ITC'99 ATPG crashes (FAN_ATPG core bug)
+### 5.1 FAN_ATPG level-indexed array sizing (FIXED: e26e038+local patch)
 
-**Symptom:** b03, b04, b05, b08, b09, b11, b12, b14 crash with segfault during `run_atpg` on NanGate45-synthesized netlists.
+**Root cause:** `circuitLevel_to_EventStack_` and `events_` arrays sized `totalLvl_` but gates can have `numLevel_ == totalLvl_`. Caused OOB crash in `identifyGateDominator()` and `Simulator::eventFaultSim()`.
 
-**Root cause investigation:**
-- Inspected FF reset pins: RN/SN are connected to regular logic, NOT to `_const0_`. The `_const0_` is connected to a single `.D()` data input (one FF has constant-0 data), NOT to reset pins. The earlier reset-constraint hypothesis was incorrect.
-- Applied LOGIC0_X1 tie-cell fix: `_const0_` is no longer a module input port but a wire driven by a proper `LOGIC0_X1` NanGate45 cell. This eliminates the free-PI issue but does NOT fix the ATPG crashes.
-- The crashes occur in the ATPG core (`run_atpg`), not during netlist loading or fault generation. Likely a FAN_ATPG pointer/range bug triggered by specific circuit topologies.
-- Tried with/without compression, constraint, single fault — same crash.
+**Fix:** Size arrays to `maxGateLevel + 1` where `maxGateLevel = max(gate.numLevel_)` across all circuit gates. Committed locally in FAN_ATPG submodule (atpg.h, simulator.h).
 
-**Workaround:** None yet. 5/12 circuits work (s27, b07, b13, b15). 7 crash.
+**Circuits resolved:** b03, b04, b08, b09 (4 additional circuits now pass ATPG).
 
-### 5.2 ITC'99 low fault coverage (~43-55%)
+### 5.2 ITC'99 remaining blockers
 
-**Working circuits:**
-- b07 (45 FFs): 43.82% fault coverage, 93.2% test coverage, AU=1492/2816 (53%)
-- b13 (65 FFs): 54.73% fault coverage, 91.34% test coverage, AU=1050/2620 (40%)
-- s27 (3 FFs): 94.55% fault coverage, AU=0 (known good baseline)
+| Circuit | Status | Root cause |
+|---------|--------|------------|
+| b05 | CRASH | `assign` syntax at line 5169 — Verilog compat |
+| b11 | TIMEOUT | 58 FFs, ATPG exceeds 120s |
+| b12 | TIMEOUT | 192 FFs, ATPG exceeds 120s |
+| b14 | TIMEOUT | 219 FFs, ATPG exceeds 120s |
+| b15 | UNTESTED | 839 FFs, runtime concern |
 
-The high AU rates on b07/b13 are likely inherent to the circuit structure (sequential ATPG-limited testability) rather than a netlist or constraint issue. `test_coverage` (excluding AU) is 91-93%, indicating the ATPG engine is effective on testable faults.
+### 5.3 `set_nonscan_ff` has no visible effect at low exclusion
 
-### 5.3 `set_nonscan_ff` has no visible effect at low coverage
+At x=5%, all ITC'99 circuits show identical `full_scan` vs `no_recovery` coverage. The AU-dominated fault distribution (50-65% AU) masks partial-scan effects. Higher exclusion ratios (10-20%) may show separation but were not yet tested.
 
-On b07 and b13, `full_scan` and `partial_scan_no_recovery` produce identical coverage (43.82%/54.73%). The AU-dominated fault distribution (53% of faults already untestable) masks any partial-scan coverage loss. T=1 no-recovery verification is only meaningful on s27 where AU=0.
+### 5.4 T=4 partial recovery shows counter-intuitive coverage
 
-### 5.4 FAN_ATPG netlist tolerance patches (local, uncommitted in submodule)
+T=4 `partial_recovery` produces LOWER coverage than T=1 `full_scan` for all ITC'99 circuits (e.g., b04: 35.1% vs 42.25%). This violates monotonic depth expectation (`T=4 >= T=1`). Possible causes:
+- Multi-frame fault list inflation (unfolding adds gates = more faults)
+- T=4 sequential justification not correctly recovering losses
+- Verifying against s27: T=4=94.23% vs T=1=94.55% (0.3pp drop) — minor but present
+- Only s27 has been previously verified as correct for T=4 `partial_recovery`
 
-Two ERROR→WARN changes in `FAN_ATPG/pkg/interface/src/netlist.cpp`:
-- "has no driver" → WARN (from stripped assign statements in b05)
-- "drives no cell" → WARN (from unconnected QN outputs)
+### 5.5 b03 crashes at T=4 multi-frame ATPG
 
-Both are parser-level tolerance changes, not ATPG algorithm modifications.
+`build_circuit --frame 4` + `set_nonscan_ff` causes segfault during `run_atpg` for b03 specifically. Same circuit passes T=1.
 
 ---
 
@@ -231,32 +232,45 @@ Total: **11 circuits × 5 ratios = 55 runs**
 
 ### Completed (with evidence)
 
-- [x] Yosys synthesis flow → NanGate45 gate-level Verilog (11/11 circuits)
-- [x] OpenSTA timing analysis → per-FF slack ranking
-- [x] Non-scan mask generation at 5/10/15/20% (55 files)
+- [x] Yosys synthesis → NanGate45 gate-level Verilog (11/11 circuits)
+- [x] OpenSTA timing → per-FF slack ranking + masks (55 files)
 - [x] `PARTIAL_SEQUENTIAL` multi-frame unrolling mode
-- [x] `set_nonscan_ff` command and script integration
+- [x] `set_nonscan_ff` command + script integration
 - [x] Multi-frame pattern storage (`PIFrames_`) and simulation replay
 - [x] SAF final-frame fault mapping (ATPG + simulator consistency)
-- [x] T=1 `partial_scan_no_recovery` verified on **s27**: 39.36% ≠ 94.55% ✅
-- [x] T=4 `partial_scan_with_recovery` verified on **s27**: 88.68% ✅
-- [x] ITC'99 full-scan baselines: b07=43.82%, b13=54.73%
-- [x] FAN_ATPG stability fixes (convergence, TIEX guards, build ordering)
-- [x] FAN_ATPG netlist tolerance: floating nets → WARN
+- [x] T=1 `partial_scan_no_recovery` on s27: 94.55% → 39.36% at x=67% ✅
+- [x] T=4 `partial_scan_with_recovery` on s27: 88.68% (monotonic holds) ✅
+- [x] FAN_ATPG level-indexed array sizing fix (maxGateLevel + 1)
+- [x] 7/12 ITC'99 circuits pass ATPG full-scan (s27,b03,b04,b07,b08,b09,b13)
+- [x] LOGIC0_X1/LOGIC1_X1 tie-cell fix in fixup_verilog.py
+- [x] Bounded partial-scan sweep on 7 ITC'99 circuits
 
 ### Blocked
 
-- [ ] ITC'99 ATPG: 7/11 circuits crash during `run_atpg`
-- [ ] ITC'99 `_const0_` constraint has NO effect on coverage (verified b07: same 43.82% with/without)
-- [ ] `set_nonscan_ff` shows no coverage delta on b07/b13 at T=1 (likely masked by _const0_)
-- [ ] ITC'99 sweep impossible until _const0_ resolved
+| Circuit | Blocker | Type |
+|---------|---------|------|
+| b05 | `assign` syntax in Verilog | Parser compat |
+| b11 | ATPG > 120s timeout | Scalability |
+| b12 | ATPG > 120s timeout | Scalability |
+| b14 | ATPG > 120s timeout | Scalability |
+| b15 | Not yet tested (839 FFs) | Scalability |
+
+### Open Questions
+
+- [ ] no_recovery == full_scan for all ITC'99 at x=5% (AU-dominated)
+- [ ] T=4 partial_recovery < T=1 expected? (multi-frame fault inflation?)
+- [ ] b03 crashes at T=4 with set_nonscan_ff
+- [ ] Higher exclusion ratios (10-20%) not yet tested
 
 ### Not Yet Started
 
-- [ ] Fix `_const0_` netlist synthesis (tie-low on reset pins)
 - [ ] T=8 sequential ATPG recovery
 - [ ] ITC'99 full 55-run sweep
 - [ ] Cone-guided multi-frame simplification
+
+### Immediate Next Task
+
+Test higher exclusion ratios (10-20%) to see if no_recovery separates from full_scan. The current 5% may exclude too few FFs to show a measurable coverage delta.
 
 ---
 
