@@ -156,9 +156,21 @@ The T=4 result recovers coverage from 39.36% to 88.68%, confirming that multi-fr
 
 **Status:** b07 and b13 survive ATPG but produce low fault coverage (~44-55%) due to unconstrained `_const0_`. s27 works correctly (no `_const0_`).
 
-### 5.2 ITC'99 `_const0_` constraint needed
+### 5.2 ITC'99 `_const0_` unconstrained — coverage floor at 43-55%
 
-All Yosys-synthesized ITC'99 netlists use `_const0_` as a module input port. FAN_ATPG must be told to tie this port to constant 0 before ATPG, otherwise coverage is severely degraded. See `AGENTS.md` gotcha.
+All Yosys-synthesized ITC'99 netlists use `_const0_` as a module input port. The `add_pin_constraint _const0_ 0` command runs without error but does NOT change fault coverage (verified on b07: 43.82% with and without constraint). The root cause is likely that `_const0_` feeds RN (reset) pins, and constraining it to 0 keeps reset permanently active, making many faults untestable. The constraint should probably tie `_const0_` to 1 instead, or the netlist should be synthesized without a tie-low cell on reset paths. This is a netlist-level issue that blocks meaningful ITC'99 coverage numbers.
+
+**Working circuits:** b07 (45 FFs, 43.82% coverage), b13 (65 FFs, 54.73% coverage)
+**Crash circuits:** b03 (31), b04 (67), b05 (88, assign syntax), b08 (28), b09 (30), b11 (58), b12 (192), b14 (219)
+**b15 (839 FFs):** ATPG survives but not yet measured due to runtime concerns.
+
+### 5.3 FAN_ATPG netlist tolerance patches (local, uncommitted)
+
+To accept Yosys-generated Verilog, two ERROR→WARN changes were made in `FAN_ATPG/pkg/interface/src/netlist.cpp`:
+- "has no driver" → WARN (from stripped assign statements)
+- "drives no cell" → WARN (from unconnected QN outputs)
+
+These are parser-level tolerance changes, not ATPG algorithm modifications.
 
 ---
 
@@ -216,25 +228,25 @@ Total: **11 circuits × 5 ratios = 55 runs**
 - [x] `set_nonscan_ff` command and script integration
 - [x] Multi-frame pattern storage (`PIFrames_`) and simulation replay
 - [x] SAF final-frame fault mapping (ATPG + simulator consistency)
-- [x] T=1 `partial_scan_no_recovery` verified on s27: 39.36% ≠ 94.55%
-- [x] T=4 `partial_scan_with_recovery` verified on s27: 88.68% (recovery from 39.36%)
+- [x] T=1 `partial_scan_no_recovery` verified on **s27**: 39.36% ≠ 94.55% ✅
+- [x] T=4 `partial_scan_with_recovery` verified on **s27**: 88.68% ✅
+- [x] ITC'99 full-scan baselines: b07=43.82%, b13=54.73%
 - [x] FAN_ATPG stability fixes (convergence, TIEX guards, build ordering)
+- [x] FAN_ATPG netlist tolerance: floating nets → WARN
 
 ### Blocked
 
-- [ ] ITC'99 ATPG: 6/11 circuits crash (b03, b05, b08, b09, b12, b14) — likely `_const0_` constraint needed
-- [ ] ITC'99 `_const0_` unconstrained → surviving circuits show ~44-55% fault coverage
-- [ ] `run_atpg_sweep.py` CSV columns empty for b03 — crash before report generation
+- [ ] ITC'99 ATPG: 7/11 circuits crash during `run_atpg`
+- [ ] ITC'99 `_const0_` constraint has NO effect on coverage (verified b07: same 43.82% with/without)
+- [ ] `set_nonscan_ff` shows no coverage delta on b07/b13 at T=1 (likely masked by _const0_)
+- [ ] ITC'99 sweep impossible until _const0_ resolved
 
 ### Not Yet Started
 
-- [ ] T=8 sequential ATPG recovery (T=4 verified on s27, T=8 not yet)
+- [ ] Fix `_const0_` netlist synthesis (tie-low on reset pins)
+- [ ] T=8 sequential ATPG recovery
 - [ ] ITC'99 full 55-run sweep
 - [ ] Cone-guided multi-frame simplification
-
-### Immediate Next Task
-
-Add `_const0_` constraint in FAN scripts. Once all ITC'99 circuits survive ATPG, run the full sweep and collect meaningful fault coverage data.
 
 ---
 
