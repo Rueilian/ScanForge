@@ -61,7 +61,7 @@ def process(src):
         src = re.sub(r'\b(' + names_pat + r')\[(\d+)\]',
                      lambda m: f'{m.group(1)}_{m.group(2)}_', src)
 
-    # ---- Pass 4: expand module header (including any const ports) ----
+    # ---- Pass 4: expand module header (const ports are no longer needed — see Pass 7) ----
     def expand_module(m):
         ports = [p.strip() for p in m.group(2).split(',')]
         expanded = []
@@ -70,9 +70,7 @@ def process(src):
                 expanded.extend(f'{p}_{b}_' for b in bus_decls[p])
             else:
                 expanded.append(p)
-        # Append const input ports to module header
-        for name, _ in sorted(needed_const):
-            expanded.append(name)
+        # Append const input ports to module header (REMOVED — use LOGIC0/LOGIC1 cells instead)
         return f'module {m.group(1)}({", ".join(expanded)});'
     src = re.sub(r'module\s+(\w+)\s*\(([^)]+)\)\s*;', expand_module, src)
 
@@ -103,15 +101,20 @@ def process(src):
         return m.group(0)  # leave multi-bit as-is for now
     src = re.sub(r"(\d+)'([bBhHdDoO])([0-9a-fA-FxXzZ_]+)", replace_const, src)
 
-    # Inject input declarations for const nets (wire not needed; input creates the net)
+    # ---- Pass 7: instantiate tie cells for constants instead of module inputs ----
+    # LOGIC0_X1 / LOGIC1_X1 from NanGate45 provide proper constant sources
+    # that FAN_ATPG recognizes as TIEL/TIEH gates, avoiding free-PI issues.
     if used_const:
-        inject = '\n'.join(f'  input {name};' for name, _ in sorted(used_const))
-        # Insert after last existing `wire` or `input` declaration block,
-        # just before the first cell instantiation
-        first_cell = re.search(r'\n  [A-Z]\w+\s+\w+\s*\(', src)
-        if first_cell:
-            pos = first_cell.start()
-            src = src[:pos] + '\n' + inject + src[pos:]
+        insts = []
+        for name, val in sorted(used_const):
+            if val == 0:
+                insts.append(f'  LOGIC0_X1 _tie_{name} (.Z({name}));')
+            elif val == 1:
+                insts.append(f'  LOGIC1_X1 _tie_{name} (.Z({name}));')
+        # Insert just before endmodule
+        src = src.rstrip()
+        if src.endswith('endmodule'):
+            src = src[:-len('endmodule')] + '\n' + '\n'.join(insts) + '\nendmodule'
 
     return src
 

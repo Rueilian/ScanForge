@@ -103,9 +103,12 @@ Yosys-generated Verilog requires post-processing for FAN compatibility:
 | Pre-pass | Constant literals (`1'b0`, `1'h0`) in port connections | Discover all `_constN_` names needed |
 | Pass 1–2 | Bus port/wire declarations (`[N:0] name`) | Expand to individual scalars |
 | Pass 3 | Indexed references (`name[n]`) | Rename to `name_n_` |
-| Pass 4 | Module header missing const port names | Append `_const0_` etc. to port list |
+| Pass 4 | Module header bus expansion | Expand bus ports in module header |
 | Pass 5 | Escaped identifiers (`\name[n]`) | Rename |
-| Pass 6 | Constant literals in body | Replace with named `input` ports |
+| Pass 6 | Constant literals in body | Replace with named wire (_const0_, _const1_) |
+| Pass 7 | `_constN_` as module input breaks FAN (free PI) | Instantiate `LOGIC0_X1`/`LOGIC1_X1` tie cells instead |
+
+The Pass 7 fix (2026-05-30) replaces the previous approach of adding `_const0_`/`_const1_` as module input ports. NanGate45 `LOGIC0_X1` and `LOGIC1_X1` cells are instantiated to drive these constant wires, which FAN_ATPG recognizes as proper tie cells (TIEL/TIEH) rather than free PIs.
 
 ---
 
@@ -146,31 +149,38 @@ The T=4 result recovers coverage from 39.36% to 88.68%, confirming that multi-fr
 
 ## 5. Known Issues
 
-### 5.1 ITC'99 ATPG crashes (BLOCKING)
+### 5.1 ITC'99 ATPG crashes (FAN_ATPG core bug)
 
-**Symptom:** b03, b05, b08, b09, b12, b14 crash with segfault during `run_atpg` on NanGate45-synthesized netlists.
+**Symptom:** b03, b04, b05, b08, b09, b11, b12, b14 crash with segfault during `run_atpg` on NanGate45-synthesized netlists.
 
-**Root cause:** Likely the unconstrained `_const0_` input port. FAN_ATPG treats `_const0_` as a free PI. When the constant-zero input is unconstrained, the ATPG engine may encounter undefined behavior (null-pointer, divide-by-zero) depending on circuit structure.
+**Root cause investigation:**
+- Inspected FF reset pins: RN/SN are connected to regular logic, NOT to `_const0_`. The `_const0_` is connected to a single `.D()` data input (one FF has constant-0 data), NOT to reset pins. The earlier reset-constraint hypothesis was incorrect.
+- Applied LOGIC0_X1 tie-cell fix: `_const0_` is no longer a module input port but a wire driven by a proper `LOGIC0_X1` NanGate45 cell. This eliminates the free-PI issue but does NOT fix the ATPG crashes.
+- The crashes occur in the ATPG core (`run_atpg`), not during netlist loading or fault generation. Likely a FAN_ATPG pointer/range bug triggered by specific circuit topologies.
+- Tried with/without compression, constraint, single fault — same crash.
 
-**Workaround:** Constrain `_const0_` to 0 in the FAN script before `run_atpg`. The exact FAN_ATPG constraint command needs investigation.
+**Workaround:** None yet. 5/12 circuits work (s27, b07, b13, b15). 7 crash.
 
-**Status:** b07 and b13 survive ATPG but produce low fault coverage (~44-55%) due to unconstrained `_const0_`. s27 works correctly (no `_const0_`).
+### 5.2 ITC'99 low fault coverage (~43-55%)
 
-### 5.2 ITC'99 `_const0_` unconstrained — coverage floor at 43-55%
+**Working circuits:**
+- b07 (45 FFs): 43.82% fault coverage, 93.2% test coverage, AU=1492/2816 (53%)
+- b13 (65 FFs): 54.73% fault coverage, 91.34% test coverage, AU=1050/2620 (40%)
+- s27 (3 FFs): 94.55% fault coverage, AU=0 (known good baseline)
 
-All Yosys-synthesized ITC'99 netlists use `_const0_` as a module input port. The `add_pin_constraint _const0_ 0` command runs without error but does NOT change fault coverage (verified on b07: 43.82% with and without constraint). The root cause is likely that `_const0_` feeds RN (reset) pins, and constraining it to 0 keeps reset permanently active, making many faults untestable. The constraint should probably tie `_const0_` to 1 instead, or the netlist should be synthesized without a tie-low cell on reset paths. This is a netlist-level issue that blocks meaningful ITC'99 coverage numbers.
+The high AU rates on b07/b13 are likely inherent to the circuit structure (sequential ATPG-limited testability) rather than a netlist or constraint issue. `test_coverage` (excluding AU) is 91-93%, indicating the ATPG engine is effective on testable faults.
 
-**Working circuits:** b07 (45 FFs, 43.82% coverage), b13 (65 FFs, 54.73% coverage)
-**Crash circuits:** b03 (31), b04 (67), b05 (88, assign syntax), b08 (28), b09 (30), b11 (58), b12 (192), b14 (219)
-**b15 (839 FFs):** ATPG survives but not yet measured due to runtime concerns.
+### 5.3 `set_nonscan_ff` has no visible effect at low coverage
 
-### 5.3 FAN_ATPG netlist tolerance patches (local, uncommitted)
+On b07 and b13, `full_scan` and `partial_scan_no_recovery` produce identical coverage (43.82%/54.73%). The AU-dominated fault distribution (53% of faults already untestable) masks any partial-scan coverage loss. T=1 no-recovery verification is only meaningful on s27 where AU=0.
 
-To accept Yosys-generated Verilog, two ERROR→WARN changes were made in `FAN_ATPG/pkg/interface/src/netlist.cpp`:
-- "has no driver" → WARN (from stripped assign statements)
+### 5.4 FAN_ATPG netlist tolerance patches (local, uncommitted in submodule)
+
+Two ERROR→WARN changes in `FAN_ATPG/pkg/interface/src/netlist.cpp`:
+- "has no driver" → WARN (from stripped assign statements in b05)
 - "drives no cell" → WARN (from unconnected QN outputs)
 
-These are parser-level tolerance changes, not ATPG algorithm modifications.
+Both are parser-level tolerance changes, not ATPG algorithm modifications.
 
 ---
 
