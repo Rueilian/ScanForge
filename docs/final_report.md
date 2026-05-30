@@ -196,46 +196,17 @@ Non-scan FFs are selected by OpenSTA: top x% by minimum-path-slack timing critic
 | b13 x=20% | 13/65 | 42.2% | 42.7% | 43.6% | +1.4pp | 10 | 17 |
 | b13 x=50% | 32/65 | 30.0% | 30.2% | 30.9% | +0.9pp | 4 | 12 |
 
-### 7.2 Coverage Bar Chart
+![Coverage comparison across stages](figures/coverage_bar_chart.png)
 
-```
-Coverage by Stage (T=1 → T1∪T2 → T1∪T2∪T4)
-═══════════════════════════════════════════════════
+*Figure 1: Progressive residual multi-frame ATPG coverage. Each group shows T=1 (blue), T1∪T2 (orange), and T1∪T2∪T4 (green). Gain in percentage points is annotated above each bar.*
 
-s27 x=67%  ████████░░░░░░░░░░░░░░░░░░░░ 37.9%  T=1
-           ███████████████░░░░░░░░░░░░░░ 68.2%  +T2
-           ██████████████████░░░░░░░░░░░ 81.8%  +T4
+### 7.2 Recovered Faults by Depth
 
-b07 x=20%  ██████░░░░░░░░░░░░░░░░░░░░░░ 28.9%  T=1
-           ██████░░░░░░░░░░░░░░░░░░░░░░ 29.3%  +T2
-           ██████░░░░░░░░░░░░░░░░░░░░░░ 30.3%  +T4
+![Recovered faults by residual depth](figures/recovered_faults_chart.png)
 
-b07 x=50%  ████░░░░░░░░░░░░░░░░░░░░░░░░ 19.5%  T=1
-           ████░░░░░░░░░░░░░░░░░░░░░░░░ 19.9%  +T2
-           ████░░░░░░░░░░░░░░░░░░░░░░░░ 20.4%  +T4
+*Figure 2: Newly detected faults from residual T=2 (orange) and residual T=4 (green). Values above bars indicate fault count.*
 
-b13 x=20%  █████████░░░░░░░░░░░░░░░░░░░ 42.2%  T=1
-           █████████░░░░░░░░░░░░░░░░░░░ 42.7%  +T2
-           █████████░░░░░░░░░░░░░░░░░░░ 43.6%  +T4
-
-b13 x=50%  ██████░░░░░░░░░░░░░░░░░░░░░░ 30.0%  T=1
-           ██████░░░░░░░░░░░░░░░░░░░░░░ 30.2%  +T2
-           ██████░░░░░░░░░░░░░░░░░░░░░░ 30.9%  +T4
-```
-
-### 7.3 Recovered Faults by Depth
-
-```
-Recovered Faults (new DT from residual T=2 and residual T=4)
-
-s27 x=67%  T2: ████████████████████ (20)  T4: █████████ (9)
-b07 x=20%  T2: ███████ (7)                T4: ████████████████████ (20)
-b07 x=50%  T2: ████████ (8)               T4: █████████ (9)
-b13 x=20%  T2: ██████████ (10)            T4: █████████████████ (17)
-b13 x=50%  T2: ████ (4)                   T4: ████████████ (12)
-```
-
-### 7.4 Key Observations
+### 7.3 Key Observations
 
 1. **s27 shows strong recovery (+43.9pp).** Two-thirds of FFs are non-scan, creating a large residual set where faults are limited by sequential controllability. T=2 recovers 20 faults, T=4 adds 9 more. The union reaches 81.8% of full-scan coverage.
 
