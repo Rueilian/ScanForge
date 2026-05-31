@@ -259,7 +259,7 @@ The +43.9pp gain demonstrates that the pipeline correctly recovers faults whose 
 
 2. **Higher exclusion does not increase recovery.** For b07, gain decreases from +1.4pp (20% exclusion) to +0.9pp (50% exclusion). For b13, the pattern is the same. More non-scan FFs create a larger residual set, but the additional residual faults are not recovered by T=4.
 
-3. **Naive T=4-all underperforms T=1 in raw FAN-reported coverage.** For b07, T=4-all reports 13.8–23.2% vs. T=1's 19.5–28.9%. This is primarily due to denominator mismatch in multi-frame fault reporting (see Section 7.4), not a genuine detection regression.
+3. **Naive T=4-all coverage is not directly comparable with T=1 in FAN_ATPG.** FAN_ATPG's native multi-frame `report_statistics` uses a fault list denominator that differs from the T=1 collapsed fault count, so directly comparing FAN-reported T=4-all FC against T=1 FC is unreliable. We compute externally key-matched T2-all and T4-all FC values (reported in Table Section 7.2, marked with †) by mapping per-fault DT sets back to the T=1 fault denominator. These key-matched values still underperform or only slightly improve over T=1, indicating that naive all-fault deeper-frame ATPG does not provide a robust coverage improvement in our backend, independent of denominator mismatch.
 
 4. **Progressive flow closely matches T=1→T=4.** For all cases, skipping T=2 (T1→T4 residual) produces nearly identical union coverage to the full T1→T2→T4 flow. T=2 is not strictly necessary as a separate recovery stage at current depths.
 
@@ -282,9 +282,7 @@ On s27 with 67% non-scan FFs, the residual fault set (41 of 66 faults) primarily
 
 ### 8.2 When Deeper Frames Do Not Help
 
-On b07 and b13, the residual fault sets are large (1082–1518 faults) but most are classified as AU (atpg untestable) by T=1. These faults are not limited by T=1 frame depth — they are classified as structurally untestable, synthesis-induced, or backend-limited at the single-frame level. Additional time frames cannot resolve structural untestability, resulting in minimal recovery.
-
-**We do not claim these faults are definitively structurally untestable** without full-scan detectability comparison or formal analysis. They are *AU-dominated at T=1 under partial-scan*, and *not recovered by shallow multi-frame expansion up to T=4*. Whether they would be recoverable at T=8 or with a different ATPG engine is an open question.
+On b07 and b13, the residual fault sets are large (1082–1518 faults) but most are classified as AU (atpg untestable) by T=1. These residual faults are not recovered by shallow multi-frame expansion up to T=4 under our backend. Their T=1 AU-dominated profile suggests that the limiting factor may be structural, synthesis-induced, or backend-limited rather than simply insufficient sequential depth. Without full-scan residual classification or deeper T=8/T=16 experiments, we cannot definitively separate structural untestability from backend limitations or deeper sequential controllability requirements.
 
 ### 8.3 T=2 Stage Value
 
