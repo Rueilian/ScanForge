@@ -4,4 +4,7 @@ scanforge
 results/experiments/
 results/s27_exclude_sweep.csv
 results/s27_timing_proxy.csv
+results/residual_faults/
 logs/
+__pycache__/
+scripts/__pycache__/
