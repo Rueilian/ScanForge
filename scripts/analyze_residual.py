@@ -105,7 +105,7 @@ def parse_faults(path):
     faults = []
     with open(path) as f:
         for line in f:
-            m = re.match(r'#\s+g=(\d+)\s+l=(-?\d+)\s+(SA[01])\s+(DT|AU|AB|UD|TI|RE|PT)\s+(.*)', line)
+            m = re.match(r'#\s+g=(\d+)\s+l=(-?\d+)\s+(SA[01])\s+(DT|AU|AB|UD|TI|RE|PT|TO)\s+(.*)', line)
             if m:
                 gid = int(m.group(1)); line_no = int(m.group(2))
                 ftype = m.group(3); status = m.group(4)
