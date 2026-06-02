@@ -65,6 +65,8 @@ To verify the instrumentation works end-to-end, we ran a forced-timeout test wit
 
 Report statistics: `fault coverage = 70%`, `TO (timeout) = 15`.
 
+*Note: `report_statistics` counts TO using the engine's internal full (uncollapsed) fault accounting, while `report_fault` emits the collapsed/reportable fault list consumed by the Python parser. The parser-level TO count (11 collapsed vs. 15 full) is the one used for CSV summaries and union coverage analysis.*
+
 Per-fault `report_fault` confirms individual faults marked `TO`:
 ```
 g=0 l=0 SA0  TO  G0 (primary input)
