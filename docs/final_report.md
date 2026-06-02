@@ -342,6 +342,7 @@ Test power during scan shift is an active research area [7][14][15]. Scan-chain 
 8. **Residual fault classification is incomplete.** We did not run full-scan ATPG on b07/b13 to distinguish structural AU from sequential-controllability AU.
 9. **Runtime conclusions are preliminary.** Benchmarks are small; larger circuits are needed for meaningful runtime analysis.
 10. **FAN_ATPG is a single backend.** Results may differ with other ATPG engines.
+11. **Per-target timeout not needed at current scale.** We additionally instrumented an optional per-target-fault wall-clock timeout (`set_per_target_timeout <sec>`, default 0 = disabled) to check whether hard residual faults monopolize the T=4 invocation budget. On the current s27, b07, and b13 benchmark set, no T=4 run hit the global 180-second timeout, and practical per-target timeout settings did not produce TO faults. Therefore, the limited b07/b13 recovery is not explained by timeout starvation; it is consistent with the AU-dominated residual profile observed under shallow T=4 expansion. The per-target timeout remains useful as instrumentation and as a safeguard for larger benchmarks. See `docs/t4_timeout_analysis.md` for validation details.
 
 ---
 
