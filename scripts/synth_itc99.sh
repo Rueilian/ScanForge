@@ -1,13 +1,26 @@
 #!/usr/bin/env bash
 # Synthesize ITC'99 circuits to NanGate45 gate-level Verilog using Yosys.
-# Run from anywhere; paths are absolute.
-set -e
+# Run from anywhere; paths are resolved relative to this repository.
+set -euo pipefail
 
-REPO_ROOT="/home/swear01/ScanForge"
+SCRIPT_DIR="$(cd -- "${BASH_SOURCE[0]%/*}" && pwd)"
+REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 RTL_DIR="$REPO_ROOT/itc99_rtl"
 OUT_DIR="$REPO_ROOT/FAN_ATPG/mod_netlist"
 LIBERTY="$REPO_ROOT/FAN_ATPG/techlib/NangateOpenCellLibrary_typical.lib"
 LOG_DIR="$REPO_ROOT/logs/synth"
+
+require_tool() {
+  local tool="$1"
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    echo "ERROR: required tool '$tool' not found in PATH" >&2
+    echo "Install the missing tool or export PATH to include it before running this script." >&2
+    exit 127
+  fi
+}
+
+require_tool yosys
+require_tool python3
 
 mkdir -p "$LOG_DIR"
 
@@ -39,7 +52,7 @@ for entry in "${TARGETS[@]}"; do
 
   echo -n "Synthesizing $cname ($module) ... "
 
-  yosys -q -p "
+  if ! yosys -q -p "
     read_verilog $rtl;
     synth -top $module -flatten;
     dfflibmap -liberty $LIBERTY;
@@ -47,9 +60,7 @@ for entry in "${TARGETS[@]}"; do
     splitnets;
     opt_clean -purge;
     write_verilog -noattr $out;
-  " > "$log" 2>&1
-
-  if [ $? -ne 0 ]; then
+  " > "$log" 2>&1; then
     echo "FAILED — see $log"
     continue
   fi
