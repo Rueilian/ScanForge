@@ -42,13 +42,16 @@
 | Scan insertion 可修 full-scan FC | SDFFR 版 b03 同樣 34.37% / 950 AU |
 | ITC'99 RTL 天生不可觀測 | test coverage ~90%，問題是 **950+ AU**，非 UD |
 
-### 對照實驗（cin.get 修復後）
+### 對照實驗（2026-06-09 更新）
 
 | 電路 | FC | AU | 意義 |
 |------|-----|-----|------|
-| tiny_dff / tiny_dffr / tiny_loop | 84–87% | 0 | FAN + mdt 基本正常 |
-| s27 (SDFF + scan chain) | 94.6% | 0 | 參考基準 |
-| **b03（任何 mdt / DFFR / SDFFR）** | **34.4%** | **950** | **核心 blocker** |
+| tiny_dffr (DFFR, no scan) | 87.5% | 0 | FAN 基本正常 |
+| **tiny_sdff / tiny_sdffr (scan)** | **58.3%** | **8** | **功能路徑全 AU — SDFF intern 問題** |
+| s27 / s510 (SDFF + comb) | 94–95% | 0–60 | 有 comb 邏輯時仍可測 |
+| **b03 (SDFFR + MUX2 FSM)** | **34.2%** | **957** | **核心 blocker** |
+
+**根因收斂（2026-06-09）：** 不是 frame 或 netlist 格式，而是 FAN 對 SDFF intern（`_mux`+`_dff`）與 PPI/PPO 抽象的建模衝突 + b03 MUX2-heavy 加劇 AU。詳見 [`2026-06-09-phase-c-fan-atpg-fix.md`](./2026-06-09-phase-c-fan-atpg-fix.md)。
 
 ### Sequential ATPG（progressive residual）
 
@@ -96,48 +99,57 @@
 
 ---
 
-### Phase B：修 b03 AU 問題（最高優先，~1–3 天）
+### Phase B：b03 AU 診斷（~1–3 天）— ✅ 診斷完成，修復轉 Phase C
 
-**目的：** FC ≥ 80%（至少 b03 + 一個較大電路如 b07），**或** 用證據記錄 FAN 在此 netlist 上的天花板。
+**目的：** 找出低 FC 根因。**已完成**；修復工作移至 Phase C。
 
-依序嘗試，**任一實驗 FC 明顯跳升即停止並固化設定**：
+#### 已完成實驗
 
-#### B1. RN tie-high（async reset 測試模式）❌ 無效
+| 項目 | 結果 | 結論 |
+|------|------|------|
+| B1 RN tie-high | FC 34.28% | 無效（C2 將用正式路徑重試） |
+| B2 frame=2 | FC 32.23% | 更差；不適用 full-scan |
+| B-extra clock→CK + _const | pipeline OK | 必要但不充分 |
+| SDFFR format migration | FC 34.17% | 格式正確，FC 不變 |
+| Scan-port + MUX fix | FC 34.17% | 必要但不充分 |
+| **B4 tiny_sdff 隔離** | d/q/PPI/PPO 全 AU | **確認 SDFF intern 建模問題** |
+| **B4 AU 分群** | 341 MUX2, 46 SDFFR | 見 `b03_investigation` §3.3 |
+| 關閉 compression | FC 33.33%, 97 patterns | 非 pattern 數量問題 |
 
-- [x] `fixup_verilog.py --rn-tie-high` 已實作
-- [x] b03：FC 34.28%，AU 954（與 baseline 相同）
+#### 已取消 / 降級
 
-#### B2. Frame=2 CAPTURE baseline ❌ 更差
+- ~~B3 全量 MDT seq3→intern 遷移~~ — DFFR_X1 遷移已證明對 b03 無效；優先改 FAN circuit 抽象
+- ~~frame=2 作為 full-scan 修復~~ — 用戶確認不適用
 
-- [x] b03 frame=2：FC 32.23%，AU 941
-
-#### B-extra. clock→CK + orphan _const 修復 ✅ pipeline
-
-- [x] `clock`→`CK`：b03 PI 6→5，FC 不變
-- [x] `fix_orphan_const_inputs()`：修復 b07/b09/b11/b15 的 `input _const0_;` parse error
-
-#### B3. 完成 MDT 遷移
-
-- [ ] 將剩餘 `seq3` 的 DFFR_X2、DFFS、DFF、SDFFR、SDFF_X2 改為 `intern + _dff` / `_mux + _dff`
-- [ ] tiny_dffr + b03 回歸
-- **已知：** 僅 DFFR_X1 遷移無效；全量遷移仍值得一次驗證
-
-#### B4. 拓撲診斷
-
-- [ ] 比對 b03 vs s27：combinational loop、clock gating、feedback 結構
-- [ ] 匯出 AU fault 清單，按 cone / FF / PI 分群
-- [ ] 檢查 `circuit.cpp` PI 排除、`CK` 建模是否讓 ITC 電路整體 AU
-
-#### B5. 外部參考（若 B1–B4 仍 ~34%）
-
-- [ ] 同一 `b03.v` 用 TetraMAX / 其他 ATPG 跑 full-scan FC
-- [ ] 若外部工具 >80% → FAN 建模問題；若也 ~35% → netlist/constraint 問題
-
-**Gate G2：** b03 FC ≥ 80% **或** 完成 B1–B5 並寫入 `b03_root_cause_analysis.md` 最終結論（含 fallback 決策）
+**Gate G2：** ❌ 未通過（b03 FC ≈ 34%）。診斷結論已寫入 `FAN_ATPG/rpt/b03_investigation_2026-06-09.md`。
 
 ---
 
-### Phase C：Pipeline 固化（與 B 並行或緊接 B）
+### Phase C：FAN Engine 修復（最高優先，~2–4 天）— **進行中**
+
+> 詳細步驟、gates、時程：[`2026-06-09-phase-c-fan-atpg-fix.md`](./2026-06-09-phase-c-fan-atpg-fix.md)
+
+#### C1. SDFF/SDFFR 黑盒化（FAN `circuit.cpp`）— 未開始
+
+- [ ] C1.1–C1.4：`createCircuitComb()` 跳過 DFF cell intern primitives
+- [ ] C1.5–C1.6：tiny_sdffr / s510 / b03 regression
+- [ ] C1.8（若需要）：MUX2 implication 強化
+
+**Gate C1：** `tiny_sdffr` 功能路徑 DT > 0；s510 FC ≥ 94%；b03 FC 顯著上升
+
+#### C2. RN tie-high 重試 — 未開始
+
+- [ ] 用 `mod_netlist/b03_rn_tie.v` 正式路徑重跑
+
+#### C3. 外部 ATPG reference — 未開始
+
+- [ ] TetraMAX/Modus 或 DVCON 文獻對照
+
+**Gate G2（6/11 決策）：** b03 FC ≥ 80% → Phase D；否則 fallback
+
+---
+
+### Phase C-pipeline：Pipeline 固化（與 C1 並行或 G2 後）
 
 - [ ] **C1** 確認 `strip_scan_from_netlist.py` 與 full-scan 流程文件化
 - [ ] **C2** `synth_itc99.sh` 預設 DFFR + tie cells；`--scan` 僅 partial 用
@@ -201,12 +213,12 @@
 
 ## 六、Fallback 路徑（G2 失敗時）
 
-若 Phase B 後 b03 仍 ~34% 且外部工具亦低 FC：
+若 Phase C 後 b03 仍 < 50% 且（外部工具 ≥ 80% **或** tiny_sdff 仍全 AU）：
 
 1. **報告主線改為：** timing-driven partial-scan 在「低 full-scan 天花板」電路上的行為
 2. **保留：** s27 sequential recovery 正面結果 + 6 個 partial-scan 電路數據
-3. **誠實結論：** ITC'99 + FAN frame-1 模型下 full-scan FC 上限 ~35–52%；progressive residual 對 AU-dominated residual 幫助有限
-4. **不做：** 用錯誤 baseline 跑完整 55-run 再事後合理化
+3. **誠實結論：** FAN SDFF intern 建模缺陷導致 ITC'99 full-scan FC 上限 ~35–55%；非 ITC'99 天生不可測（文獻/DVCON 對照）；progressive residual 對 AU-dominated residual 幫助有限
+4. **不做：** 用未修復 FAN baseline 跑完整 55-run 再事後合理化
 
 此路徑仍可滿足「方法驗證 + 評估 + 負面結果」的學術價值。
 
@@ -216,9 +228,9 @@
 
 | 日期 | 工作 |
 |------|------|
-| **6/9（今）** | Phase A 完成；啟動 B1 RN tie-high |
-| **6/10–6/11** | B2–B4；G2 決策 |
-| **6/12** | Phase C（b05、synth）；若 G2 過則開始 D1 |
+| **6/9（今）** | Phase B 診斷完成；文件更新；啟動 Phase C1 |
+| **6/10–6/11** | C1 SDFF 黑盒化 + C2 RN 重試；G2 決策 |
+| **6/12** | C3 外部 reference；Pipeline 固化；若 G2 過則開始 D1 |
 | **6/13–6/14** | D2 sweep 或 fallback 敘事固化 |
 | **6/15** | D3 圖表、簡報稿 |
 | **6/16** | 簡報 |
@@ -231,8 +243,9 @@
 |------|------|
 | 狀態快照 | `docs/superpowers/plans/2026-06-09-atpg-pipeline-status.md` |
 | 本計劃 | `docs/superpowers/plans/2026-06-09-revised-plan.md` |
+| **Phase C 詳細計劃** | `docs/superpowers/plans/2026-06-09-phase-c-fan-atpg-fix.md` |
 | 舊計劃（部分過時） | `docs/superpowers/plans/2026-06-09-final-completion.md` |
-| b03 分析 | `FAN_ATPG/rpt/b03_root_cause_analysis.md` |
+| b03 調查報告 | `FAN_ATPG/rpt/b03_investigation_2026-06-09.md` |
 | FAN hang 修復 | `FAN_ATPG/pkg/core/src/atpg.cpp` |
 | MDT | `FAN_ATPG/techlib/mod_nangate45.mdt` |
 | Full-scan fixup | `scripts/fixup_verilog.py`（無 `--scan`） |
@@ -243,7 +256,8 @@
 
 ## 九、立即下一步（給下一個 agent）
 
-1. 執行 Phase A（重建 + G0/G1）
-2. **Phase B1：RN tie-high on b03** — 目前最高 ROI 實驗
-3. **不要** 在 G2 解決前跑 55-run sweep
-4. 每完成一個 gate，更新本文件 checkbox 與 `2026-06-09-atpg-pipeline-status.md`
+1. **Phase C1：SDFF/SDFFR 黑盒化** — 見 [`2026-06-09-phase-c-fan-atpg-fix.md`](./2026-06-09-phase-c-fan-atpg-fix.md) §3
+2. Regression：`tiny_sdffr` 功能路徑必須有 DT（目前全 AU）
+3. **不要** 在 G2 決策前跑 55-run sweep
+4. **不要** 用 frame=2 修 full-scan baseline
+5. 每完成一個 gate，更新本文件 + `atpg-pipeline-status.md`

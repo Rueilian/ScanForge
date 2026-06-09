@@ -236,7 +236,12 @@ def fix_orphan_const_inputs(src):
     return src
 
 def tie_async_controls_high(src):
-    """Deassert active-low async controls during test (RN/SN tied to LOGIC1)."""
+    """Deassert active-low async controls during test (RN/SN tied to LOGIC1).
+
+    Note: Replacing every .RN(...) leaves reset-distribution INV outputs floating;
+    FAN Netlist::check rejects the netlist. Prefer reset-port tie (see b03_reset_tie.v)
+    or remove the reset INV cone when using this helper on large designs.
+    """
     wire_decls = []
     insts = []
 
@@ -251,10 +256,17 @@ def tie_async_controls_high(src):
         src = re.sub(r'\.SN\([^)]+\)', '.SN(_sn_tie_)', src)
 
     if wire_decls:
-        src = src.rstrip()
-        if src.endswith('endmodule'):
-            block = '\n'.join(wire_decls + insts)
-            src = src[:-len('endmodule')] + '\n' + block + '\nendmodule'
+        block = '\n'.join(wire_decls + insts) + '\n'
+        # Insert after port/wire declarations, before first cell instance.
+        cell_start = re.search(
+            r'\n\s*(?:[A-Z][A-Z0-9_]*_X\d+\s+\w+\s*\(|assign\s+)',
+            src,
+        )
+        if cell_start:
+            pos = cell_start.start() + 1
+            src = src[:pos] + block + src[pos:]
+        else:
+            src = re.sub(r'(module\s+\w+\s*\([^)]*\)\s*;\s*\n)', r'\1' + block, src, count=1)
     return src
 
 if __name__ == '__main__':
