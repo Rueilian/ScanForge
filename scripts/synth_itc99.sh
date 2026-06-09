@@ -54,8 +54,8 @@ for entry in "${TARGETS[@]}"; do
     continue
   fi
 
-  # Rename escaped Verilog identifiers (\name[n] → name_n_) for FAN compatibility
-  python3 "$REPO_ROOT/scripts/fixup_verilog.py" "$out" "${out}.tmp" && mv "${out}.tmp" "$out"
+  # FAN full-scan format: SDFFR + scan chain + CK port (like s510/s27).
+  python3 "$REPO_ROOT/scripts/fixup_verilog.py" "$out" "${out}.tmp" --full-scan && mv "${out}.tmp" "$out"
 
   ff_count=$(grep -cE "\bS?DFFR?S?_X[12]\b" "$out" 2>/dev/null || echo 0)
   echo "OK ($ff_count FFs → $out)"
