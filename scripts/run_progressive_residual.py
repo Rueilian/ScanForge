@@ -71,26 +71,40 @@ def run_fan(label, circuit, frame, nonscan_ffs, fault_file=None, timeout_s=None,
         elapsed = time.time() - t0
     except subprocess.TimeoutExpired:
         return {"label": label, "returncode": -1, "elapsed": timeout_s, "status": "TIMEOUT"}
-    fc = dt = au = ab = ud = to_num = None
+    fc = dt = au = ab = ud = to_num = total = None
+    status = "PASS"
     if os.path.exists(rpt_path):
         with open(rpt_path) as f:
             text = f.read()
         for key, pat in [
-            ("fc", r"fault coverage\s+([\d.]+)%"), ("dt", r"DT \(detected\)\s+([\d]+)"),
-            ("au", r"AU \(atpg untestable\)\s+([\d]+)"), ("ab", r"AB \(atpg abort\)\s+([\d]+)"),
-            ("ud", r"UD \(undetected\)\s+([\d]+)"), ("to_num", r"TO \(timeout\)\s+([\d]+)"),
+            ("dt", r"DT \(detected\)\s+([\d]+)"),
+            ("au", r"AU \(atpg untestable\)\s+([\d]+)"),
+            ("ab", r"AB \(atpg abort\)\s+([\d]+)"),
+            ("ud", r"UD \(undetected\)\s+([\d]+)"),
+            ("to_num", r"TO \(timeout\)\s+([\d]+)"),
         ]:
             m = re.search(pat, text)
             if m:
-                if key == "fc": fc = float(m.group(1))
-                elif key == "dt": dt = int(m.group(1))
+                if key == "dt": dt = int(m.group(1))
                 elif key == "au": au = int(m.group(1))
                 elif key == "ab": ab = int(m.group(1))
                 elif key == "ud": ud = int(m.group(1))
                 elif key == "to_num": to_num = int(m.group(1))
+
+        # Parse fault coverage robustly
+        m_fc = re.search(r"fault coverage \(scan protocol\)\s+([\d.]+)%", text)
+        if not m_fc:
+            m_fc = re.search(r"fault coverage\s+([\d.]+)%", text)
+        if m_fc:
+            fc = float(m_fc.group(1))
         total = (dt or 0) + (au or 0) + (ab or 0) + (ud or 0) + (to_num or 0)
+    else:
+        status = "FAILED"
+        print(f"  ERROR: report {rpt_path} not found.")
+        print(f"  FAN stdout:\n{proc.stdout}")
+        print(f"  FAN stderr:\n{proc.stderr}")
     return {"label": label, "fc": fc, "dt": dt, "au": au, "ab": ab, "ud": ud, "to": to_num or 0, "total": total,
-            "returncode": proc.returncode, "elapsed": elapsed, "status": "PASS"}
+            "returncode": proc.returncode, "elapsed": elapsed, "status": status}
 
 def parse_faults(path):
     faults = {}; fault_list = []
