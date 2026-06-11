@@ -244,31 +244,31 @@ The following table presents the complete results of the progressive residual mu
 
 | Circuit | Ratio | Excl FFs | Denominator | T1 FC | T1→T2→T4 FC | Gain (pp) | T1 RT (s) | T2 RT (s) | T4 RT (s) | Total RT (s) |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| b03 | 5% | 2 | 841 | 89.54% | 89.54% | 0.00 | 0.08 | 0.07 | 0.13 | 0.28 |
-| b03 | 10% | 4 | 841 | 89.54% | 89.54% | 0.00 | 0.07 | 0.07 | 0.08 | 0.22 |
-| b03 | 15% | 5 | 841 | 89.54% | 89.54% | 0.00 | 0.10 | 0.06 | 0.10 | 0.26 |
-| b03 | 20% | 7 | 833 | 88.36% | 90.52% | +2.16 | 0.30 | 0.07 | 0.12 | 0.49 |
-| b04 | 5% | 4 | 2347 | 87.60% | 87.60% | 0.00 | 50.00 | 15.18 | 75.57 | 140.76 |
-| b04 | 10% | 7 | 2347 | 87.60% | 87.60% | 0.00 | 73.91 | 19.18 | 31.62 | 124.71 |
-| b04 | 15% | 11 | 2347 | 87.60% | 87.60% | 0.00 | 67.65 | 19.59 | 30.89 | 118.13 |
-| b04 | 20% | 14 | 2347 | 87.60% | 87.60% | 0.00 | 67.48 | 19.51 | 29.71 | 116.69 |
-| b05 | 5% | 5 | 4542 | 92.78% | 92.78% | 0.00 | 10.41 | 4.10 | 6.14 | 20.65 |
-| b05 | 10% | 9 | 4562 | 92.81% | 92.81% | 0.00 | 9.45 | 3.99 | 7.60 | 21.03 |
-| b05 | 15% | 14 | 4562 | 92.81% | 92.81% | 0.00 | 9.38 | 3.99 | 6.19 | 19.55 |
-| b05 | 20% | 18 | 4562 | 92.81% | 92.81% | 0.00 | 10.68 | 4.05 | 6.08 | 20.81 |
-| b07 | 5% | 3 | 1890 | 56.46% | 63.07% | +6.61 | 0.59 | 1.05 | 1.53 | 3.17 |
-| b07 | 10% | 5 | 1874 | 42.80% | 54.59% | +11.79 | 0.54 | 1.55 | 1.91 | 4.01 |
-| b07 | 15% | 7 | 1858 | 41.28% | 53.44% | +12.16 | 0.72 | 1.45 | 1.96 | 4.12 |
-| b07 | 20% | 9 | 1842 | 39.79% | 52.93% | +13.14 | 0.96 | 2.34 | 2.21 | 5.51 |
-| b08 | 5% | 2 | 2290 | 92.75% | 92.75% | 0.00 | 1.99 | 0.11 | 0.21 | 2.31 |
-| b08 | 10% | 3 | 2290 | 92.75% | 92.75% | 0.00 | 1.04 | 0.12 | 0.13 | 1.28 |
-| b08 | 15% | 5 | 2290 | 92.75% | 92.75% | 0.00 | 1.13 | 0.13 | 0.15 | 1.40 |
-| b08 | 20% | 6 | 2290 | 92.75% | 92.75% | 0.00 | 1.31 | 0.14 | 0.12 | 1.57 |
-| b09 | 5% | 2 | 954 | 87.63% | 87.63% | 0.00 | 0.30 | 0.10 | 0.11 | 0.52 |
-| b09 | 10% | 3 | 954 | 87.63% | 87.63% | 0.00 | 0.26 | 0.17 | 0.26 | 0.69 |
-| b09 | 15% | 5 | 954 | 87.63% | 87.63% | 0.00 | 0.29 | 0.19 | 0.24 | 0.72 |
-| b09 | 20% | 6 | 954 | 87.63% | 87.63% | 0.00 | 0.32 | 0.21 | 0.31 | 0.84 |
-| b11 | 5% | 3 | 6909 | 96.53% | 96.53% | 0.00 | 110.05 | 145.36 | 203.60 | 459.02 |
+| b03 | 5% | 2 | 841 | 89.54% | 89.54% | 0.00 | 0.06 | 0.05 | 0.09 | 0.19 |
+| b03 | 10% | 4 | 841 | 89.54% | 89.54% | 0.00 | 0.10 | 0.05 | 0.05 | 0.20 |
+| b03 | 15% | 5 | 841 | 89.54% | 89.54% | 0.00 | 0.06 | 0.06 | 0.16 | 0.28 |
+| b03 | 20% | 7 | 833 | 88.36% | 90.52% | +2.16 | 0.06 | 0.15 | 0.09 | 0.29 |
+| b04 | 5% | 4 | 2347 | 87.60% | 87.60% | 0.00 | 4.01 | 2.25 | 3.01 | 9.26 |
+| b04 | 10% | 7 | 2347 | 87.60% | 87.60% | 0.00 | 4.06 | 2.06 | 3.26 | 9.38 |
+| b04 | 15% | 11 | 2347 | 87.60% | 87.60% | 0.00 | 4.68 | 2.01 | 3.16 | 9.85 |
+| b04 | 20% | 14 | 2347 | 87.60% | 87.60% | 0.00 | 3.31 | 1.82 | 3.03 | 8.16 |
+| b05 | 5% | 5 | 4542 | 92.78% | 92.78% | 0.00 | 1.09 | 0.61 | 0.90 | 2.60 |
+| b05 | 10% | 9 | 4562 | 92.81% | 92.81% | 0.00 | 0.76 | 0.60 | 0.88 | 2.23 |
+| b05 | 15% | 14 | 4562 | 92.81% | 92.81% | 0.00 | 0.72 | 0.60 | 0.89 | 2.20 |
+| b05 | 20% | 18 | 4542 | 92.78% | 92.78% | 0.00 | 0.80 | 0.59 | 0.88 | 2.27 |
+| b07 | 5% | 3 | 1890 | 56.46% | 63.02% | +6.56 | 0.08 | 0.14 | 0.12 | 0.34 |
+| b07 | 10% | 5 | 1874 | 42.80% | 54.06% | +11.26 | 0.07 | 0.21 | 0.26 | 0.53 |
+| b07 | 15% | 7 | 1858 | 41.28% | 52.74% | +11.46 | 0.06 | 0.14 | 0.16 | 0.36 |
+| b07 | 20% | 9 | 1842 | 39.79% | 52.17% | +12.38 | 0.21 | 0.18 | 0.43 | 0.81 |
+| b08 | 5% | 2 | 2290 | 92.75% | 92.75% | 0.00 | 0.08 | 0.05 | 0.19 | 0.32 |
+| b08 | 10% | 3 | 2290 | 92.75% | 92.75% | 0.00 | 0.08 | 0.05 | 0.04 | 0.18 |
+| b08 | 15% | 5 | 2290 | 92.75% | 92.75% | 0.00 | 0.08 | 0.05 | 1.13 | 1.26 |
+| b08 | 20% | 6 | 2290 | 92.75% | 92.75% | 0.00 | 0.08 | 0.04 | 0.05 | 0.17 |
+| b09 | 5% | 2 | 954 | 87.63% | 87.63% | 0.00 | 0.24 | 0.05 | 0.05 | 0.34 |
+| b09 | 10% | 3 | 954 | 87.63% | 87.63% | 0.00 | 0.04 | 0.04 | 0.05 | 0.13 |
+| b09 | 15% | 5 | 954 | 87.63% | 87.63% | 0.00 | 0.04 | 0.16 | 0.05 | 0.26 |
+| b09 | 20% | 6 | 954 | 87.63% | 87.63% | 0.00 | 0.04 | 0.05 | 0.05 | 0.14 |
+| b11 | 5% | 3 | 6915 | 96.53% | 96.53% | 0.00 | 101.42 | 141.75 | 211.35 | 454.52 |
 | b11 | 10% | 6 | 6915 | 96.53% | 96.53% | 0.00 | 102.25 | 155.47 | 195.85 | 453.56 |
 | b11 | 15% | 9 | 6915 | 96.53% | 96.53% | 0.00 | 95.09 | 135.91 | 197.65 | 428.65 |
 | b11 | 20% | 12 | 6909 | 96.53% | 96.53% | 0.00 | 94.59 | 135.39 | 196.66 | 426.64 |
@@ -285,17 +285,74 @@ The following table presents the complete results of the progressive residual mu
 
 *Figure 2: Number of newly detected faults from residual T=2 and residual T=4.*
 
-### 7.3 Key Observations
+### 7.3 Comparison with Standard Time-Frame Expansion (TFE)
 
-1. **Gains vary significantly across ITC'99 circuits.** On b07 and b13 under timing constraints, multi-frame ATPG recovers substantial coverage. For b07, the gain increases with higher exclusion ratios, reaching up to **+13.14pp** (39.79% -> 52.93%) at 20% ratio. Similarly, for b13, the gain reaches **+8.04pp** (54.66% -> 62.71%) at 20% ratio. Conversely, for b03, b04, b05, b08, b09, and b11, the progressive residual gain is **0.00pp** across all ratios.
+To evaluate the impact of the **Two-Phase State Justification** C++ optimization, we executed the progressive residual sweep *without* the optimization (Standard TFE mode) on the exact same netlists. 
+
+The table below presents a direct comparison of the final fault coverage (FC at $T=1\cup T=2\cup T=4$) and total runtimes between the Standard TFE baseline and the optimized Two-Phase State Justification flow:
+
+| Circuit | Ratio | Excl FFs | T1 FC | Std TFE FC | Two-Phase FC | Std Gain (pp) | Two-Phase Gain (pp) | Std RT (s) | Two-Phase RT (s) | Speedup |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| b03 | 5% | 2 | 89.54% | 89.54% | 89.54% | +0.00 | +0.00 | 0.35 | 0.19 | 1.84x |
+| b03 | 10% | 4 | 89.54% | 89.54% | 89.54% | +0.00 | +0.00 | 0.36 | 0.20 | 1.80x |
+| b03 | 15% | 5 | 89.54% | 89.54% | 89.54% | +0.00 | +0.00 | 0.55 | 0.28 | 1.96x |
+| b03 | 20% | 7 | 88.36% | 90.52% | 90.52% | +2.16 | +2.16 | 1.32 | 0.29 | 4.55x |
+| b04 | 5% | 4 | 87.60% | 87.60% | 87.60% | +0.00 | +0.00 | 15.16 | 9.26 | 1.64x |
+| b04 | 10% | 7 | 87.60% | 87.60% | 87.60% | +0.00 | +0.00 | 12.19 | 9.38 | 1.30x |
+| b04 | 15% | 11 | 87.60% | 87.60% | 87.60% | +0.00 | +0.00 | 11.23 | 9.85 | 1.14x |
+| b04 | 20% | 14 | 87.60% | 87.60% | 87.60% | +0.00 | +0.00 | 12.44 | 8.16 | 1.52x |
+| b05 | 5% | 5 | 92.81% | 92.81% | 92.78% | +0.00 | +0.00 | 3.18 | 2.60 | 1.22x |
+| b05 | 10% | 9 | 92.81% | 92.81% | 92.81% | +0.00 | +0.00 | 4.76 | 2.23 | 2.13x |
+| b05 | 15% | 14 | 92.81% | 92.81% | 92.81% | +0.00 | +0.00 | 4.29 | 2.20 | 1.95x |
+| b05 | 20% | 18 | 92.81% | 92.81% | 92.78% | +0.00 | +0.00 | 4.34 | 2.27 | 1.91x |
+| b07 | 5% | 3 | 56.46% | 57.46% | 63.02% | +1.01 | +6.56 | 0.74 | 0.34 | 2.18x |
+| b07 | 10% | 5 | 42.80% | 44.50% | 54.06% | +1.71 | +11.26 | 0.61 | 0.53 | 1.15x |
+| b07 | 15% | 7 | 41.28% | 43.06% | 52.74% | +1.78 | +11.46 | 0.42 | 0.36 | 1.17x |
+| b07 | 20% | 9 | 39.79% | 41.21% | 52.17% | +1.41 | +12.38 | 0.52 | 0.81 | 0.64x |
+| b08 | 5% | 2 | 92.75% | 92.75% | 92.75% | +0.00 | +0.00 | 0.38 | 0.32 | 1.19x |
+| b08 | 10% | 3 | 92.75% | 92.75% | 92.75% | +0.00 | +0.00 | 0.19 | 0.18 | 1.06x |
+| b08 | 15% | 5 | 92.75% | 92.75% | 92.75% | +0.00 | +0.00 | 0.38 | 1.26 | 0.30x |
+| b08 | 20% | 6 | 92.75% | 92.75% | 92.75% | +0.00 | +0.00 | 0.43 | 0.17 | 2.53x |
+| b09 | 5% | 2 | 87.63% | 87.63% | 87.63% | +0.00 | +0.00 | 0.23 | 0.34 | 0.68x |
+| b09 | 10% | 3 | 87.63% | 87.63% | 87.63% | +0.00 | +0.00 | 0.47 | 0.13 | 3.62x |
+| b09 | 15% | 5 | 87.63% | 87.63% | 87.63% | +0.00 | +0.00 | 0.21 | 0.26 | 0.81x |
+| b09 | 20% | 6 | 87.63% | 87.63% | 87.63% | +0.00 | +0.00 | 0.31 | 0.14 | 2.21x |
+| b11 | 5% | 3 | 96.53% | 96.53% | 96.53% | +0.00 | +0.00 | 578.38 | 454.52 | 1.27x |
+| b11 | 10% | 6 | 96.53% | 96.53% | 96.53% | +0.00 | +0.00 | 421.00 | 453.56 | 0.93x |
+| b11 | 15% | 9 | 96.53% | 96.53% | 96.53% | +0.00 | +0.00 | 426.29 | 428.65 | 0.99x |
+| b11 | 20% | 12 | 96.53% | 96.53% | 96.53% | +0.00 | +0.00 | 558.59 | 426.64 | 1.31x |
+| b13 | 5% | 4 | 66.08% | 66.61% | 66.84% | +0.53 | +0.76 | 0.68 | 0.18 | 3.78x |
+| b13 | 10% | 7 | 63.35% | 64.59% | 65.48% | +1.24 | +2.13 | 0.42 | 0.36 | 1.17x |
+| b13 | 15% | 10 | 60.90% | 62.34% | 63.36% | +1.44 | +2.46 | 0.63 | 0.15 | 4.20x |
+| b13 | 20% | 13 | 54.66% | 56.92% | 62.71% | +2.25 | +8.04 | 0.51 | 0.38 | 1.34x |
+
+![Two-Phase vs. Standard TFE Coverage Comparison](figures/two_phase_comparison.png)
+
+*Figure 3: Stuck-at fault coverage comparison for benchmarks b07 and b13 showing Standard TFE vs. Two-Phase State Justification.*
+
+#### Key Findings from the Comparative Evaluation:
+
+1. **Massive Coverage Recovery Boost:** 
+   Standard TFE sequential ATPG exhibits very low recovery capability under timing constraints, yielding only minimal coverage gains (+1.01pp to +2.25pp). In contrast, Two-Phase State Justification achieves **massive coverage recovery**, reclaiming up to **+12.38pp** for `b07` (20% ratio) and **+8.04pp** for `b13` (20% ratio). This represents up to a **8.8x** increase in recovered faults.
+   
+2. **Decoupling Prevents Backtrack Aborts:**
+   Under standard TFE, the ATPG engine searches a unified space for both fault propagation (at the last frame) and state justification (at previous frames). The exponential size of this unified search space causes the solver to hit its backtrack limit (500) and abort, falsely classifying many controllable faults as untestable (AU). Two-Phase State Justification completely decouples these two search phases, allowing the engine to successfully find valid patterns without hitting the backtrack limit.
+   
+3. **Execution Speedups:**
+   In addition to restoring coverage, the Two-Phase flow frequently runs faster than standard TFE. We achieve up to a **4.5x** speedup on smaller runs and maintain stable performance on larger benchmarks like `b11` (taking ~426s compared to ~558s in the 20% ratio case, a **1.31x** speedup).
+
+
+### 7.4 Key Observations
+
+1. **Gains vary significantly across ITC'99 circuits.** On b07 and b13 under timing constraints, multi-frame ATPG recovers substantial coverage. For b07, the gain increases with higher exclusion ratios, reaching up to **+12.38pp** (39.79% -> 52.17%) at 20% ratio. Similarly, for b13, the gain reaches **+8.04pp** (54.66% -> 62.71%) at 20% ratio. Conversely, for b03, b04, b05, b08, b09, and b11, the progressive residual gain is **0.00pp** across all ratios.
 
 2. **Sequential recoverability depends on timing-critical path structures.** When flip-flops are timing-constrained (placed on timing critical paths), their functional cones are often highly correlated and sequentially controllable. However, for large circuits like b11, the residual faults are structurally untestable (AU) under constraints, yielding zero recovery even with depth.
 
-3. **Two-Phase justification targets are primarily resolved at T=2.** On b07 and b13, the majority of the recovered faults are detected during the T=2 stage, with only minor additional gains at T=4 (e.g. +0.54pp for b07 at 20%). This indicates that shallow sequential depth is highly effective for timing-constrained setups.
+3. **Two-Phase justification targets are primarily resolved at T=2.** On b07 and b13, the majority of the recovered faults are detected during the T=2 stage, with only minor additional gains at T=4 (e.g. +0.22pp for b07 at 20%). This indicates that shallow sequential depth is highly effective for timing-constrained setups.
 
 4. **Progressive flow closely matches direct residual run.** For all cases, skipping T=2 produces nearly identical union coverage to the full staged flow. T=2 is not strictly necessary as a separate recovery stage at current depths, but provides diagnostic resolution.
 
-### 7.4 Denominator and Coverage Accounting
+### 7.5 Denominator and Coverage Accounting
 
 FAN_ATPG's `report_statistics` for multi-frame circuits reports fault counts against a fault list that may differ from the T=1 collapsed list. We observed that the T=4-all reported fault total sometimes exceeds the T=1 total (more gates → more faults), making direct FC comparison unreliable across depths.
 
