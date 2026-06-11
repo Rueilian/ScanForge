@@ -41,7 +41,22 @@ export PATH=$HOME/local/bin:$PATH
 
 ## Run
 
-### Synthesis (Yosys → NanGate45 gate-level Verilog)
+### ITC'99 netlist build（推薦：base-gate pipeline）
+
+One-shot entry point (prep → synth → fixup → validate). See [`docs/superpowers/plans/2026-06-09-primitive-netlist-pipeline-complete.md`](./superpowers/plans/2026-06-09-primitive-netlist-pipeline-complete.md).
+
+```bash
+export PATH=$HOME/local/bin:$PATH
+bash scripts/build_itc99_netlists.sh
+# input:  itc99_rtl/ → itc99_synth_rtl/ (prep)
+# output: FAN_ATPG/mod_netlist/{c}_dffr.v  (Yosys raw)
+#         FAN_ATPG/mod_netlist/{c}.v        (SDFFR full-scan)
+#         FAN_ATPG/mod_netlist/{c}_reset_tie.v (if reset PI)
+```
+
+**Base-gate policy:** synthesis uses `NangateOpenCellLibrary_base.lib` — allows INV/AND/OR/NAND/NOR/XOR + **MUX2**; **forbids OAI*/AOI*** (ABC expands to primitives). FAN keeps **`Gate::MUX`** (Phase D1); OAI/AOI atomic gates (D3.2/D3.3) will be removed once pipeline is live.
+
+### Synthesis only (legacy / debug)
 
 ```bash
 export PATH=$HOME/local/bin:$PATH
@@ -56,6 +71,42 @@ bash scripts/gen_nonscan_masks.sh
 # output: masks/<circuit>_x{5,10,15,20}.mask
 ```
 
+### Benchmark scope (ITC tiers)
+
+Defined in [`scripts/itc99_benchmark_scope.sh`](./scripts/itc99_benchmark_scope.sh):
+
+| Tier | Circuits | ATPG sweeps |
+|------|----------|-------------|
+| **A (active)** | b03 b04 b05 b07 b08 b09 b11 b13 | ✅ default |
+| **B (deferred)** | b12 b14 b15 | netlist only; engine too slow / crash |
+| **C (out)** | b17+ mega-ISCAS | not in pipeline |
+
+Speed improvement plan: [`docs/superpowers/plans/2026-06-10-saf-atpg-speed-improvement.md`](./superpowers/plans/2026-06-10-saf-atpg-speed-improvement.md)
+
+### ATPG timeouts (unified defaults)
+
+Defined in [`scripts/atpg_timeouts.sh`](./scripts/atpg_timeouts.sh) / [`scripts/atpg_timeouts.py`](./scripts/atpg_timeouts.py):
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `ATPG_WALL_TIMEOUT` | **3600** s | Max wall-clock per FAN invocation |
+| `ATPG_PER_TARGET_TIMEOUT` | **0** s (off) | Per-fault wall clock; use **30** for Tier B only |
+| `ATPG_THREADS` | **0** (all cores) | Parallel workers; `0` = `nproc` / `hardware_concurrency` |
+
+Parallel ATPG example:
+
+```bash
+ATPG_THREADS=4 bash scripts/run_phase_d_fullscan_dataset.sh
+```
+
+FAN script equivalent: `set_atpg_threads 4` before `run_atpg`.
+
+Override example:
+
+```bash
+ATPG_WALL_TIMEOUT=7200 ATPG_PER_TARGET_TIMEOUT=180 bash scripts/run_phase_d_fullscan_dataset.sh
+```
+
 ### ATPG experiment sweep
 
 ```bash
@@ -65,8 +116,11 @@ cd FAN_ATPG && make -j$(nproc) && cd ..
 # Pilot (b03, 5 ratios):
 python3 scripts/run_atpg_sweep.py --circuits b03
 
-# Full (11 circuits × 5 ratios = 55 runs):
+# Full (8 active ITC × 5 ratios = 40 runs):
 python3 scripts/run_atpg_sweep.py
+
+# Include deferred large ITC (b12/b14/b15) — not recommended yet:
+ITC_INCLUDE_DEFERRED=1 python3 scripts/run_atpg_sweep.py
 
 # Resume after interruption:
 python3 scripts/run_atpg_sweep.py --skip-done
@@ -97,17 +151,27 @@ cd ..
 
 ## Test
 
-No automated test suite. Validation is done by checking:
+```bash
+# Netlist pipeline (after build_itc99_netlists.sh)
+python3 scripts/validate_netlist.py --all
+bash scripts/verify_fullscan_netlist.sh
+
+# ATPG regression
+bash scripts/test_phase_c_atpg.sh
+bash scripts/test_phase_d_atpg.sh
+cd FAN_ATPG && ./pkg/core/bin/opt/phase_d_test .
+
+# Full-scan dataset sweep (FC_scan primary; uses ATPG_WALL_TIMEOUT=3600)
+bash scripts/run_phase_d_fullscan_dataset.sh
+```
+
+Manual sanity checks:
 
 ```bash
-# Synthesis sanity
-grep -cE '\bDFFR?S?_X[12]\b' FAN_ATPG/mod_netlist/b03.v   # should be ~31
-
-# Mask sanity
-wc -l masks/b03_x5.mask    # should be ceil(31 × 0.05) = 2
-
-# ATPG sanity — full-scan b03 should give fault_coverage ≥ 90%
-grep b03 results/itc99_partial_scan.csv | head -1
+grep -cE '\bSDFFR_X1\b' FAN_ATPG/mod_netlist/b03.v          # full-scan FF
+grep -cE '\bMUX2_X1\b' FAN_ATPG/mod_netlist/b03.v           # base gate OK
+grep -cE '\bOAI\d+_X1\b|\bAOI\d+_X1\b' FAN_ATPG/mod_netlist/b03.v  # must be 0
+grep "fault coverage (scan protocol)" FAN_ATPG/rpt/b03_fs.rpt  # ≥ 93%
 ```
 
 ---
@@ -121,8 +185,13 @@ Compilation with `-Wall -Wextra` (already in the Makefile) serves as the linter.
 ## Gotchas
 
 - FAN_ATPG must be run from the `FAN_ATPG/` directory (relative paths in scripts)
-- `_const0_` appears in synthesized netlists as a module input port (constant-literal fixup); FAN treats it as a free PI — if fault coverage is unexpectedly low, check that `_const0_` is constrained to 0
-- Synthesized FF cells are `DFFR_X1`, `DFFS_X1`, `DFFRS_X1` (NOT `SDFF_X1` — hilomap is not used)
+- **Do not hand-edit** `FAN_ATPG/mod_netlist/*.v` — use `build_itc99_netlists.sh` + `itc99_prep_rules.yaml`
+- **`_dffr.v` is source of truth** for fixup; never `strip(bad netlist) → fixup`
+- **MUX2 is a base gate** — allowed in netlist; FAN `Gate::MUX` must stay. **OAI/AOI compound cells** must not appear (synthesis expands them)
+- `_const0_` is fixed by `fixup_verilog.py` tie cells — should not appear as module `input`
+- **Full-scan FC metric:** use **FC_scan** (auto on `add_fault --all`). See `docs/superpowers/plans/2026-06-09-scan-protocol-fc-metric.md`
+- ITC'99 designs with `reset` PI: `mod_netlist/{c}_reset_tie.v` or auto scan protocol on `{c}.v`
+- Yosys raw output uses `DFFR_X1`; fixup converts to `SDFFR_X1` + scan chain
 - `make -C FAN_ATPG` emits warnings and may exit with code 2, but the binary is still produced — check for `FAN_ATPG/bin/opt/fan`
 - All task owners are swear01; do not assume Rueilian owns any task
 - The `results/` directory in the repo root contains pre-generated `.sf` files from ISCAS'89 benchmarks. `FAN_ATPG/results/` is where newly generated files go when running the ATPG pipeline.

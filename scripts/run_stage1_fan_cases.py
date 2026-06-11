@@ -17,6 +17,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from atpg_timeouts import WALL_TIMEOUT_S
+
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FAN_DIR = REPO_ROOT / "FAN_ATPG"
@@ -130,7 +133,7 @@ def run_fan(script_path: Path):
         cwd=FAN_DIR,
         capture_output=True,
         text=True,
-        timeout=600,
+        timeout=WALL_TIMEOUT_S,
     )
     if proc.returncode != 0:
         raise RuntimeError(

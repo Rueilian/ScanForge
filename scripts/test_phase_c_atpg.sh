@@ -18,7 +18,9 @@ parse_fc() {
   python3 - "$rpt" <<'PY'
 import re, sys
 text = open(sys.argv[1]).read()
-fc = re.search(r'fault coverage\s+([\d.]+)%', text)
+fc = (re.search(r'fault coverage \(scan protocol\)\s+([\d.]+)%', text)
+      or re.search(r'fault coverage \(raw, appendix\)\s+([\d.]+)%', text)
+      or re.search(r'fault coverage\s+([\d.]+)%', text))
 au = re.search(r'AU \(atpg untestable\)\s+(\d+)', text)
 dt = re.search(r'DT \(detected\)\s+(\d+)', text)
 print(f"{fc.group(1) if fc else '0'} {au.group(1) if au else '0'} {dt.group(1) if dt else '0'}")

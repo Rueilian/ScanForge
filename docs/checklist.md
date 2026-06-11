@@ -37,6 +37,10 @@ Important: the project is **not** done. So far, the implemented work mainly cove
 - A valid `partial_scan_no_recovery` implementation must treat non-scan FFs as unknown and uncontrollable at the single modeled frame
 - `partial_scan_with_recovery` will be tackled only after the above `T = 1` model is verified to behave differently from `full_scan`
 - Important decisions must not remain only in chat history; they must be reflected in both `spec.md` and `checklist.md` when applicable.
+- **2026-06-09 — Base-gate ITC netlist pipeline:** synthesis uses `NangateOpenCellLibrary_base.lib` (INV/AND/OR/NAND/NOR/XOR + **MUX2**; **no OAI/AOI**). Entry: `scripts/build_itc99_netlists.sh`. FAN keeps **`Gate::MUX` (D1)**; **revert D3.2/D3.3** OAI/AOI atomic gates after pipeline validation. Plan: [`docs/superpowers/plans/2026-06-09-primitive-netlist-pipeline-complete.md`](./superpowers/plans/2026-06-09-primitive-netlist-pipeline-complete.md). Docs §10 updated 2026-06-09.
+- **2026-06-10 — SAF ATPG scope & speed:** Tier **A** (8 ITC: b03–b11,b13) active for sweeps; Tier **B** (b12/b14/b15) deferred; **b17+** out of scope. Fault model: **SAF only** (FAN supports TDF but project does not use it). Speed plan: [`docs/superpowers/plans/2026-06-10-saf-atpg-speed-improvement.md`](./superpowers/plans/2026-06-10-saf-atpg-speed-improvement.md). Scope source: `scripts/itc99_benchmark_scope.sh`.
+- **2026-06-10 — FAN parallel SAF ATPG:** `set_atpg_threads N` / `ATPG_THREADS` — fault-list partition + global fault-drop; **easy-first fault ordering** heuristic (gate level sort). Default **auto (`0` = all cores)**. Regression: `phase_d_test` PASS.
+- **2026-06-10 — S2 MUX `multipleBacktrace`:** `assignBacktraceValue` / `findEasiestInput` / dedicated propagate path for MUX2. b03 AU 29→14 on regression.
 
 ---
 
@@ -544,13 +548,14 @@ Identify the exact FAN_ATPG internal paths that must be changed so that `partial
 | Non-scan PPI = X in pattern trace | U_G5/U_G6 PPI are X, U_G7 (scan) has values | `passed` |
 | Monotonic ordering | full(94.55%) > T=4(88.68%) > T=1(39.36%) | `passed` |
 
-### ITC'99 pipeline status (2026-05-30)
+### ITC'99 pipeline status (2026-06-09)
 
-- 11/11 ITC'99 netlists synthesized
-- 55/55 mask files generated
-- b03, b05, b08, b09, b12, b14: segfault during `run_atpg` — suspected `_const0_` issue
-- b07, b13: survive but low coverage (~44-55%) due to `_const0_` floating
-- `_const0_` constraint fix is the immediate blocker for ITC'99 sweep
+- **Phase D + scan-protocol:** b03 FC_scan **93%**, b07 **94%** (current netlists; D3.2/D3.3 transitional)
+- **Base-gate pipeline:** ✅ `build_itc99_netlists.sh` — 11/11 validate PASS, FAN smoke PASS
+- **FC tradeoff:** b03 FC_scan ~90.5% on base-gate netlist (vs ~93% with compound OAI atomic + typical.lib)
+- **Netlist blockers:** resolved via prep + fixup v2 + validate gate
+- 55/55 mask files exist; regenerate after netlist rebuild if FF names change
+- Next: Workstream A–G in primitive-netlist-pipeline-complete plan
 
 ### Notes
 

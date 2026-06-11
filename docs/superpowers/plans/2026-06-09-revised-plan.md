@@ -1,6 +1,7 @@
 # ScanForge 修訂計劃（2026-06-09）
 
-> **給 agent 用：** 用 checkbox 追蹤；每個 gate 通過前不要進下一階段。舊計劃 `2026-06-09-final-completion.md` 的 `_const0_` 假設已部分推翻，以此文件為準。
+> **給 agent 用：** 用 checkbox 追蹤；每個 gate 通過前不要進下一階段。舊計劃 `2026-06-09-final-completion.md` 的 `_const0_` 假設已部分推翻，以此文件為準。  
+> **2026-06-09 更新：** Phase D 完成；b03 **FC_scan ≈ 93%**。主指標見 [`2026-06-09-scan-protocol-fc-metric.md`](./2026-06-09-scan-protocol-fc-metric.md)。
 
 **目標：** 在 6/16 簡報前，建立可信的 full-scan baseline，完成 spec 要求的三路比較（`full_scan` / `no_recovery` / `sequential recovery`），並產出可辯護的報告與圖表。
 
@@ -13,7 +14,7 @@
 | 項目 | 狀態 |
 |------|------|
 | Task 1 根因診斷 | ✅ 完成（但根因假設需更新，見下） |
-| Task 2 pipeline + techlib | 🔧 部分完成（能跑、不 hang，**FC 未修**） |
+| Task 2 pipeline + techlib | ✅ 完成（Phase D：b03 FC_scan ~93%） |
 | Task 3 b05 assign 語法 | ❌ 未做 |
 | Task 4 重合成全部電路 | ❌ 未做 |
 | Task 5 55-run sweep | ❌ 未做（**G2 gate 前禁止**） |
@@ -49,9 +50,9 @@
 | tiny_dffr (DFFR, no scan) | 87.5% | 0 | FAN 基本正常 |
 | **tiny_sdff / tiny_sdffr (scan)** | **58.3%** | **8** | **功能路徑全 AU — SDFF intern 問題** |
 | s27 / s510 (SDFF + comb) | 94–95% | 0–60 | 有 comb 邏輯時仍可測 |
-| **b03 (SDFFR + MUX2 FSM)** | **34.2%** | **957** | **核心 blocker** |
+| **b03 (SDFFR + MUX2 FSM)** | **34.2% → 93.0% FC_scan** | **957 → 2 AU_comb** | Phase D 已解 |
 
-**根因收斂（2026-06-09）：** 不是 frame 或 netlist 格式，而是 FAN 對 SDFF intern（`_mux`+`_dff`）與 PPI/PPO 抽象的建模衝突 + b03 MUX2-heavy 加劇 AU。詳見 [`2026-06-09-phase-c-fan-atpg-fix.md`](./2026-06-09-phase-c-fan-atpg-fix.md)。
+**根因收斂（2026-06-09，已更新）：** Phase C 找到 PO/PPO 觀測 bug；Phase D 修 PODEM/MUX。Full-scan 主指標改 **FC_scan**（reset PI 排除）。詳見 [`2026-06-09-phase-d-podem-fix.md`](./2026-06-09-phase-d-podem-fix.md)、[`2026-06-09-scan-protocol-fc-metric.md`](./2026-06-09-scan-protocol-fc-metric.md)。
 
 ### Sequential ATPG（progressive residual）
 
@@ -121,11 +122,12 @@
 - ~~B3 全量 MDT seq3→intern 遷移~~ — DFFR_X1 遷移已證明對 b03 無效；優先改 FAN circuit 抽象
 - ~~frame=2 作為 full-scan 修復~~ — 用戶確認不適用
 
-**Gate G2：** ❌ 未通過（b03 FC ≈ 34%）。診斷結論已寫入 `FAN_ATPG/rpt/b03_investigation_2026-06-09.md`。
+**Gate G2（當時）：** ❌ 未通過（b03 FC ≈ 34%）→ 觸發 Phase D。  
+**Gate G2'（Phase D 後）：** ✅ **通過** — b03 **FC_scan ≈ 93%**（見 [`2026-06-09-scan-protocol-fc-metric.md`](./2026-06-09-scan-protocol-fc-metric.md)）。
 
 ---
 
-### Phase C：FAN Engine 修復（最高優先，~2–4 天）— **進行中**
+### Phase C：FAN Engine 修復 — **✅ 完成（歷史）**
 
 > 詳細步驟、gates、時程：[`2026-06-09-phase-c-fan-atpg-fix.md`](./2026-06-09-phase-c-fan-atpg-fix.md)
 

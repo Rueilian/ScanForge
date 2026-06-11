@@ -1,6 +1,2 @@
-circuit,ratio,excluded_ff,total_ff,denominator,T1_DT,T1_AU,T1_AB,T1_FC,R1_count,T2_target,T2_new_DT,T2_AU,T2_AB,R2_count,T4_target,T4_new_DT,T4_AU,T4_AB,final_DT,FC_T1,FC_T1_T2,FC_T1_T2_T4,gain_T2_pp,gain_T4_pp,total_gain_pp,T1_rt,T2_rt,T4_rt,total_rt,recovered_per_sec_T2,recovered_per_sec_T4,status
-s27,0.67,2,3,66,25,39,0,37.88,41,41,20,19,0,21,21,9,10,0,54,37.88,68.18,81.82,30.3,13.64,43.94,0.01,0.01,0.01,0.04,1382.52,762.55,PASS
-b07,0.2,9,45,1989,575,1342,0,28.91,1414,1414,7,1335,0,1407,1407,20,1315,0,602,28.91,29.26,30.27,0.35,1.01,1.36,0.16,0.17,0.31,0.64,41.54,64.79,PASS
-b07,0.5,22,45,1885,367,1472,0,19.47,1518,1518,8,1464,0,1510,1510,9,1455,0,384,19.47,19.89,20.37,0.42,0.48,0.9,0.07,0.09,0.14,0.29,92.49,65.08,PASS
-b13,0.2,13,65,1872,790,974,4,42.2,1082,1082,10,965,3,1072,1072,17,941,10,817,42.2,42.74,43.64,0.53,0.91,1.44,0.13,0.1,0.33,0.56,103.34,51.91,PASS
-b13,0.5,32,65,1720,516,1134,4,30.0,1204,1204,4,1131,3,1200,1200,12,1119,3,532,30.0,30.23,30.93,0.23,0.7,0.93,0.11,0.09,0.12,0.32,42.41,97.97,PASS
+circuit,ratio,excluded_ff,total_ff,denominator,T1_DT,T1_AU,T1_AB,T1_TO,T1_FC,R1_count,T2_target,T2_new_DT,T2_AU,T2_AB,T2_TO,R2_count,T4_target,T4_new_DT,T4_AU,T4_AB,T4_TO,final_DT,FC_T1,FC_T1_T2,FC_T1_T2_T4,gain_T2_pp,gain_T4_pp,total_gain_pp,T1_rt,T2_rt,T4_rt,total_rt,recovered_per_sec_T2,recovered_per_sec_T4,per_target_timeout_sec,status
+s27,0.67,2,0,66,25,39,0,0,37.88,41,41,20,19,0,0,21,21,9,10,0,0,54,37.88,68.18,81.82,30.3,13.64,43.94,0.01,0.01,0.01,0.03,2341.36,988.24,0.0,PASS

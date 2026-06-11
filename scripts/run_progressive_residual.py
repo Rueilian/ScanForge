@@ -6,6 +6,9 @@ Outputs progressive_residual_summary.csv.
 """
 import argparse, csv, os, re, subprocess, sys, time
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from atpg_timeouts import PER_TARGET_TIMEOUT_S, WALL_TIMEOUT_S
+
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 FAN_DIR = os.path.join(REPO_ROOT, "FAN_ATPG")
 FAN_BIN = os.path.join(FAN_DIR, "bin", "opt", "fan")
@@ -30,7 +33,11 @@ SUMMARY_FIELDS = [
     "per_target_timeout_sec", "status"
 ]
 
-def run_fan(label, circuit, frame, nonscan_ffs, fault_file=None, timeout_s=180, per_target_timeout=0.0):
+def run_fan(label, circuit, frame, nonscan_ffs, fault_file=None, timeout_s=None, per_target_timeout=None):
+    if timeout_s is None:
+        timeout_s = WALL_TIMEOUT_S
+    if per_target_timeout is None:
+        per_target_timeout = PER_TARGET_TIMEOUT_S
     script_path = os.path.join(SCRIPT_DIR, f"{label}.script")
     rpt_path = os.path.join(RPT_DIR, f"{label}.rpt")
     lines = [
@@ -107,9 +114,10 @@ def main():
     ap.add_argument("--circuit", required=True)
     ap.add_argument("--ratio", type=float, required=True)
     ap.add_argument("--nonscan", default="")
-    ap.add_argument("--timeout", type=int, default=180)
-    ap.add_argument("--per-target-timeout", type=float, default=0.0,
-                    help="Per-target-fault wall-clock timeout in seconds (0=disabled)")
+    ap.add_argument("--timeout", type=int, default=WALL_TIMEOUT_S,
+                    help=f"Wall-clock timeout per FAN run (default {WALL_TIMEOUT_S}s)")
+    ap.add_argument("--per-target-timeout", type=float, default=PER_TARGET_TIMEOUT_S,
+                    help=f"Per-target-fault timeout in seconds (0=disabled, default {PER_TARGET_TIMEOUT_S})")
     args = ap.parse_args()
 
     c = args.circuit; ratio = args.ratio; ns_ffs = args.nonscan

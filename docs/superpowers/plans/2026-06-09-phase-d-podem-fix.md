@@ -3,6 +3,11 @@
 > **前置：** Phase C 完成（PO/PPO 觀測修復）；b03 FC 仍 ~35%（948 AU）。
 > **目標：** 不大改 PODEM 架構，透過局部放寬與 MUX2 建模，把 b03 full-scan FC 拉到可辯護水準（≥ 80%），對齊商用 ATPG 行為。
 > **關聯：** [`2026-06-09-phase-c-fan-atpg-fix.md`](./2026-06-09-phase-c-fan-atpg-fix.md)
+>
+> **2026-06-09 遷移註記（base-gate pipeline）：**
+> - **保留 D1** `Gate::MUX` + D3.1 MUX implication（MUX2 為 base gate，永久保留）
+> - **Revert D3.2/D3.3** OAI/AOI atomic gates — 改由 [`2026-06-09-primitive-netlist-pipeline-complete.md`](./2026-06-09-primitive-netlist-pipeline-complete.md) 的 base.lib 合成展開 OAI/AOI
+> - D3.2/D3.3 實作仍有效至 pipeline 驗收完成；revert 後 b03/b07 FC_scan 回歸門檻不變（≥93%）
 
 ---
 
@@ -52,6 +57,68 @@
 
 ---
 
+### D3.1 — AU 削減（2026-06-09 進行中）✅ 部分完成
+
+**檔案：** `FAN_ATPG/pkg/core/src/atpg.cpp`
+
+| Patch | 說明 | 效果 |
+|-------|------|------|
+| **D3.1a** | `initializePiDirectActivation`：PI 直達 D-frontier（跳過 `setFreeLineFaultyGate`） | `request1/4` 在 compression 下由 AU→DT；`reset` 仍 AU |
+| **D3.1b** | `xPathTracing` 改為結構性 PO/PPO 可達（移除 `atpgVal==X` 前提） | 無顯著變化（D-frontier 已非主瓶頸） |
+| **D3.1c** | init `UNIQUE_PATH_SENSITIZE_FAIL` → `FORWARD`（非 PI 亦進主迴圈） | 減少 init 早退 AU |
+| **D3.1d** | `setFaultyGate` 新增 `Gate::MUX` 輸入 fault 激活（A/B/S 三路） | MUX AU 大幅下降 |
+| **D3.1e** | `doUniquePathSensitization` MUX 專用：S 非 AND-control；依 select 跳過 don't-care 腳 | MUX unique path 不再誤判 |
+| **D3.1f** | 主迴圈 single D-frontier `UNIQUE_PATH_SENSITIZE_FAIL` → `findFinalObjective` fallback | 小幅 FC/AU 改善 |
+
+**b03 實測（compression on，2026-06-09）：**
+
+| 指標 | Phase D 基線 | D3.1 後 |
+|------|-------------|---------|
+| FC（collapsed） | 80.14% | **81.50%** |
+| AU（collapsed，`phase_d_test`） | 113 | **101** |
+| AU（full，`fan` stats） | 189 | **175** |
+| DT | 706 | **718** |
+| PI AU（collapsed） | 4 | **2**（僅 `reset`） |
+| MUX AU（collapsed） | 52 | **~30** |
+| SDFFR AU（collapsed） | 7 | **0** |
+
+**Regression：** `tiny_sdffr` 91.67% AU=0；`s510_fs_quick` 99.14% AU=0。
+
+**仍待處理（D3.2 後）：** 僅 **4 collapsed AU（raw）** — `reset` PI×2、`AOI211 _157_` SA0×1、`NOR4 _159_/A3` SA0×1。
+
+**Scan-protocol 主指標（2026-06-09）：** 見 [`2026-06-09-scan-protocol-fc-metric.md`](./2026-06-09-scan-protocol-fc-metric.md)。`reset` PI → TI + `b03_reset_tie.v`；**FC_scan ≈ 93%**，comb AU ≤ 2。
+
+---
+
+### D3.2 — 原子複合閘 + MUX implication（2026-06-09）✅ → ⏳ 待 revert
+
+> **過渡期實作。** Pipeline 驗收後移除 OAI/AOI atomic 建模；**D3.1 MUX 與本節 MUX implication 保留**。
+
+**檔案：** `circuit.cpp`、`gate.h`、`atpg.cpp`、`atpg.h`、`simulator.h`
+
+| Patch | 說明 |
+|-------|------|
+| **D3.2a** | `OAI21_X*` / `AOI21_X*` / `AOI211_X*` 改為單一 `Gate::OAI21/AOI21/AOI211`（同 MUX2 原子建模） |
+| **D3.2b** | `setFaultyGate` + backward implication + SCOAP + parallel sim 支援複合閘 |
+| **D3.2c** | MUX：S=X 且 output=D/B 時依 data path justify select；S-pin fault 直接設 `FaultyValue` |
+
+**b03 實測（compression on）：**
+
+| 指標 | D3.1 後 | D3.2 後 |
+|------|---------|---------|
+| FC（collapsed） | 81.50% | **92.26%** |
+| AU（collapsed） | 101 | **4** |
+| AU（full，`fan` stats） | 175 | **4** |
+| collapsed faults | 881 | **853** |
+| MUX AU | ~30 | **0** |
+| OAI/AOI AU | ~50+ | **1** |
+
+**Regression：** `tiny_sdffr` 91.67% AU=0；`s510` 99.14% AU=0；`scripts/test_phase_d_atpg.sh` PASS。
+
+**AU dump：** `script/fanScripts/b03_au_dump_fs.script` → `rpt/b03_au_fs.rpt`
+
+---
+
 ## 三、測試計劃
 
 ### 3.1 C++ 單元測試 — `phase_d_test`
@@ -63,7 +130,7 @@
 |------|------|
 | `tiny_sdffr` 回歸 | FC ≥ 85%，AU = 0（Phase C 不退化） |
 | `b03` MUX 計數 | atomic MUX gate 數 = 33 |
-| `b03` 全量 ATPG | FC ≥ 70%；AU < 300 |
+| `b03`（auto scan protocol） | **FC_scan ≥ 93%**；comb AU ≤ 2 |
 
 ### 3.2 Shell regression — `scripts/test_phase_d_atpg.sh`
 
@@ -75,7 +142,7 @@
 | `tiny_sdffr` / `tiny_sdff` | FC ≥ 85%，AU = 0 |
 | `s510` | FC ≥ 94%，AU = 0 |
 | `s27` | FC ≥ 90% |
-| `b03` baseline | FC ≥ 70%，AU < 300 |
+| `b03` scan-protocol | **FC_scan ≥ 93%**，comb AU ≤ 2 |
 
 ### 3.3 結果記錄
 

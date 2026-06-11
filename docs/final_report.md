@@ -95,6 +95,8 @@ Our analysis questions are:
 
 **Important:** For each (circuit, ratio) case, all comparisons use the same T=1 collapsed fault set F as denominator. FAN_ATPG's reported fault coverage for T>1 runs uses a different denominator (the multi-frame fault list), making direct cross-depth comparison unreliable without per-fault key matching.
 
+**Full-scan baseline metric (2026-06-09):** We report **FC_scan** as the primary stuck-at coverage for `ratio=0` full-scan runs. Per commercial DFT practice (Cummings, SNUG 2002), async reset/control primary inputs are held inactive during scan ATPG and their stuck-at faults are classified as tied (TI), excluded from the scan-protocol denominator. Raw fault coverage (FC_raw), which treats reset as a free PI, is reported in the appendix only. Implementation: FAN applies scan protocol automatically after `add_fault --all` (overridable via `set_scan_protocol off`); see `docs/superpowers/plans/2026-06-09-scan-protocol-fc-metric.md`.
+
 ---
 
 ## 4. Proposed Method: Progressive Residual Multi-Frame ATPG
@@ -168,6 +170,8 @@ Several backend fixes were required for the pipeline to function:
 | Stale mask FF names after re-synthesis | Regenerate masks via `gen_nonscan_masks.sh` after synthesis |
 | `report_fault` prints nothing without `-s` flag | Fix inverted `stateSet` logic |
 | DFF faults lack instance name in report | Print cell name for all gate types |
+| ITC netlist undriven / OAI-heavy PODEM AU | **Base-gate pipeline** (`build_itc99_netlists.sh`): prep RTL → synth with `base.lib` (MUX2 allowed, OAI/AOI forbidden) → fixup v2 → `validate_netlist.py` |
+| FAN compound-gate modeling sprawl | Keep **`Gate::MUX`** (Phase D1); **revert OAI/AOI atomic gates** (D3.2/D3.3) after pipeline validation |
 
 These are infrastructure fixes; they are not claimed as research contributions.
 
@@ -379,13 +383,18 @@ The primary contribution is a reproducible residual recoverability analysis pipe
 
 ### C. Known Blockers
 
-| Circuit | Blocker |
-|---------|---------|
-| b05 | Verilog `assign` syntax not parseable |
-| b11, b12, b14 | ATPG timeout >120s |
-| b15 | 839 FFs, not tested |
-| T=8 | Not evaluated |
-| BACKTRACK_LIMIT | Compile-time constant (500) |
+| Item | Status / mitigation |
+|------|---------------------|
+| ITC netlist quality (b05/b08–b15) | **In progress** — `build_itc99_netlists.sh` + `validate_netlist.py` (undriven=0, no OAI/AOI) |
+| b05 missing from regen list | Add to pipeline; old DFFR-only netlist with floating outputs |
+| ATPG timeouts | Unified: `ATPG_WALL_TIMEOUT=3600s`, `ATPG_PER_TARGET_TIMEOUT=120s` (`scripts/atpg_timeouts.sh`) |
+| Large ITC (b12/b14/b15) ATPG | **Deferred** from sweeps — MUX backtrace crash / hour-scale runtime; netlist validate PASS |
+| Benchmark scope | **Tier A (8 ITC)** active; b17+ out of scope — see `2026-06-10-saf-atpg-speed-improvement.md` |
+| SAF ATPG speed plan | Phases S0–S4: scope, config, MUX backtrace, heuristics — `docs/superpowers/plans/2026-06-10-saf-atpg-speed-improvement.md` |
+| T=8 partial-scan recovery | Not yet evaluated on rebuilt ITC netlists |
+| BACKTRACK_LIMIT | Raised to **5000** (Phase D5) |
+
+**Resolved (Phase D):** b03 FC_scan ~93%; b07 ~94% on current netlists. Compound OAI/AOI atomic modeling (D3.2/D3.3) is transitional — synthesis will expand OAI/AOI; FAN keeps MUX2 only.
 
 ---
 

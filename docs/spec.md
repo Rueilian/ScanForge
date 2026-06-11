@@ -41,7 +41,11 @@ Do the coverage loss and recovery trends from RQ1–RQ2 hold consistently across
 
 ### 4.1 Timing-driven non-scan FF identification
 
-The ITC'99 benchmark circuits are synthesized to gate-level netlists using Yosys with the NanGate45 library. Static timing analysis (OpenSTA) is then run on each netlist using NanGate45 timing data. Each FF is assigned a criticality score equal to the minimum path slack on any timing path passing through it. FFs are sorted by ascending slack (most timing-critical first), and the top `x%` are marked as non-scan. The output of this stage is a non-scan mask — a list of FF cell names — for each `(circuit, x)` pair.
+The ITC'99 benchmark circuits are synthesized to gate-level netlists using Yosys with a **base-gate NanGate45 liberty** (`NangateOpenCellLibrary_base.lib`). Allowed combinational cells: INV/AND/OR/NAND/NOR/XOR and **MUX2**; **OAI*/AOI* compound cells are forbidden** and expanded to primitives by ABC. Sequential cells use `DFFR_X1` (converted to `SDFFR_X1` + scan chain by `fixup_verilog.py --full-scan`).
+
+Netlists are produced by the reproducible pipeline (`scripts/build_itc99_netlists.sh`): RTL prep → Yosys → fixup → validate. See [`docs/superpowers/plans/2026-06-09-primitive-netlist-pipeline-complete.md`](./superpowers/plans/2026-06-09-primitive-netlist-pipeline-complete.md).
+
+Static timing analysis (OpenSTA) uses the **full** `NangateOpenCellLibrary_typical.lib` for timing. Each FF is assigned a criticality score equal to the minimum path slack on any timing path passing through it. FFs are sorted by ascending slack (most timing-critical first), and the top `x%` are marked as non-scan.
 
 **Owner: swear01**
 
@@ -151,23 +155,34 @@ circuit, nonscan_ratio, fault_coverage, test_coverage, DT, AU, AB, UD, patterns,
 
 ### Benchmarks
 
-11 ITC'99 sequential benchmark circuits synthesized to NanGate45 gate-level Verilog using Yosys. Synthesized netlists are stored in `FAN_ATPG/mod_netlist/b*.v` and serve as the shared benchmark source for all tasks.
+ITC'99 sequential benchmarks synthesized to NanGate45 gate-level Verilog using Yosys. Netlists live in `FAN_ATPG/mod_netlist/b*.v`. Scope is tiered — see [`docs/superpowers/plans/2026-06-10-saf-atpg-speed-improvement.md`](./superpowers/plans/2026-06-10-saf-atpg-speed-improvement.md) and `scripts/itc99_benchmark_scope.sh`.
 
-| Circuit | FFs | Source RTL |
-|---|---|---|
-| b03 | 31 | `itc99_rtl/b03.v` |
-| b04 | 67 | `itc99_rtl/b04.v` |
-| b05 | 88 | `itc99_rtl/b05.v` |
-| b07 | 45 | `itc99_rtl/b07.v` |
-| b08 | 28 | `itc99_rtl/b08.v` |
-| b09 | 30 | `itc99_rtl/b09.v` |
-| b11 | 58 | `itc99_rtl/b11.v` |
-| b12 | 192 | `itc99_rtl/b12.v` |
-| b13 | 65 | `itc99_rtl/b13.v` |
-| b14 | 219 | `itc99_rtl/b14.v` |
-| b15 | 839 | `itc99_rtl/b15.v` |
+#### Tier A — Active (8 circuits, ATPG sweeps)
 
-All circuits have ≥20 FFs, ensuring at least one non-scan FF at x=5%.
+| Circuit | RTL FFs | FC_scan (full-scan, 2026-06-10) | ATPG runtime |
+|---|---:|---:|---|
+| b03 | 31 | 90.59% | < 0.01 s |
+| b04 | 67 | 94.62% | < 1 s |
+| b05 | 88 | 95.47% | < 0.2 s |
+| b07 | 45 | 92.98% | < 0.01 s |
+| b08 | 28 | 95.47% | < 2 s |
+| b09 | 29 | 94.58% | < 0.01 s |
+| b11 | 84 | 97.80% | < 0.2 s |
+| b13 | 86 | 91.54% | < 0.01 s |
+
+#### Tier B — Deferred (netlist built; ATPG excluded until engine speed fix)
+
+| Circuit | RTL FFs | Status |
+|---|---:|---|
+| b12 | 192 | FAN SAF timeout / MUX backtrace crash |
+| b14 | 219 | FAN SAF segfault or > 10 min |
+| b15 | 839 | FAN SAF hours-scale runtime |
+
+#### Tier C — Out of scope (not in pipeline)
+
+`b17`, `b18`, `b20`, `b21`, `b22` and mega-ISCAS (`s35932`, `s38417`, `s38584`). Deferred until FAN SAF engine matures on Tier B.
+
+All **Tier A** circuits have ≥20 FFs, ensuring at least one non-scan FF at x=5%.
 
 ### Parameter sweep
 
@@ -175,8 +190,11 @@ All circuits have ≥20 FFs, ensuring at least one non-scan FF at x=5%.
 |---|---|
 | Non-scan ratio `x` | 0% (full-scan baseline), 5%, 10%, 15%, 20% |
 | Sequential ATPG depth | T=8 (fixed; T=1 for x=0% baseline) |
+| Fault model | **SAF only** (`set_fault_type saf`); TDF supported by FAN but not used |
 
-Total runs: 11 circuits × 5 ratios = **55 runs**.
+Total runs (default): **8 active circuits × 5 ratios = 40 runs**.
+
+Optional: `ITC_INCLUDE_DEFERRED=1` adds Tier B → 55 runs (not recommended until engine plan S2/S3 lands).
 
 ### Baselines
 
@@ -229,13 +247,14 @@ The T=1 `partial_scan_no_recovery` case now correctly separates from `full_scan`
 |---|---|---|---|---|
 | s27 | Partial scan with recovery | 67% | 4 | 88.68% |
 
-**ITC'99 pipeline status:**
+**ITC'99 pipeline status (2026-06-09):**
 
-- Synthesis + fixup: 11/11 ITC'99 circuits generated successfully
-- Non-scan masks: 55/55 mask files generated
-- FAN_ATPG: s27 confirmed working; b07, b13 partial (∼50% coverage, `_const0_` unconstrained)
-- b03, b05, b08, b09, b12, b14 crash during `run_atpg` — likely due to unconstrained `_const0_` input port causing divide-by-zero or null-pointer in ATPG core
-- `_const0_` constraint fix needed before any ITC'99 sweep can produce meaningful fault coverage
+- **In progress:** base-gate netlist pipeline (`build_itc99_netlists.sh`) — targets undriven=0, OAI/AOI-free netlists, all 11 ITC loadable in FAN
+- **Working (Phase D):** b03 FC_scan **93%**, b07 **94%** (with current compound atomic gates + partial netlists)
+- **Planned migration:** keep FAN **`Gate::MUX`** (D1); revert OAI/AOI atomic gates (D3.2/D3.3); rely on synthesis to expand OAI/AOI
+- Non-scan masks: 55/55 mask files exist; **regenerate after netlist rebuild** if FF instance names change
+- Full-scan baseline uses **FC_scan** (scan-protocol auto-TI on `add_fault --all`); see `docs/superpowers/plans/2026-06-09-scan-protocol-fc-metric.md`
+- Known netlist blockers (pre-pipeline): b05/b08–b15 undriven or syntax errors — addressed by prep + validate gate, not hand edits
 
 **Multi-frame SAF correctness note** (resolved in FAN_ATPG commit `f927b34`):
 
@@ -273,6 +292,14 @@ Important decisions include, but are not limited to:
 - scope changes and fallback choices
 
 No important decision should remain only in chat history.
+
+### 2026-06-09 — Base-gate netlist + partial atomic-gate revert
+
+- **MUX2** is treated as a **base gate** (allowed in synthesis netlist; FAN keeps `Gate::MUX` atomic modeling from Phase D1).
+- **OAI*/AOI*** compound cells are **forbidden** in synthesis output; ABC maps them to INV/AND/OR/NAND/NOR primitives.
+- FAN **reverts D3.2/D3.3** OAI/AOI atomic gates once base-gate pipeline is validated; D1 MUX and Phase C fixes remain.
+- ITC netlists must pass `validate_netlist.py` (undriven=0, no OAI/AOI) before ATPG sweeps.
+- Plan: [`docs/superpowers/plans/2026-06-09-primitive-netlist-pipeline-complete.md`](./superpowers/plans/2026-06-09-primitive-netlist-pipeline-complete.md)
 - Multi-frame head-line justification note:
   - In `PARTIAL_SEQUENTIAL` ATPG, a head line whose value has already been fixed by
     fault activation or propagation must still be eligible for upstream

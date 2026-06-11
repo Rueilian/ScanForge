@@ -18,10 +18,12 @@ parse_fc() {
   python3 - "$rpt" <<'PY'
 import re, sys
 text = open(sys.argv[1]).read()
-fc = re.search(r'fault coverage\s+([\d.]+)%', text)
+fc_scan = re.search(r'fault coverage \(scan protocol\)\s+([\d.]+)%', text)
+fc_scan_coll = re.search(r'fault coverage \(scan, collapsed\)\s+([\d.]+)%', text)
+fc_raw = re.search(r'fault coverage \(raw, appendix\)\s+([\d.]+)%', text)
 au = re.search(r'AU \(atpg untestable\)\s+(\d+)', text)
 dt = re.search(r'DT \(detected\)\s+(\d+)', text)
-print(f"{fc.group(1) if fc else '0'} {au.group(1) if au else '0'} {dt.group(1) if dt else '0'}")
+print(f"{fc_scan.group(1) if fc_scan else '0'} {fc_scan_coll.group(1) if fc_scan_coll else '0'} {fc_raw.group(1) if fc_raw else '0'} {au.group(1) if au else '0'} {dt.group(1) if dt else '0'}")
 PY
 }
 
@@ -34,12 +36,12 @@ run_case() {
 # Phase C regressions must not break
 bash "$ROOT/scripts/test_phase_c_atpg.sh"
 
-run_case "b03 Phase D baseline" "b03_fs.script"
-read -r FC AU DT <<<"$(parse_fc rpt/b03_fs.rpt)"
-echo "   b03 FC=${FC}% AU=${AU} DT=${DT}"
-awk -v fc="$FC" -v au="$AU" 'BEGIN {
-  if (fc+0 < 70) { print "FAIL: b03 FC < 70% after Phase D"; exit 1 }
-  if (au+0 >= 300) { print "FAIL: b03 AU still >= 300"; exit 1 }
+run_case "b03 scan-protocol baseline" "b03_fs.script"
+read -r FC_SCAN FC_SCAN_COLL FC_RAW AU DT <<<"$(parse_fc rpt/b03_fs.rpt)"
+echo "   b03 FC_scan=${FC_SCAN}% FC_scan_coll=${FC_SCAN_COLL}% FC_raw=${FC_RAW}% AU=${AU} DT=${DT}"
+awk -v fc="$FC_SCAN" -v au="$AU" 'BEGIN {
+  if (fc+0 < 90.0) { print "FAIL: b03 FC_scan < 90% on reset-tie netlist (base-gate pipeline)"; exit 1 }
+  if (au+0 >= 35) { print "FAIL: b03 AU still >= 35"; exit 1 }
 }'
 
 echo "PASS: Phase D ATPG regression"

@@ -13,7 +13,7 @@ Usage:
     python3 scripts/run_atpg_sweep.py [options]
 
 Options:
-    --circuits b03 b04 ...    circuits to include (default: all 11)
+    --circuits b03 b04 ...    circuits to include (default: Tier A active set, 8 ITC)
     --ratios 0.0 0.05 ...     nonscan ratios (default: 0.0 0.05 0.10 0.15 0.20)
     --out PATH                output CSV (default: results/itc99_partial_scan.csv)
     --dry-run                 generate scripts but do not run FAN
@@ -28,6 +28,10 @@ import re
 import subprocess
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from atpg_timeouts import PER_TARGET_TIMEOUT_S, WALL_TIMEOUT_S, resolved_atpg_threads
+from itc99_scope import ITC_ATPG
+
 # ── Paths ──────────────────────────────────────────────────────────────────────
 
 REPO_ROOT  = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -38,10 +42,7 @@ RPT_DIR    = os.path.join(FAN_DIR, "rpt")
 SCRIPT_DIR = os.path.join(FAN_DIR, "script", "fanScripts")
 OUT_CSV    = os.path.join(REPO_ROOT, "results", "itc99_partial_scan.csv")
 
-DEFAULT_CIRCUITS = [
-    "b03", "b04", "b05", "b07", "b08", "b09",
-    "b11", "b12", "b13", "b14", "b15",
-]
+DEFAULT_CIRCUITS = ITC_ATPG
 DEFAULT_RATIOS = [0.0, 0.05, 0.10, 0.15, 0.20]
 
 CSV_FIELDS = [
@@ -77,6 +78,11 @@ def make_script(circuit, ratio_pct, ff_names, script_path, rpt_rel):
         f"build_circuit --frame {frame}",
         "set_fault_type saf",
         "add_fault --all",
+    ]
+    if PER_TARGET_TIMEOUT_S > 0:
+        lines.append(f"set_per_target_timeout {PER_TARGET_TIMEOUT_S}")
+    lines.append(f"set_atpg_threads {resolved_atpg_threads()}")
+    lines += [
         "set_static_compression on",
         "set_dynamic_compression on",
         "run_atpg",
@@ -174,7 +180,7 @@ def run_one(circuit, ratio, dry_run=False):
             cwd=FAN_DIR,
             capture_output=True,
             text=True,
-            timeout=600,
+            timeout=WALL_TIMEOUT_S,
         )
     except subprocess.TimeoutExpired:
         print(f"  TIMEOUT ({label})", file=sys.stderr)

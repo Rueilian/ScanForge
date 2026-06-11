@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 NL="$ROOT/FAN_ATPG/mod_netlist"
 FAIL=0
 
-for c in b03 b04 b07 b08 b09 b11 b12 b13 b14 b15; do
+for c in b03 b04 b05 b07 b08 b09 b11 b12 b13 b14 b15; do
   f="$NL/${c}.v"
   [[ -f "$f" ]] || continue
   dffr=$(grep -cE '\bDFFR_X1\b|\bDFFS_X1\b|\bDFFRS_X1\b' "$f" || true)
@@ -26,4 +26,6 @@ for c in b03 b04 b07 b08 b09 b11 b12 b13 b14 b15; do
   [[ "$const_port" -eq 0 ]] || { echo "  FAIL: _constN_ module port"; FAIL=1; }
   [[ "$const_input" -eq 0 ]] || { echo "  FAIL: _constN_ input declaration"; FAIL=1; }
 done
+python3 "$ROOT/scripts/validate_netlist.py" --all || FAIL=1
+
 [[ "$FAIL" -eq 0 ]] && echo "verify_fullscan_netlist: PASS" || { echo "verify_fullscan_netlist: FAILED"; exit 1; }

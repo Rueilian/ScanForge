@@ -1,5 +1,7 @@
 # Phase C：FAN Full-Scan FC 修復計劃（2026-06-09）
 
+> **歷史文件。** Phase C 觸發 Phase D；現行主指標 **FC_scan** 見 [`2026-06-09-scan-protocol-fc-metric.md`](./2026-06-09-scan-protocol-fc-metric.md)。Phase D 結果見 [`2026-06-09-phase-d-podem-fix.md`](./2026-06-09-phase-d-podem-fix.md)、[`2026-06-09-atpg-pipeline-status.md`](./2026-06-09-atpg-pipeline-status.md)。
+>
 > **前置：** Phase A/B 完成；G0/G1 通過；G2 **未通過**（b03 FC ≈ 34%）。
 > **本計劃目標：** 在 6/16 簡報前，要麼把 full-scan baseline 拉到可辯護水準（b03 ≥ 80%），要麼用可重現證據正式記錄 FAN 天花板並切換 fallback。
 >
@@ -239,17 +241,15 @@ cd FAN_ATPG && make -j$(nproc)
 2. 55-run sweep（6 電路 × ratio × mode）
 3. 圖表 + checklist
 
-### 6.2 G2 失敗（Fallback）
+### 6.2 G2 失敗（Fallback）— **已由 Phase D 取代**
 
-**報告主線調整為：**
+> **2026-06-09 更新：** Phase D 將 b03 提升至 **FC_scan ≈ 93%**。下列 fallback 敘事僅保留歷史脈絡；現行報告以 Phase D + scan-protocol 為準。
 
-1. **方法論仍有效：** s27 sequential recovery +43.9pp
-2. **FAN full-scan 在 ITC'99 的實測天花板：** b03 ~34%，b04–b13 ~35–55%
-3. **根因：** FAN SDFF intern 建模 + MUX2-heavy AU（有 tiny_sdff 隔離實驗 + 文獻對照）
-4. **主實驗：** partial-scan sweep 在「低 full-scan ceiling」電路上的行為
-5. **誠實結論：** progressive residual 對 AU-dominated residual 增益有限是**數據特性**
+**當時報告主線（已過時）：**
 
-**不做：** 用未修復 FAN baseline 跑完整 55-run 再事後合理化。
+1. ~~FAN full-scan 天花板 b03 ~34%~~ → **已修復至 ~93% FC_scan**
+2. 方法論（s27 sequential recovery）仍有效
+3. 主指標改 **FC_scan**；FC_raw 放附錄
 
 ---
 

@@ -84,6 +84,9 @@ def process(src, scan_insert=False):
     # ---- Pass 5: handle escaped identifiers \\name[n] ----
     src = re.sub(r'\\([^\s]+) ', lambda m: m.group(1).replace('[','_').replace(']','_'), src)
 
+    # ---- Pass 5: expand bus slice assigns (e.g. assign Address[31:30] = 2'h0) ----
+    src = expand_bus_assigns(src)
+
     # ---- Pass 6: replace constant port connections with dedicated input wires ----
     # FAN cannot handle constant literals in port connections (e.g. .D(1'h0)).
     # Replace with named module inputs declared in the module header (pre-pass above).
@@ -93,6 +96,8 @@ def process(src, scan_insert=False):
         base = m.group(2).lower()
         val = m.group(3).lower()
         size = int(size_str)
+        if any(c in val for c in 'xzXZ?'):
+            return m.group(0)
         if base == 'h':
             int_val = int(val.replace('_',''), 16)
         elif base == 'd':
@@ -139,15 +144,122 @@ def process(src, scan_insert=False):
             if src.endswith('endmodule'):
                 src = src[:-len('endmodule')] + f'  wire {name};\nendmodule'
 
+    # ---- Pass 8b: drop assign lhs with no fanout (FAN rejects unconnected nets) ----
+    src = remove_dead_assigns(src)
+
+    # ---- Pass 9b: remove wire declarations with no connections (e.g. dangling QN nets) ----
+    src = remove_orphan_wires(src)
+
     # ---- Pass 10: orphan _constN_ inputs from prior synth passes ----
     src = fix_orphan_const_inputs(src)
+    src = prune_unused_const_ties(src)
 
     # ---- Pass 11: scan chain insertion (FAN full-scan + partial-scan) ----
-    if not scan_insert:
-        return src
-    if re.search(r'\bSDFFR_X1\b|\bSDFFS_X1\b|\bSDFFRS_X1\b', src):
-        return src
+    if scan_insert and not has_scan_chain(src):
+        src = insert_scan_chain(src)
 
+    return src
+
+def expand_bus_assigns(src):
+    """Expand bus-slice and concatenation assigns to per-bit scalar assigns."""
+
+    def lit_to_bits(size, base, val):
+        val = val.replace('_', '').lower()
+        if any(c in val for c in 'xz?'):
+            return None
+        if base == 'h':
+            ival = int(val, 16)
+        elif base == 'd':
+            ival = int(val, 10)
+        elif base == 'o':
+            ival = int(val, 8)
+        else:
+            ival = int(val, 2)
+        bits = []
+        for i in range(size - 1, -1, -1):
+            bits.append((ival >> i) & 1)
+        return bits
+
+    def slice_indices(msb, lsb):
+        msb, lsb = int(msb), int(lsb)
+        if msb >= lsb:
+            return list(range(msb, lsb - 1, -1))
+        return list(range(msb, lsb + 1))
+
+    def expand_lhs(expr):
+        """Return ordered list of (net, bit_index_or_none) for LHS/RHS concat pieces."""
+        expr = expr.strip()
+        parts = []
+        if expr.startswith('{'):
+            inner = expr[1:expr.rfind('}')].strip()
+            depth = 0
+            cur = []
+            for ch in inner:
+                if ch == '{':
+                    depth += 1
+                    cur.append(ch)
+                elif ch == '}':
+                    depth -= 1
+                    cur.append(ch)
+                elif ch == ',' and depth == 0:
+                    parts.append(''.join(cur).strip())
+                    cur = []
+                else:
+                    cur.append(ch)
+            if cur:
+                parts.append(''.join(cur).strip())
+        else:
+            parts = [expr]
+        out = []
+        for p in parts:
+            p = p.strip()
+            m = re.fullmatch(r'(\w+)\s*\[\s*(\d+)\s*:\s*(\d+)\s*\]', p)
+            if m:
+                for b in slice_indices(m.group(2), m.group(3)):
+                    out.append(f'{m.group(1)}_{b}_')
+                continue
+            m = re.fullmatch(r'(\w+)\s*\[\s*(\d+)\s*\]', p)
+            if m:
+                out.append(f'{m.group(1)}_{m.group(2)}_')
+                continue
+            m = re.fullmatch(r"(\d+)\s*'([bBhHdDoO])([0-9a-fA-FxXzZ_]+)", p)
+            if m:
+                bits = lit_to_bits(int(m.group(1)), m.group(2).lower(), m.group(3))
+                if bits is None:
+                    out.append(p)
+                else:
+                    out.extend(f"1'b{b}" for b in bits)
+                continue
+            out.append(p)
+        return out
+
+    assign_pat = re.compile(r'^\s*assign\s+(.+?)\s*=\s*(.+?)\s*;\s*$', re.M)
+
+    def repl_assign(m):
+        lhs_s, rhs_s = m.group(1), m.group(2)
+        if '[' not in lhs_s and '{' not in lhs_s:
+            return m.group(0)
+        lhs = expand_lhs(lhs_s)
+        rhs = expand_lhs(rhs_s)
+        if len(lhs) != len(rhs):
+            return m.group(0)
+        lines = []
+        for l, r in zip(lhs, rhs):
+            if re.fullmatch(r'\d+\s*\'[bBhHdDoO][0-9a-fA-FxXzZ_]+', l):
+                continue
+            lines.append(f'assign {l} = {r};')
+        return '\n'.join(lines) if lines else m.group(0)
+
+    prev = None
+    while prev != src:
+        prev = src
+        src = assign_pat.sub(repl_assign, src)
+    return src
+
+def has_scan_chain(src):
+    return bool(re.search(r'\bSDFFR_X1\b|\bSDFFS_X1\b|\bSDFFRS_X1\b', src))
+
+def insert_scan_chain(src):
     ff_types = {'DFFR_X1', 'DFFS_X1', 'DFFRS_X1', 'DFFR_X2', 'DFFS_X2', 'DFFRS_X2'}
     ff_type_re = '|'.join(ff_types)
     ff_pattern = re.compile(
@@ -208,6 +320,56 @@ def process(src, scan_insert=False):
 
     return src
 
+def check_undriven(src):
+    """Return list of undriven internal wire names (FAN-aligned heuristic)."""
+    inputs = set(re.findall(r'^\s*input\s+(\w+)\s*;', src, re.M))
+    wires = set(re.findall(r'^\s*wire\s+(\w+)\s*;', src, re.M))
+    drivers = set()
+    for m in re.finditer(r'\.(?:ZN|Z|Q|QN)\(\s*(\w+)\s*\)', src):
+        drivers.add(m.group(1))
+    for m in re.finditer(r'assign\s+(\w+)\s*=', src):
+        drivers.add(m.group(1))
+    undriven = sorted(w for w in wires if w not in drivers and w not in inputs)
+    return undriven
+
+def remove_dead_assigns(src):
+    """Remove `assign X = expr` when X has no fanout (wire decl + assign only)."""
+    changed = True
+    while changed:
+        changed = False
+        for m in list(re.finditer(r'^\s*assign\s+(\w+)\s*=\s*[^;]+;\s*$', src, re.M)):
+            lhs = m.group(1)
+            if len(re.findall(rf'\b{re.escape(lhs)}\b', src)) <= 2:
+                src = src[:m.start()] + src[m.end():]
+                if re.search(rf'^\s*wire\s+{re.escape(lhs)}\s*;', src, re.M):
+                    src = re.sub(rf'^\s*wire\s+{re.escape(lhs)}\s*;\s*\n', '', src, flags=re.M)
+                changed = True
+                break
+    return src
+
+def remove_orphan_wires(src):
+    """Drop wire declarations that never appear outside their own decl line."""
+    wires = re.findall(r'^\s*wire\s+(\w+)\s*;\s*$', src, re.M)
+    for name in wires:
+        if len(re.findall(rf'\b{re.escape(name)}\b', src)) <= 1:
+            src = re.sub(rf'^\s*wire\s+{re.escape(name)}\s*;\s*\n', '', src, flags=re.M)
+    return src
+
+def prune_unused_const_ties(src):
+    """Remove LOGIC0/1 tie cells when _constN_ has no fanout."""
+    for name in set(re.findall(r'_const\d+_', src)):
+        refs = len(re.findall(rf'\b{re.escape(name)}\b', src))
+        # wire decl + tie only, or orphan tie after wire removal
+        if refs <= 2:
+            src = re.sub(
+                rf'^\s*LOGIC[01]_X1\s+_tie_{re.escape(name)}\s*\(\.Z\({re.escape(name)}\)\)\s*;\s*\n',
+                '',
+                src,
+                flags=re.M,
+            )
+            src = re.sub(rf'^\s*wire\s+{re.escape(name)}\s*;\s*\n', '', src, flags=re.M)
+    return src
+
 def fix_orphan_const_inputs(src):
     """Replace stray `input _constN_;` with wire + LOGIC0/LOGIC1 tie cells."""
     orphans = []
@@ -233,6 +395,42 @@ def fix_orphan_const_inputs(src):
         if src.endswith('endmodule'):
             block = '\n'.join(wire_decls + insts)
             src = src[:-len('endmodule')] + '\n' + block + '\nendmodule'
+    return src
+
+def tie_reset_port_high(src):
+    """Convert top-level async reset PI to internal wire tied LOGIC1.
+
+    Matches scan-protocol netlists (e.g. b03_reset_tie.v): reset deasserted
+    during shift/capture ATPG; reset stuck-at tested separately.
+    """
+    for port in ('reset', 'rst', 'nrst', 'arst', 'areset', 'reset_n'):
+        if not re.search(rf'^\s*input\s+{re.escape(port)}\s*;', src, re.M):
+            continue
+
+        src = re.sub(rf'^\s*input\s+{re.escape(port)}\s*;\s*\n', '', src, flags=re.M)
+        if re.search(rf'^\s*wire\s+{re.escape(port)}\s*;', src, re.M) is None:
+            src = re.sub(
+                r'(module\s+\w+\s*\([^)]*\)\s*;\s*\n)',
+                rf'\1  wire {port};\n',
+                src,
+                count=1,
+            )
+        src = re.sub(
+            rf'module\s+(\w+)\s*\(([^)]*)\)\s*;',
+            lambda m, p=port: (
+                f'module {m.group(1)}('
+                + ', '.join(x.strip() for x in m.group(2).split(',') if x.strip() != p)
+                + ');'
+            ),
+            src,
+            count=1,
+        )
+        tie = f'_tie_{port}'
+        if tie not in src:
+            src = src.rstrip()
+            if src.endswith('endmodule'):
+                src = src[:-len('endmodule')] + f'  LOGIC1_X1 {tie} (.Z({port}));\nendmodule'
+        break
     return src
 
 def tie_async_controls_high(src):
@@ -282,6 +480,10 @@ if __name__ == '__main__':
                     help='Alias for default scan insertion (FAN standard format)')
     ap.add_argument('--rn-tie-high', action='store_true',
                     help='Tie FF .RN/.SN to LOGIC1 (deassert async controls for test)')
+    ap.add_argument('--reset-tie-high', action='store_true',
+                    help='Remove reset PI and tie internal reset net to LOGIC1 (scan protocol netlist)')
+    ap.add_argument('--strict', action='store_true',
+                    help='Exit 1 if undriven wires remain after fixup')
     args = ap.parse_args()
     with open(args.input) as f:
         src = f.read()
@@ -289,7 +491,13 @@ if __name__ == '__main__':
     if args.scan or args.full_scan:
         scan_insert = True
     out = process(src, scan_insert=scan_insert)
+    if args.reset_tie_high:
+        out = tie_reset_port_high(out)
     if args.rn_tie_high:
         out = tie_async_controls_high(out)
+    undriven = check_undriven(out)
+    if undriven and args.strict:
+        print(f'ERROR: undriven wires: {", ".join(undriven)}', file=sys.stderr)
+        sys.exit(1)
     with open(args.output, 'w') as f:
         f.write(out)

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Regenerate ITC'99 netlists in FAN full-scan format (SDFFR + scan chain).
+# DEPRECATED: use scripts/build_itc99_netlists.sh (or --fixup-only via build script).
+# Thin wrapper for fixup-only regeneration from existing _dffr.v sources.
 set -euo pipefail
+echo "NOTE: regenerate_fan_fullscan_netlists.sh is deprecated; use build_itc99_netlists.sh" >&2
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 NL="$ROOT/FAN_ATPG/mod_netlist"
 FIXUP="$ROOT/scripts/fixup_verilog.py"
@@ -25,6 +27,10 @@ for c in "${CIRCUITS[@]}"; do
   fi
   echo "== $c: $base -> FAN full-scan"
   python3 "$FIXUP" "$base" "$out" --full-scan
+  if grep -qE '^\s*input\s+(reset|rst|nrst|arst|areset|reset_n)\s*;' "$out" 2>/dev/null; then
+    python3 "$FIXUP" "$out" "$NL/${c}_reset_tie.v" --reset-tie-high
+    echo "   + ${c}_reset_tie.v (scan-protocol netlist)"
+  fi
 done
 
 bash "$ROOT/scripts/verify_fullscan_netlist.sh"

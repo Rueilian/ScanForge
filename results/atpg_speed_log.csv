@@ -1,0 +1,10 @@
+date,circuit,tier,fc_scan,wall_s,per_target_timeout,threads,git_sha,notes
+2026-06-10,b03,A,91.23,0.04,120,32,d8b6feb,fic_ordering+parallel
+2026-06-10,b04,A,94.18,0.51,120,32,d8b6feb,fic_ordering+parallel
+2026-06-10,b05,A,96.29,0.79,120,32,d8b6feb,fic_ordering+parallel
+2026-06-10,b07,A,93.92,0.02,120,32,d8b6feb,fic_ordering+parallel
+2026-06-10,b08,A,95.47,0.09,120,32,d8b6feb,fic_ordering+parallel
+2026-06-10,b09,A,94.58,0.02,120,32,d8b6feb,fic_ordering+parallel
+2026-06-10,b11,A,97.97,367.48,120,32,d8b6feb,fic_ordering+parallel; outlier
+2026-06-10,b13,A,92.39,0.03,120,32,d8b6feb,fic_ordering+parallel
+2026-06-10,b11,A,TIMEOUT,3600.05,0,32,d8b6feb,fic_ordering+parallel; no per_target cap

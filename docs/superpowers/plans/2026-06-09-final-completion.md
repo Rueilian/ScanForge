@@ -1,5 +1,7 @@
 # ScanForge Final Completion Plan
 
+> **已取代：** 以 [`2026-06-09-revised-plan.md`](./2026-06-09-revised-plan.md) 為準。Phase D + scan-protocol 指標見 [`2026-06-09-scan-protocol-fc-metric.md`](./2026-06-09-scan-protocol-fc-metric.md)。下文保留歷史脈絡。
+>
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Fix the ITC'99 ATPG pipeline, run the full 55-experiment sweep, and produce the final report tables/figures before the 6/16 presentation deadline.

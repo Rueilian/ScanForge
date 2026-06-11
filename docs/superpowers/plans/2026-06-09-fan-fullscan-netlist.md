@@ -1,7 +1,8 @@
 # FAN Full-Scan Netlist 規格（對齊 s510）
 
 > **決策日期：** 2026-06-09  
-> **狀態：** 已完成（2026-06-09）
+> **狀態：** 格式規格已完成；**建置流程**遷移至 [`2026-06-09-primitive-netlist-pipeline-complete.md`](./2026-06-09-primitive-netlist-pipeline-complete.md)（`build_itc99_netlists.sh`）  
+> **MUX2：** 視為 **base gate**，允許出現在 netlist；FAN 保留 `Gate::MUX`（Phase D1）。OAI/AOI 複合閘禁止，由合成展開。
 
 ## 背景
 
@@ -66,21 +67,23 @@ bash scripts/regenerate_fan_fullscan_netlists.sh
 
 來源優先序：`{c}_dffr.v` → `{c}_dffr_only.v` → `{c}_ck.v` → strip 現有 `{c}.v`（避免 strip→re-scan 破壞仍接在邏輯上的 `.QN()` net）。
 
-## ATPG 驗證結果（FAN format, frame=1）
+## ATPG 驗證結果（FAN format, frame=1, Phase D 後）
 
-| 電路 | FC | AU | 備註 |
-|------|-----|-----|------|
-| s510 | 99.14% | 0 | 參考 |
-| b03 | 34.95% | 945 | SDFFR+scan；格式正確但 AU 仍高 |
-| b07 | 44.09% | 1491 | SDFFR+scan；較 DFFR 略升 |
+> **主指標：** **FC_scan**（scan-protocol）。定義見 [`2026-06-09-scan-protocol-fc-metric.md`](./2026-06-09-scan-protocol-fc-metric.md)。
 
-**結論：** 格式遷移為必要條件（對齊 FAN），但無法單獨解決 ITC MUX-heavy 控制器的 AU 問題；後續走 partial-scan / sequential recovery。
+| 電路 | FC_scan | FC_raw（附錄） | AU_comb | 備註 |
+|------|---------|---------------|---------|------|
+| s510 | 99.14% | 99.14% | 0 | 參考 |
+| b03 | **93.03%** | 92.83% | 2 | Phase D PODEM + auto scan protocol |
+| b07 | ~89% | ~89% | — | 待完整 sweep |
 
-## 參考 FAN script（對齊 atpg_s510.script）
+**結論：** 格式遷移（SDFFR+scan）為必要條件；Phase D 修復 PODEM 後 b03 可達業界對齊的 **FC_scan ~93%**。殘差主要為 QN UD + 2 comb AU，非 netlist 格式問題。
+
+## 參考 FAN script（scan-protocol 標準）
 
 ```
 read_lib techlib/mod_nangate45.mdt
-read_netlist mod_netlist/b03.v
+read_netlist mod_netlist/b03_reset_tie.v
 build_circuit --frame 1
 set_fault_type saf
 add_fault --all
@@ -93,10 +96,14 @@ report_statistics
 exit
 ```
 
+有 `reset` PI 的 netlist 用 `mod_netlist/b03.v` 時引擎會自動 TI（Level 2）；結構性 tie 用 `*_reset_tie.v`（Level 3）。
+
 ## 相關檔案
 
-- `scripts/fixup_verilog.py` — `--full-scan` 實作
-- `scripts/synth_itc99.sh` — 合成後預設 `--full-scan`
-- `scripts/verify_fullscan_netlist.sh` — 結構驗證
-- `scripts/regenerate_fan_fullscan_netlists.sh` — 批次重生
+- `scripts/build_itc99_netlists.sh` — **推薦**一鍵建置（prep → synth → fixup → validate）
+- `scripts/fixup_verilog.py` — `--full-scan` 實作（v2：`expand_bus_assigns`、SDFFR early-return 修復）
+- `scripts/synth_itc99.sh` — Yosys 合成（將改用 `NangateOpenCellLibrary_base.lib`）
+- `scripts/validate_netlist.py` — undriven=0、無 OAI/AOI、full-scan 結構
+- `scripts/verify_fullscan_netlist.sh` — 結構驗證（legacy）
+- `scripts/regenerate_fan_fullscan_netlists.sh` — **deprecated**；改用 `build_itc99_netlists.sh`
 - `FAN_ATPG/techlib/mod_nangate45.mdt` — `SDFFR_X1` intern 模型
