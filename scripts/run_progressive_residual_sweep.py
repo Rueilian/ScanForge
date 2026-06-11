@@ -13,8 +13,15 @@ RUNNER_PY = os.path.join(REPO_ROOT, "scripts", "run_progressive_residual.py")
 CIRCUITS = ["b03", "b04", "b05", "b07", "b08", "b09", "b11", "b13"]
 RATIOS = [0.05, 0.10, 0.15, 0.20]
 
+import argparse
+
 def main():
-    print("Starting progressive residual sweep for Tier A benchmarks...")
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--two-phase", action="store_true", help="Enable two-phase state justification optimization")
+    args = ap.parse_args()
+    two_phase = args.two_phase
+
+    print(f"Starting progressive residual sweep for Tier A benchmarks{' (with Two-Phase Justification)' if two_phase else ''}...")
     
     total = len(CIRCUITS) * len(RATIOS)
     count = 0
@@ -43,6 +50,8 @@ def main():
                 "--ratio", str(r),
                 "--nonscan", ff_str
             ]
+            if two_phase:
+                cmd.append("--two-phase")
             
             try:
                 subprocess.run(cmd, check=True)
