@@ -1,5 +1,7 @@
 # ScanForge — Pipeline Flow and Architecture
 
+> **Archived.** Describes legacy T=8 `run_atpg_sweep.py` flow. Current pipeline: `scripts/run_progressive_residual.py` — see [`../spec.md`](../spec.md).
+
 ## 1. Project Overview
 
 ScanForge studies fault coverage loss and recovery when timing-critical flip-flops are excluded from scan. The pipeline:

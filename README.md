@@ -1,10 +1,10 @@
 # ScanForge
 
-Sequential ATPG research pipeline for studying fault coverage loss and recovery under timing-driven partial-scan constraints.
+Sequential ATPG research pipeline for evaluating **progressive T=1→T=2→T=4 fault-coverage gain** on timing-driven partial-scan ITC'99 benchmarks.
 
-**Current active work:** ITC'99 benchmarks synthesized with NanGate45, timing-driven scan exclusion via OpenSTA, and multi-frame sequential ATPG (PARTIAL_SEQUENTIAL mode in FAN_ATPG).
+**Research focus:** How much does the multi-frame residual pipeline add **beyond T=1**? Non-scan ratios (5/10/15/20%) are experimental setup, not the primary comparison axis.
 
-Authoritative direction: [`docs/spec.md`](./docs/spec.md) | Task tracker: [`docs/checklist.md`](./docs/checklist.md) | Pipeline details: [`docs/flow_and_results.md`](./docs/flow_and_results.md)
+**Authoritative direction:** [`docs/spec.md`](./docs/spec.md) | [`docs/final_report.md`](./docs/final_report.md) | [`docs/README.md`](./docs/README.md)
 
 ---
 
@@ -21,17 +21,20 @@ ScanForge/
 ├── scripts/               # pipeline scripts
 │   ├── synth_itc99.sh         — Yosys synthesis → mod_netlist/b*.v
 │   ├── fixup_verilog.py       — post-process Yosys output for FAN compatibility
-│   ├── gen_nonscan_masks.sh   — orchestrates STA + mask generation
-│   └── run_atpg_sweep.py      — runs all 55 experiments, writes results CSV
+│   ├── run_progressive_residual.py      — T=1→T=2→T=4 pipeline (primary)
+│   ├── run_progressive_residual_sweep.py — Tier A batch runner
+│   ├── gen_nonscan_masks.sh           — OpenSTA + mask generation
+│   ├── generate_figures.py            — report figures
+│   └── archive/                       — legacy runners (T=8 sweep, ISCAS tools)
 ├── masks/                 # non-scan masks: masks/<circuit>_x<ratio>.mask
-├── results/               # experiment output
-│   └── itc99_partial_scan.csv — 55-row results table
-├── docs/                  # Project specification, checklist, agent instructions, flow docs
+├── results/
+│   ├── progressive_residual_summary.csv — 32-run pipeline results (primary)
+│   ├── phase_d_fullscan_dataset.csv     — full-scan FC_scan baselines
+│   └── archive/                         — superseded CSVs and legacy sweeps
+├── docs/
+│   ├── README.md            — doc index (active vs archive)
 │   ├── spec.md
-│   ├── checklist.md
-│   ├── AGENTS.md
-│   ├── progress_report.md
-│   └── flow_and_results.md
+│   └── final_report.md
 ├── src/                   # ScanForge C++ engine (legacy ISCAS'89 tool)
 ```
 
@@ -75,20 +78,19 @@ bash scripts/gen_nonscan_masks.sh
 # output: masks/<circuit>_x{5,10,15,20}.mask
 ```
 
-### 6. Run ATPG experiment sweep
+### 6. Run progressive residual pipeline (primary evaluation)
 
 ```bash
-# Pilot (b03, 5 ratios):
-python3 scripts/run_atpg_sweep.py --circuits b03
+# Single case:
+ATPG_PER_TARGET_TIMEOUT=0 python3 scripts/run_progressive_residual.py \
+  --circuit b03 --ratio 0.20 --nonscan $(cat masks/b03_x20.mask | tr '\n' ' ')
 
-# Full (11 circuits × 5 ratios = 55 runs):
-python3 scripts/run_atpg_sweep.py
+# Tier A sweep (8 circuits × 4 ratios = 32 runs):
+ATPG_PER_TARGET_TIMEOUT=0 python3 scripts/run_progressive_residual_sweep.py
 
-# Resume after interruption:
-python3 scripts/run_atpg_sweep.py --skip-done
+# Regenerate report figures:
+python3 scripts/generate_figures.py
 ```
-
-FAN_ATPG must be invoked from the `FAN_ATPG/` working directory. The runner handles this automatically.
 
 ---
 
@@ -101,50 +103,39 @@ grep -cE '\bDFFR?S?_X[12]\b' FAN_ATPG/mod_netlist/b03.v   # should be ~31
 # Mask sanity
 wc -l masks/b03_x5.mask    # should be ceil(31 × 0.05) = 2
 
-# ATPG sanity — full-scan b03 should give fault_coverage ≥ 90%
-grep b03 results/itc99_partial_scan.csv | head -1
+# ATPG sanity — progressive pipeline summary
+head -3 results/progressive_residual_summary.csv
+grep 'b03,0.2' results/progressive_residual_summary.csv
 ```
 
 ---
 
 ## Evaluation Cases
 
-| Case | Description | Status |
+| Case | Description | Metric |
 |------|-------------|--------|
-| `full_scan` | All FFs scan, x=0%, T=1 ATPG | Completed (Baseline >91% verified across all circuits) |
-| `partial_scan_no_recovery` | Non-scan FFs, T=1, X initial state | Completed & Verified |
-| `partial_scan_with_recovery` | Non-scan FFs, T=2/T=4/T=8 sequential ATPG | Completed (Progressive residual recovery pipeline implemented) |
+| **T=1 partial-scan** | Non-scan FFs, single frame | FC_T1 (pipeline baseline) |
+| **+ residual T=2** | ATPG on R1 = F − D1 | FC_T1_T2, gain_T2_pp |
+| **+ residual T=4** | ATPG on R2 = F − D1 − D2 | FC_T1_T2_T4, **total_gain_pp** |
+| `full_scan` | x=0%, separate dataset | FC_scan (context only) |
+
+Primary question: **total_gain_pp = FC_T1_T2_T4 − FC_T1**, not FC vs exclusion ratio.
 
 ---
 
-## Current Status
+## Current Status (June 2026)
 
 **Completed:**
-- FAN_ATPG `PARTIAL_SEQUENTIAL` multi-frame unrolling mode
-- `set_nonscan_ff` command and script integration
-- ITC'99 synthesis + OpenSTA timing pipeline
-- Non-scan mask generation at 5/10/15/20%
-- Fixed `atpg.cpp` core bugs (dominator event-stack OOB, MUX2 PODEM backtrace, and multi-frame SAF consistency bugs)
-- Full-scan baseline verified at >91% coverage for all Tier A & B benchmarks (see [results/phase_d_fullscan_dataset.csv](./results/phase_d_fullscan_dataset.csv))
-- Progressive residual multi-frame ATPG pipeline (`run_progressive_residual.py`) implemented and verified
+- Progressive residual T=1→T=2→T=4 pipeline + union FC accounting
+- OpenSTA mask regeneration on aligned gate-level netlists
+- Tier A sweep: **32/32 PASS** → `results/progressive_residual_summary.csv`
+- Report updated: `docs/final_report.md`
 
-**Next Steps:**
-- Run the full progressive residual sweep on all Tier A benchmarks across ratios 5%, 10%, 15%, 20%
-- Update the final report draft ([docs/final_report.md](./docs/final_report.md)) with the sweep results and generate plots
+**Key result @20% exclusion:** only **b03** shows pipeline gain (**+2.16pp**, all from T=2); all other Tier A circuits **0.00pp** gain.
 
-See [`docs/spec.md`](./docs/spec.md) and [`docs/checklist.md`](./docs/checklist.md) for details.
-
----
-
-## Parameter Sweep
-
-| Parameter | Values |
-|---|---|
-| Circuits | b03, b04, b05, b07, b08, b09, b11, b12, b13, b14, b15 |
-| Non-scan ratio `x` | 0% (full-scan), 5%, 10%, 15%, 20% |
-| Sequential ATPG depth | T=1 for x=0%; T=8 for x>0% |
-
-Total: **55 runs**
+**Open issues:**
+- Full-scan FC_scan (91–97%) still has AU/UD headroom — separate from pipeline evaluation
+- b11 pipeline runtime ~277s @20% with zero gain
 
 ---
 
@@ -230,11 +221,11 @@ Values: 0=L, 1=H, 2=X, 3=D, 4=B, 5=Z
 
 ### Archived Results (ISCAS'89)
 
-Full scan switching activity and partial scan sweep tables for s27 through s38584 are available in git history and in `docs/flow_and_results.md` (Section 9).
+Full scan switching activity and partial scan sweep tables for s27 through s38584 are available in git history and in [`docs/archive/flow_and_results.md`](./docs/archive/flow_and_results.md) (Section 9).
 
 ### Stress-Aware Partial Scan Study
 
-The initial project topic was "Stress-Aware Partial Scan Selection" targeting ISCAS'89 with a SCOAP coverage proxy. This produced a full experimental study (7 modes, 12 circuits) documented in `docs/progress_report.md`. As of May 2026, the project has been redirected to the current topic: "Sequential ATPG Coverage Recovery for Timing-Driven Partial-Scan Circuits."
+The initial project topic was "Stress-Aware Partial Scan Selection" targeting ISCAS'89 with a SCOAP coverage proxy. This work is documented in [`docs/archive/progress_report.md`](./docs/archive/progress_report.md). As of 2026, the active topic is progressive T=1→T=2→T=4 pipeline evaluation on timing-driven partial-scan ITC'99 benchmarks.
 
 ---
 

@@ -11,7 +11,7 @@ FIG_DIR = os.path.join(REPO, "docs", "figures")
 os.makedirs(FIG_DIR, exist_ok=True)
 
 BASE_CSV = os.path.join(REPO, "results", "progressive_residual_summary.csv")
-TWOPHASE_CSV = os.path.join(REPO, "results", "progressive_residual_summary_two_phase.csv")
+TWOPHASE_CSV = os.path.join(REPO, "results", "archive", "progressive_residual_summary_two_phase.csv")
 
 def load_data(csv_path):
     data = {}

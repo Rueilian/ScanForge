@@ -4,7 +4,7 @@
 
 ScanForge is a sequential ATPG research pipeline for studying fault coverage loss and recovery under timing-driven partial-scan constraints. It uses FAN_ATPG (with project-specific extensions) as the ATPG backend, targeting ITC'99 circuits synthesized with NanGate45.
 
-The authoritative project direction lives in [`spec.md`](./spec.md). The task tracker and implementation audit lives in [`checklist.md`](./checklist.md).
+The authoritative project direction lives in [`../spec.md`](../spec.md). Historical task tracking: [`checklist.md`](./checklist.md) (archived).
 
 ---
 
@@ -43,7 +43,7 @@ export PATH=$HOME/local/bin:$PATH
 
 ### ITC'99 netlist build（推薦：base-gate pipeline）
 
-One-shot entry point (prep → synth → fixup → validate). See [`docs/superpowers/plans/2026-06-09-primitive-netlist-pipeline-complete.md`](./superpowers/plans/2026-06-09-primitive-netlist-pipeline-complete.md).
+One-shot entry point (prep → synth → fixup → validate). See [`./superpowers/plans/2026-06-09-primitive-netlist-pipeline-complete.md`](./superpowers/plans/2026-06-09-primitive-netlist-pipeline-complete.md).
 
 ```bash
 export PATH=$HOME/local/bin:$PATH
@@ -81,7 +81,7 @@ Defined in [`scripts/itc99_benchmark_scope.sh`](./scripts/itc99_benchmark_scope.
 | **B (deferred)** | b12 b14 b15 | netlist only; engine too slow / crash |
 | **C (out)** | b17+ mega-ISCAS | not in pipeline |
 
-Speed improvement plan: [`docs/superpowers/plans/2026-06-10-saf-atpg-speed-improvement.md`](./superpowers/plans/2026-06-10-saf-atpg-speed-improvement.md)
+Speed improvement plan: [`./superpowers/plans/2026-06-10-saf-atpg-speed-improvement.md`](./superpowers/plans/2026-06-10-saf-atpg-speed-improvement.md)
 
 ### ATPG timeouts (unified defaults)
 
@@ -189,7 +189,7 @@ Compilation with `-Wall -Wextra` (already in the Makefile) serves as the linter.
 - **`_dffr.v` is source of truth** for fixup; never `strip(bad netlist) → fixup`
 - **MUX2 is a base gate** — allowed in netlist; FAN `Gate::MUX` must stay. **OAI/AOI compound cells** must not appear (synthesis expands them)
 - `_const0_` is fixed by `fixup_verilog.py` tie cells — should not appear as module `input`
-- **Full-scan FC metric:** use **FC_scan** (auto on `add_fault --all`). See `docs/superpowers/plans/2026-06-09-scan-protocol-fc-metric.md`
+- **Full-scan FC metric:** use **FC_scan** (auto on `add_fault --all`). See [`./superpowers/plans/2026-06-09-scan-protocol-fc-metric.md`](./superpowers/plans/2026-06-09-scan-protocol-fc-metric.md)
 - ITC'99 designs with `reset` PI: `mod_netlist/{c}_reset_tie.v` or auto scan protocol on `{c}.v`
 - Yosys raw output uses `DFFR_X1`; fixup converts to `SDFFR_X1` + scan chain
 - `make -C FAN_ATPG` emits warnings and may exit with code 2, but the binary is still produced — check for `FAN_ATPG/bin/opt/fan`

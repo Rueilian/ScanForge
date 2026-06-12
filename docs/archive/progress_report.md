@@ -1,4 +1,7 @@
 # Progress Report
+
+> **Archived draft.** Current report: [`../final_report.md`](../final_report.md). Primary data: `results/progressive_residual_summary.csv`.
+
 ## Course: EEE5001 VLSI Testing
 ## Date: 2026-05-29
 

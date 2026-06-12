@@ -40,7 +40,7 @@ FAN_BIN    = os.path.join(FAN_DIR, "bin", "opt", "fan")
 MASK_DIR   = os.path.join(REPO_ROOT, "masks")
 RPT_DIR    = os.path.join(FAN_DIR, "rpt")
 SCRIPT_DIR = os.path.join(FAN_DIR, "script", "fanScripts")
-OUT_CSV    = os.path.join(REPO_ROOT, "results", "itc99_partial_scan.csv")
+OUT_CSV    = os.path.join(REPO_ROOT, "results", "archive", "itc99_partial_scan.csv")
 
 DEFAULT_CIRCUITS = ITC_ATPG
 DEFAULT_RATIOS = [0.0, 0.05, 0.10, 0.15, 0.20]

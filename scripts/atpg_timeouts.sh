@@ -1,7 +1,7 @@
 # Shared ATPG timeout defaults (source from bash runners).
 # Override: ATPG_WALL_TIMEOUT=7200 ATPG_PER_TARGET_TIMEOUT=30 bash scripts/run_phase_d_fullscan_dataset.sh
 #
-# Tier policy (see docs/superpowers/plans/2026-06-10-saf-atpg-speed-improvement.md):
+# Tier policy (see docs/archive/superpowers/plans/2026-06-10-saf-atpg-speed-improvement.md):
 #   Tier A (b03–b11,b13): PER_TARGET=0  — completes in ms–s; timeout only hides regressions
 #   Tier B (b12/b14/b15): PER_TARGET=30 — cap stubborn faults without 120s × N blow-up
 
