@@ -6,5 +6,7 @@ results/s27_exclude_sweep.csv
 results/s27_timing_proxy.csv
 results/residual_faults/
 logs/
+results/*.log
+itc99_synth_rtl/
 __pycache__/
 scripts/__pycache__/
