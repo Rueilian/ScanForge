@@ -17,11 +17,13 @@ import argparse
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--two-phase", action="store_true", help="Enable two-phase state justification optimization")
+    ap.add_argument("--two-phase", action="store_true",
+                    help="(deprecated, no-op) state justification is always enabled in FAN_ATPG")
     args = ap.parse_args()
-    two_phase = args.two_phase
+    if args.two_phase:
+        print("Note: --two-phase is deprecated; FAN_ATPG enables state justification by default.")
 
-    print(f"Starting progressive residual sweep for Tier A benchmarks{' (with Two-Phase Justification)' if two_phase else ''}...")
+    print("Starting progressive residual sweep for Tier A benchmarks...")
     
     total = len(CIRCUITS) * len(RATIOS)
     count = 0
@@ -50,8 +52,6 @@ def main():
                 "--ratio", str(r),
                 "--nonscan", ff_str
             ]
-            if two_phase:
-                cmd.append("--two-phase")
             
             try:
                 subprocess.run(cmd, check=True)
