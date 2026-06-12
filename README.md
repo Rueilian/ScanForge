@@ -111,9 +111,9 @@ grep b03 results/itc99_partial_scan.csv | head -1
 
 | Case | Description | Status |
 |------|-------------|--------|
-| `full_scan` | All FFs scan, x=0%, T=1 ATPG | Works |
-| `partial_scan_no_recovery` | Non-scan FFs, T=1, X initial state | Under verification |
-| `partial_scan_with_recovery` | Non-scan FFs, T=8 sequential ATPG | Not yet implemented |
+| `full_scan` | All FFs scan, x=0%, T=1 ATPG | Completed (Baseline >91% verified across all circuits) |
+| `partial_scan_no_recovery` | Non-scan FFs, T=1, X initial state | Completed & Verified |
+| `partial_scan_with_recovery` | Non-scan FFs, T=2/T=4/T=8 sequential ATPG | Completed (Progressive residual recovery pipeline implemented) |
 
 ---
 
@@ -124,11 +124,13 @@ grep b03 results/itc99_partial_scan.csv | head -1
 - `set_nonscan_ff` command and script integration
 - ITC'99 synthesis + OpenSTA timing pipeline
 - Non-scan mask generation at 5/10/15/20%
+- Fixed `atpg.cpp` core bugs (dominator event-stack OOB, MUX2 PODEM backtrace, and multi-frame SAF consistency bugs)
+- Full-scan baseline verified at >91% coverage for all Tier A & B benchmarks (see [results/phase_d_fullscan_dataset.csv](./results/phase_d_fullscan_dataset.csv))
+- Progressive residual multi-frame ATPG pipeline (`run_progressive_residual.py`) implemented and verified
 
-**Blocked:**
-- `findFinalObjective()/finalObjectives_.empty()` bug in `atpg.cpp` causes b03 full-scan to report 36.48% coverage (expected ≥ 90%)
-
-**Immediate next task:** Fix FAN ATPG bug → verify full-scan b03 ≥ 90% → verify T=1 `partial_scan_no_recovery` differs from `full_scan` on ITC'99 benchmarks → then run full 55-experiment sweep.
+**Next Steps:**
+- Run the full progressive residual sweep on all Tier A benchmarks across ratios 5%, 10%, 15%, 20%
+- Update the final report draft ([docs/final_report.md](./docs/final_report.md)) with the sweep results and generate plots
 
 See [`docs/spec.md`](./docs/spec.md) and [`docs/checklist.md`](./docs/checklist.md) for details.
 

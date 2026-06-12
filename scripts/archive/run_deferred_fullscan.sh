@@ -48,7 +48,7 @@ EOF
 
   if [[ "$status" == OK && -s "$rpt" ]]; then
     local stats
-    stats=$(python3 "$ROOT/scripts/parse_fan_scan_stats.py" "$rpt" --csv)
+    stats=$(python3 "$ROOT/scripts/archive/parse_fan_scan_stats.py" "$rpt" --csv)
     IFS=, read -r fc_scan fc_scan_coll tc_scan fc_raw tc_raw fu_c fu_full dt au ti_scan ti ud pat rt <<<"$stats"
     python3 - "$OUT" "$APPENDIX" "$circuit" "$group" "$fc_scan" "$fc_scan_coll" "$tc_scan" "$fu_c" "$dt" "$au" "$ti_scan" "$ud" "$pat" "$rt" "$wall_s" "$fc_raw" "$tc_raw" "$ti" <<'PY'
 import csv, sys

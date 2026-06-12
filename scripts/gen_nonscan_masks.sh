@@ -1,16 +1,29 @@
 #!/usr/bin/env bash
 # Run OpenSTA on all synthesized ITC'99 circuits and generate non-scan mask files.
 # Requires synthesized netlists in FAN_ATPG/mod_netlist/b*.v
-# Run from anywhere; all paths are absolute.
-set -e
+# Run from anywhere; paths are resolved relative to this repository.
+set -euo pipefail
 
-REPO_ROOT="/home/swear01/ScanForge"
+SCRIPT_DIR="$(cd -- "${BASH_SOURCE[0]%/*}" && pwd)"
+REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 NETLIST_DIR="$REPO_ROOT/FAN_ATPG/mod_netlist"
 LIBERTY="$REPO_ROOT/FAN_ATPG/techlib/NangateOpenCellLibrary_typical.lib"
 MASK_DIR="$REPO_ROOT/masks"
 LOG_DIR="$REPO_ROOT/logs/sta"
 TCL_TEMPLATE="$REPO_ROOT/scripts/sta_extract_slack.tcl"
 EXTRACT_PY="$REPO_ROOT/scripts/gen_mask_from_slack.py"
+
+require_tool() {
+  local tool="$1"
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    echo "ERROR: required tool '$tool' not found in PATH" >&2
+    echo "Install the missing tool or export PATH to include it before running this script." >&2
+    exit 127
+  fi
+}
+
+require_tool sta
+require_tool python3
 
 mkdir -p "$MASK_DIR" "$LOG_DIR"
 
@@ -56,9 +69,7 @@ source "$TCL_TEMPLATE"
 ENDTCL
 
   echo -n "Running STA for $cname ... "
-  sta "$wrapper_tcl" > "$log" 2>&1
-
-  if [ $? -ne 0 ] || [ ! -f "$slack_csv" ]; then
+  if ! sta "$wrapper_tcl" > "$log" 2>&1 || [ ! -f "$slack_csv" ]; then
     echo "FAILED — see $log"
     continue
   fi

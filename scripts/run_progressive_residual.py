@@ -33,7 +33,7 @@ SUMMARY_FIELDS = [
     "per_target_timeout_sec", "status"
 ]
 
-def run_fan(label, circuit, frame, nonscan_ffs, fault_file=None, timeout_s=None, per_target_timeout=None):
+def run_fan(label, circuit, frame, nonscan_ffs, fault_file=None, timeout_s=None, per_target_timeout=None, two_phase=False):
     if timeout_s is None:
         timeout_s = WALL_TIMEOUT_S
     if per_target_timeout is None:
@@ -48,6 +48,9 @@ def run_fan(label, circuit, frame, nonscan_ffs, fault_file=None, timeout_s=None,
         lines.append(f"set_nonscan_ff {nonscan_ffs}")
     lines.append(f"build_circuit --frame {frame}")
     lines.append("set_fault_type saf")
+    if two_phase:
+        lines.append("set_two_phase_justification on")
+        lines.append("set_atpg_threads 1")
     if fault_file:
         lines.append(f"add_fault -f {fault_file}")
     else:
@@ -71,26 +74,40 @@ def run_fan(label, circuit, frame, nonscan_ffs, fault_file=None, timeout_s=None,
         elapsed = time.time() - t0
     except subprocess.TimeoutExpired:
         return {"label": label, "returncode": -1, "elapsed": timeout_s, "status": "TIMEOUT"}
-    fc = dt = au = ab = ud = to_num = None
+    fc = dt = au = ab = ud = to_num = total = None
+    status = "PASS"
     if os.path.exists(rpt_path):
         with open(rpt_path) as f:
             text = f.read()
         for key, pat in [
-            ("fc", r"fault coverage\s+([\d.]+)%"), ("dt", r"DT \(detected\)\s+([\d]+)"),
-            ("au", r"AU \(atpg untestable\)\s+([\d]+)"), ("ab", r"AB \(atpg abort\)\s+([\d]+)"),
-            ("ud", r"UD \(undetected\)\s+([\d]+)"), ("to_num", r"TO \(timeout\)\s+([\d]+)"),
+            ("dt", r"DT \(detected\)\s+([\d]+)"),
+            ("au", r"AU \(atpg untestable\)\s+([\d]+)"),
+            ("ab", r"AB \(atpg abort\)\s+([\d]+)"),
+            ("ud", r"UD \(undetected\)\s+([\d]+)"),
+            ("to_num", r"TO \(timeout\)\s+([\d]+)"),
         ]:
             m = re.search(pat, text)
             if m:
-                if key == "fc": fc = float(m.group(1))
-                elif key == "dt": dt = int(m.group(1))
+                if key == "dt": dt = int(m.group(1))
                 elif key == "au": au = int(m.group(1))
                 elif key == "ab": ab = int(m.group(1))
                 elif key == "ud": ud = int(m.group(1))
                 elif key == "to_num": to_num = int(m.group(1))
+
+        # Parse fault coverage robustly
+        m_fc = re.search(r"fault coverage \(scan protocol\)\s+([\d.]+)%", text)
+        if not m_fc:
+            m_fc = re.search(r"fault coverage\s+([\d.]+)%", text)
+        if m_fc:
+            fc = float(m_fc.group(1))
         total = (dt or 0) + (au or 0) + (ab or 0) + (ud or 0) + (to_num or 0)
+    else:
+        status = "FAILED"
+        print(f"  ERROR: report {rpt_path} not found.")
+        print(f"  FAN stdout:\n{proc.stdout}")
+        print(f"  FAN stderr:\n{proc.stderr}")
     return {"label": label, "fc": fc, "dt": dt, "au": au, "ab": ab, "ud": ud, "to": to_num or 0, "total": total,
-            "returncode": proc.returncode, "elapsed": elapsed, "status": "PASS"}
+            "returncode": proc.returncode, "elapsed": elapsed, "status": status}
 
 def parse_faults(path):
     faults = {}; fault_list = []
@@ -110,6 +127,7 @@ def write_fault_list(faults, path):
             f.write(f"{gid} {ft} {fl}\n")
 
 def main():
+    global SUMMARY_CSV
     ap = argparse.ArgumentParser()
     ap.add_argument("--circuit", required=True)
     ap.add_argument("--ratio", type=float, required=True)
@@ -118,10 +136,14 @@ def main():
                     help=f"Wall-clock timeout per FAN run (default {WALL_TIMEOUT_S}s)")
     ap.add_argument("--per-target-timeout", type=float, default=PER_TARGET_TIMEOUT_S,
                     help=f"Per-target-fault timeout in seconds (0=disabled, default {PER_TARGET_TIMEOUT_S})")
+    ap.add_argument("--two-phase", action="store_true", help="Enable two-phase state justification optimization")
     args = ap.parse_args()
 
     c = args.circuit; ratio = args.ratio; ns_ffs = args.nonscan
     ptt = args.per_target_timeout
+    two_phase = args.two_phase
+    if two_phase:
+        SUMMARY_CSV = os.path.join(REPO_ROOT, "results", "progressive_residual_summary_two_phase.csv")
     excl = len(ns_ffs.split()) if ns_ffs else 0
     total_ff = None
     nl_path = os.path.join(FAN_DIR, "mod_netlist", f"{c}.v")
@@ -131,12 +153,12 @@ def main():
     pct = int(ratio * 100); tag = f"{c}_x{pct}"
 
     print(f"\n{'='*60}")
-    print(f"Progressive Residual: {tag}  excl={excl}/{total_ff or '?'}")
+    print(f"Progressive Residual: {tag}  excl={excl}/{total_ff or '?'}{' (Two-Phase Justification)' if two_phase else ''}")
     print(f"{'='*60}")
 
     # ── Phase 1: T=1 all faults ──
     print("Phase 1: T=1 all faults")
-    t1 = run_fan(f"{tag}_t1_all", c, 1, ns_ffs, per_target_timeout=ptt)
+    t1 = run_fan(f"{tag}_t1_all", c, 1, ns_ffs, per_target_timeout=ptt, two_phase=two_phase)
     if t1["status"] != "PASS":
         print(f"  {t1['status']}")
         return
@@ -153,7 +175,7 @@ def main():
     r1_file = os.path.join(RES_FAULT_DIR, f"{tag}_after_T1.faults")
     write_fault_list(R1, r1_file)
     print(f"Phase 2: T=2 on {len(R1)} residual faults")
-    t2 = run_fan(f"{tag}_t2_res", c, 2, ns_ffs, fault_file=r1_file, per_target_timeout=ptt)
+    t2 = run_fan(f"{tag}_t2_res", c, 2, ns_ffs, fault_file=r1_file, per_target_timeout=ptt, two_phase=two_phase)
     t2_new = D2_au = D2_ab = D2_to = 0
     if t2["status"] == "PASS":
         t2_faults, _ = parse_faults(os.path.join(RPT_DIR, f"{tag}_t2_res_faults.txt"))
@@ -172,7 +194,7 @@ def main():
     r2_file = os.path.join(RES_FAULT_DIR, f"{tag}_after_T1_T2.faults")
     write_fault_list(R2, r2_file)
     print(f"Phase 3: T=4 on {len(R2)} remaining residual faults")
-    t4 = run_fan(f"{tag}_t4_res", c, 4, ns_ffs, fault_file=r2_file, per_target_timeout=ptt)
+    t4 = run_fan(f"{tag}_t4_res", c, 4, ns_ffs, fault_file=r2_file, per_target_timeout=ptt, two_phase=two_phase)
     t4_new = D4_au = D4_ab = D4_to = 0
     if t4["status"] == "PASS":
         t4_faults, _ = parse_faults(os.path.join(RPT_DIR, f"{tag}_t4_res_faults.txt"))
