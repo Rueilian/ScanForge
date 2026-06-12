@@ -83,8 +83,11 @@ PY
   fi
 }
 
-# b15 + s38417: 3600s wall each
-run_one b15 itc99 3600 30
-run_one s38417 iscas 3600 120
+# b15 + s38417: 2h wall, shorter per-target (skip stubborn faults faster)
+WALL_SLOW="${ATPG_WALL_TIMEOUT_SLOW:-7200}"
+PTO_DEFERRED="${ATPG_PER_TARGET_TIMEOUT_DEFERRED:-15}"
+PTO_ISCAS_SLOW="${ATPG_PER_TARGET_TIMEOUT_ISCAS_SLOW:-30}"
+run_one b15 itc99 "$WALL_SLOW" "$PTO_DEFERRED"
+run_one s38417 iscas "$WALL_SLOW" "$PTO_ISCAS_SLOW"
 
 echo "Done. Updated $OUT"

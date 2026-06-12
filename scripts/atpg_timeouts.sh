@@ -8,6 +8,13 @@
 # Wall-clock limit per FAN invocation (seconds).
 export ATPG_WALL_TIMEOUT="${ATPG_WALL_TIMEOUT:-3600}"
 
+# Slow circuits (b15, s38417, …): 2h wall default.
+export ATPG_WALL_TIMEOUT_SLOW="${ATPG_WALL_TIMEOUT_SLOW:-7200}"
+
+# Shorter per-target cap for deferred / mega benchmarks (seconds).
+export ATPG_PER_TARGET_TIMEOUT_DEFERRED="${ATPG_PER_TARGET_TIMEOUT_DEFERRED:-15}"
+export ATPG_PER_TARGET_TIMEOUT_ISCAS_SLOW="${ATPG_PER_TARGET_TIMEOUT_ISCAS_SLOW:-30}"
+
 # Per-target-fault limit inside FAN (set_per_target_timeout); 0 = disabled.
 # Default 0: safe for Tier A sweeps. Set 30 when ITC_INCLUDE_DEFERRED=1.
 export ATPG_PER_TARGET_TIMEOUT="${ATPG_PER_TARGET_TIMEOUT:-0}"
