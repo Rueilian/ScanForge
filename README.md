@@ -28,7 +28,7 @@ ScanForge/
 │   └── archive/                       — legacy runners (T=8 sweep, ISCAS tools)
 ├── masks/                 # non-scan masks: masks/<circuit>_x<ratio>.mask
 ├── results/
-│   ├── progressive_residual_summary.csv — 32-run pipeline results (primary)
+│   ├── progressive_residual_summary.csv — Tier A pipeline + Tier B pilot (b12/b14)
 │   ├── phase_d_fullscan_dataset.csv     — full-scan FC_scan baselines
 │   └── archive/                         — superseded CSVs and legacy sweeps
 ├── docs/

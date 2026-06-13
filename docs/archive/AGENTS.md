@@ -78,7 +78,7 @@ Defined in [`scripts/itc99_benchmark_scope.sh`](./scripts/itc99_benchmark_scope.
 | Tier | Circuits | ATPG sweeps |
 |------|----------|-------------|
 | **A (active)** | b03 b04 b05 b07 b08 b09 b11 b13 | ✅ default |
-| **B (deferred)** | b12 b14 b15 | netlist only; engine too slow / crash |
+| **B (pilot)** | b12 b14 b15 | b12/b14 multi-frame @20% PASS (June 2026); b15 T=1 TIMEOUT; not in batch sweep |
 | **C (out)** | b17+ mega-ISCAS | not in pipeline |
 
 Speed improvement plan: [`./superpowers/plans/2026-06-10-saf-atpg-speed-improvement.md`](./superpowers/plans/2026-06-10-saf-atpg-speed-improvement.md)
@@ -119,8 +119,9 @@ python3 scripts/run_atpg_sweep.py --circuits b03
 # Full (8 active ITC × 5 ratios = 40 runs):
 python3 scripts/run_atpg_sweep.py
 
-# Include deferred large ITC (b12/b14/b15) — not recommended yet:
-ITC_INCLUDE_DEFERRED=1 python3 scripts/run_atpg_sweep.py
+# Include Tier B pilot (manual; not in default sweep):
+python3 scripts/run_progressive_residual.py --circuit b12 --ratio 0.20 \
+  --nonscan "$(tr '\n' ' ' < masks/b12_x20.mask)" --timeout 3600 --per-target-timeout 30
 
 # Resume after interruption:
 python3 scripts/run_atpg_sweep.py --skip-done

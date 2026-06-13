@@ -167,13 +167,15 @@ ITC'99 sequential benchmarks synthesized to NanGate45 gate-level Verilog using Y
 | b11 | 84 | 97.80% | < 0.2 s |
 | b13 | 86 | 91.54% | < 0.01 s |
 
-#### Tier B — Deferred (netlist built; ATPG excluded until engine speed fix)
+#### Tier B — Pilot (netlist built; multi-frame ATPG re-evaluated June 2026)
 
-| Circuit | RTL FFs | Status |
-|---|---:|---|
-| b12 | 192 | FAN SAF timeout / MUX backtrace crash |
-| b14 | 219 | FAN SAF segfault or > 10 min |
-| b15 | 839 | FAN SAF hours-scale runtime |
+| Circuit | SDFFR FFs | @20% pilot (June 2026) | Notes |
+|---|---:|---|---|
+| b12 | 220 | PASS — +35.4 pp, ~28 min total | Was segfault/timeout; completes after FAN rebuild |
+| b14 | 314 | PASS — +13.0 pp, ~16 min total | Full-scan T=1: 417 s, 94.64% FC_scan |
+| b15 | 837 | T=1 TIMEOUT (>2 h @20%) | Multi-frame stages not reached |
+
+Prior status (pre-rebuild): segfault or 120 s / hour-scale timeout. Tier B remains **outside** the 32-run Tier A batch sweep; results are in `progressive_residual_summary.csv` (b12, b14 rows) and documented in `final_report.md` §7.4.
 
 #### Tier C — Out of scope (not in pipeline)
 
@@ -191,7 +193,7 @@ All **Tier A** circuits have ≥20 FFs, ensuring at least one non-scan FF at x=5
 | Canonical reporting point | **x = 20%** | Cross-circuit comparison |
 | Fault model | SAF | Fixed |
 
-Total progressive pipeline runs: **8 × 4 = 32** (`run_progressive_residual_sweep.py`).
+Total progressive pipeline runs: **8 × 4 = 32** Tier A (`run_progressive_residual_sweep.py`). Tier B pilot: manual `@20%` runs on b12/b14/b15 (`run_progressive_residual.py --per-target-timeout 30`).
 
 ### Baselines
 
@@ -216,7 +218,7 @@ Do **not** headline cross-ratio absolute FC trends; report pipeline gain per (ci
 
 1. A reproducible **progressive residual T=1→T=2→T=4** analysis pipeline with fixed-denominator union FC on FAN_ATPG
 2. Timing-driven partial-scan **setup** (OpenSTA masks on NanGate45 ITC'99 netlists)
-3. Empirical answer to **how much each pipeline stage adds over T=1** on Tier A benchmarks (June 2026 sweep)
+3. Empirical answer to **how much each pipeline stage adds over T=1** on Tier A benchmarks (June 2026 sweep) and Tier B pilot (b12/b14 @20%)
 
 ## 7. Implementation Status
 
@@ -227,6 +229,7 @@ Do **not** headline cross-ratio absolute FC trends; report pipeline gain per (ci
 | C | `set_nonscan_ff` command, script integration | swear01 | **Done** |
 | D | Progressive residual runner + CSV (`run_progressive_residual.py`) | swear01 | **Done** |
 | E | Tier A pipeline sweep + report update | swear01 | **Done** (32/32 PASS, June 2026) |
+| F | Tier B multi-frame pilot @20% (b12/b14/b15) | swear01 | **Partial** (b12/b14 PASS; b15 T=1 TIMEOUT, June 2026) |
 
 **Verified results (FAN_ATPG, s27, NanGate45, T=1):**
 

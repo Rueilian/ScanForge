@@ -10,7 +10,9 @@
 
 **Primary metric:** progressive T=1→T=2→T=4 **pipeline gain** (`total_gain_pp`) over T=1, not cross-ratio FC comparison.
 
-**Primary data:** [`results/progressive_residual_summary.csv`](../results/progressive_residual_summary.csv)
+**Primary data:** [`results/progressive_residual_summary.csv`](../results/progressive_residual_summary.csv) (32 Tier A runs + Tier B pilot rows for b12/b14 @20%)
+
+**Tier B pilot (June 2026):** b12 +35.4 pp / b14 +13.0 pp pipeline gain @20%; b15 T=1 timeout. See [`final_report.md`](final_report.md) §7.4.
 
 ## Archived
 

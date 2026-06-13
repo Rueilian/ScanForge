@@ -246,6 +246,7 @@ Commercial tools (TetraMAX, Modus) additionally use: multiple ATPG engines (basi
 | 2026-06-10 | b17+ explicitly out of scope for this project phase |
 | 2026-06-10 | SAF only; TDF not on roadmap |
 | 2026-06-10 | `fanoutFreeBacktrace` MUX fix — first S2 deliverable |
+| 2026-06-14 | Tier B pilot: b12/b14 progressive @20% PASS (16–28 min); b15 T=1 TIMEOUT @2h; requires clean FAN rebuild |
 
 ---
 

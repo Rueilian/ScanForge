@@ -109,3 +109,17 @@ report_statistics > rpt/forced_to.rpt
 report_fault > rpt/forced_to_faults.txt
 exit
 ```
+
+---
+
+## 5. Tier B Pilot (June 2026)
+
+Progressive T=1→T=2→T=4 @20% partial-scan on deferred circuits (after FAN rebuild). Per-target timeout 30 s; wall 3600 s (7200 s for b15).
+
+| Circuit | T=1 (s) | T=2 (s) | T=4 (s) | Total gain | TO% | Status |
+|---------|--------:|--------:|--------:|-----------:|----:|--------|
+| b12 | 0.15 | 911.4 | 771.0 | +35.43 pp | 0 | PASS |
+| b14 | 390.9 | 299.0 | 294.7 | +12.97 pp | 0 | PASS |
+| b15 | >7200 | — | — | — | — | T=1 wall TIMEOUT |
+
+No per-target `TO` faults on completed b12/b14 runs. b15 did not reach multi-frame stages. See `docs/final_report.md` §7.4 and `results/progressive_residual_summary.csv` (b12/b14 rows).
