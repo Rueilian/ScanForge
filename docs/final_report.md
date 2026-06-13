@@ -280,11 +280,11 @@ The +43.9pp gain demonstrates that the pipeline correctly recovers faults whose 
 
 ![T-stage union coverage at 20% non-scan](figures/coverage_bar_chart.png)
 
-*Figure 1: Primary metric — union fault coverage after each pipeline stage (20% timing-exclusion setting).*
+*Figure 1: T-stage union coverage after each pipeline stage (20% non-scan; Tier A + Tier B pilot b12/b14).*
 
 ![New detections at T=2 and T=4](figures/recovered_faults_chart.png)
 
-*Figure 2: Count of newly detected faults at each residual stage (20% setting).*
+*Figure 2: New detections at each residual stage (20% non-scan; Tier A + Tier B pilot b12/b14). Dashed line separates Tier A (left) from Tier B (right).*
 
 #### Case study: b03 @20% (only positive pipeline gain)
 

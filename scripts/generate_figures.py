@@ -18,7 +18,8 @@ os.makedirs(FIG_DIR, exist_ok=True)
 
 CSV = os.path.join(REPO, "results", "progressive_residual_summary.csv")
 CANONICAL_RATIO = "0.2"
-CIRCUITS = ["b03", "b04", "b05", "b07", "b08", "b09", "b11", "b13"]
+TIER_A = ["b03", "b04", "b05", "b07", "b08", "b09", "b11", "b13"]
+TIER_B = ["b12", "b14"]  # exclude TIMEOUT rows (e.g. b15)
 
 
 def load_first_rows():
@@ -31,12 +32,16 @@ def load_first_rows():
     return first
 
 
-def rows_at_ratio(first, ratio):
+def rows_at_ratio(first, ratio, circuits):
     out = []
-    for c in CIRCUITS:
+    for c in circuits:
         key = (c, ratio)
-        if key in first:
-            out.append(first[key])
+        if key not in first:
+            continue
+        row = first[key]
+        if row.get("status", "PASS").upper() == "TIMEOUT":
+            continue
+        out.append(row)
     return out
 
 
@@ -47,7 +52,7 @@ def plot_t_stage_bars(rows, out_name, title):
     t124 = [float(r["FC_T1_T2_T4"]) for r in rows]
     gain = [float(r["total_gain_pp"]) for r in rows]
 
-    fig, ax = plt.subplots(figsize=(9, 4.5))
+    fig, ax = plt.subplots(figsize=(11, 4.5))
     x = np.arange(len(labels))
     w = 0.25
     ax.bar(x - w, t1, w, label="T=1", color="#4472C4")
@@ -56,12 +61,16 @@ def plot_t_stage_bars(rows, out_name, title):
     ax.set_ylabel("Fault coverage (%)")
     ax.set_title(title)
     ax.set_xticks(x)
-    ax.set_xticklabels(labels)
+    ax.set_xticklabels(labels, rotation=45, ha="right")
     ax.legend(loc="lower right")
-    ax.set_ylim(80, 100)
+    y_min = min(t1 + t12 + t124)
+    ax.set_ylim(max(0, y_min - 5), 100)
+    tier_b_start = len(TIER_A)
+    if tier_b_start < len(labels):
+        ax.axvline(tier_b_start - 0.5, color="#999999", linestyle="--", linewidth=0.8)
     for i, (g, v) in enumerate(zip(gain, t124)):
         if g > 0:
-            ax.annotate(f"+{g:.2f}pp", (x[i] + w, v + 0.15), ha="center", fontsize=8)
+            ax.annotate(f"+{g:.2f}pp", (x[i] + w, v + 0.8), ha="center", fontsize=7)
     fig.tight_layout()
     fig.savefig(os.path.join(FIG_DIR, out_name), dpi=150)
     plt.close(fig)
@@ -72,7 +81,7 @@ def plot_new_dt(rows, out_name):
     t2new = [int(r["T2_new_DT"]) for r in rows]
     t4new = [int(r["T4_new_DT"]) for r in rows]
 
-    fig, ax = plt.subplots(figsize=(9, 4))
+    fig, ax = plt.subplots(figsize=(11, 4))
     x = np.arange(len(labels))
     w = 0.35
     ax.bar(x - w / 2, t2new, w, label="New DT at T=2", color="#ED7D31")
@@ -80,8 +89,11 @@ def plot_new_dt(rows, out_name):
     ax.set_ylabel("Newly detected faults")
     ax.set_title("Residual recovery at T=2 and T=4 (20% non-scan)")
     ax.set_xticks(x)
-    ax.set_xticklabels(labels)
+    ax.set_xticklabels(labels, rotation=45, ha="right")
     ax.legend()
+    tier_b_start = len(TIER_A)
+    if tier_b_start < len(labels):
+        ax.axvline(tier_b_start - 0.5, color="#999999", linestyle="--", linewidth=0.8)
     fig.tight_layout()
     fig.savefig(os.path.join(FIG_DIR, out_name), dpi=150)
     plt.close(fig)
@@ -89,14 +101,14 @@ def plot_new_dt(rows, out_name):
 
 def main():
     first = load_first_rows()
-    rows20 = rows_at_ratio(first, CANONICAL_RATIO)
+    rows20 = rows_at_ratio(first, CANONICAL_RATIO, TIER_A + TIER_B)
     if not rows20:
         raise SystemExit("No 20% rows found in progressive_residual_summary.csv")
 
     plot_t_stage_bars(
         rows20,
         "coverage_bar_chart.png",
-        "Progressive residual pipeline: T-stage union coverage (20% non-scan)",
+        "Progressive residual pipeline: T-stage union coverage (20% non-scan, Tier A + B)",
     )
     plot_new_dt(rows20, "recovered_faults_chart.png")
 
