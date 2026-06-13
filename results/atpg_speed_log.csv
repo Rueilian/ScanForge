@@ -8,3 +8,7 @@ date,circuit,tier,fc_scan,wall_s,per_target_timeout,threads,git_sha,notes
 2026-06-10,b11,A,97.97,367.48,120,32,d8b6feb,fic_ordering+parallel; outlier
 2026-06-10,b13,A,92.39,0.03,120,32,d8b6feb,fic_ordering+parallel
 2026-06-10,b11,A,TIMEOUT,3600.05,0,32,d8b6feb,fic_ordering+parallel; no per_target cap
+2026-06-14,b12,B,,1682.51,30,0,,progressive T1-T2-T4 @20%; total_gain +35.43pp; FC 39.4→74.8%
+2026-06-14,b14,B,,984.50,30,0,,progressive T1-T2-T4 @20%; total_gain +12.97pp; FC 74.7→87.6%
+2026-06-14,b14,B,94.64,416.93,30,0,,full-scan T=1 pilot (post-rebuild)
+2026-06-14,b15,B,,7200.00,30,0,,T=1 TIMEOUT @20%; pipeline incomplete
