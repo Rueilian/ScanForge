@@ -1,19 +1,16 @@
 # Archived Results
 
-Superseded or legacy experiment outputs. **Do not use for the current report.**
+**Out of scope for agents and the current report.** Listed in `.cursorignore`.
 
-| File / directory | Superseded by |
-|------------------|---------------|
-| `itc99_partial_scan.csv` | `progressive_residual_summary.csv` (T=1→T=2→T=4 pipeline) |
-| `progressive_residual_summary_two_phase.csv` | Same; two-phase A/B from stale-mask era |
-| `t4_timeout_baseline_summary.csv` | Pipeline sweep + `docs/archive/t4_timeout_analysis.md` |
-| `all_experiments.csv` | Progressive residual summary |
-| `timing_exclusion/` | Legacy ISCAS ScanForge stress/timing proxy sweeps |
-| `tdd_stage1/` | s27 TDD debug CSVs |
-| `legacy_demos/` | Tiny `.sf` / s27 demo artifacts |
+| File / directory | Notes |
+|------------------|-------|
+| `progressive_residual_summary_multiratio_*.csv` | Old 32-run sweeps (5/10/15/20%) — superseded |
+| `progressive_residual_summary_two_phase.csv` | Two-phase A/B from stale-mask era |
+| `itc99_partial_scan.csv` | Legacy T=8 sweep |
+| `timing_exclusion/` | ISCAS ScanForge stress/timing proxy |
+| Other CSVs | Historical experiments |
 
-**Active results:**
+**Active results (10% only):**
 
-- `progressive_residual_summary.csv` — Tier A pipeline (32 runs)
-- `phase_d_fullscan_dataset.csv` — full-scan FC_scan baselines
-- `appendix_phase_d_fullscan_raw.csv`, `atpg_speed_log.csv` — full-scan appendix / logs
+- `../progressive_residual_summary.csv` — **8 rows**, Tier A @ 10%
+- `../phase_d_fullscan_dataset.csv` — full-scan FC_scan baselines (ratio = 0%)
