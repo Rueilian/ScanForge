@@ -130,8 +130,37 @@ def process(src, scan_insert=False):
             src = src[:-len('endmodule')] + '\n' + block + '\nendmodule'
 
     # ---- Pass 8: drop .QN() only when the net is otherwise unused ----
+    # Never strip QN from flip-flop cells; FAN requires .QN() on all FF types.
+    # Strategy: find every FF instantiation (balanced-paren body), collect its QN nets.
+    _ff_types_pat = r'(?:DFFR_X[12]|DFFS_X[12]|DFFRS_X[12]|SDFFR_X[12]|SDFFS_X[12]|SDFFRS_X[12])'
+    _ff_qn_nets: set[str] = set()
+    for fm in re.finditer(rf'\b{_ff_types_pat}\s+\w+\s*\(', src, re.DOTALL):
+        # Walk forward from fm.end() to find the matching closing paren
+        start = fm.end() - 1  # position of '('
+        depth = 0
+        body_chars = []
+        idx = start
+        while idx < len(src):
+            ch = src[idx]
+            if ch == '(':
+                depth += 1
+                if depth > 1:
+                    body_chars.append(ch)
+            elif ch == ')':
+                depth -= 1
+                if depth == 0:
+                    break
+                body_chars.append(ch)
+            else:
+                body_chars.append(ch)
+            idx += 1
+        body = ''.join(body_chars)
+        for nm in re.finditer(r'\.QN\(\s*(\w+)\s*\)', body):
+            _ff_qn_nets.add(nm.group(1))
     for m in list(re.finditer(r'\.QN\(\s*(\w+)\s*\)', src)):
         net = m.group(1)
+        if net in _ff_qn_nets:
+            continue  # always keep QN on FF cells
         if len(re.findall(rf'\b{re.escape(net)}\b', src)) <= 2:
             src = re.sub(rf',\s*\.QN\(\s*{re.escape(net)}\s*\)', '', src)
             src = re.sub(rf'^\s*wire\s+{re.escape(net)}\s*;\s*\n', '', src, flags=re.M)
