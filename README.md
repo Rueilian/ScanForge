@@ -2,7 +2,7 @@
 
 Sequential ATPG research pipeline for evaluating **progressive T=1→T=2→T=4 fault-coverage gain** on timing-driven partial-scan ITC'99 benchmarks.
 
-**Research focus:** How much does the multi-frame residual pipeline add **beyond T=1**? Non-scan ratios (5/10/15/20%) are experimental setup, not the primary comparison axis.
+**Research focus:** Progressive T=1→T=2→T=4 **pipeline gain** at **10%** non-scan exclusion only.
 
 **Authoritative direction:** [`docs/spec.md`](./docs/spec.md) | [`docs/final_report.md`](./docs/final_report.md) | [`docs/README.md`](./docs/README.md)
 
@@ -26,10 +26,10 @@ ScanForge/
 │   ├── gen_nonscan_masks.sh           — OpenSTA + mask generation
 │   ├── generate_figures.py            — report figures
 │   └── archive/                       — legacy runners (T=8 sweep, ISCAS tools)
-├── masks/                 # non-scan masks: masks/<circuit>_x<ratio>.mask
+├── masks/                 # non-scan FF lists: masks/<circuit>_x10.mask
 ├── results/
-│   ├── progressive_residual_summary.csv — 32-run pipeline results (primary)
-│   ├── phase_d_fullscan_dataset.csv     — full-scan FC_scan baselines
+│   ├── progressive_residual_summary.csv — 8-run pipeline results (@10%)
+│   ├── phase_d_fullscan_dataset.csv     — B2 full-scan FC_scan_coll
 │   └── archive/                         — superseded CSVs and legacy sweeps
 ├── docs/
 │   ├── README.md            — doc index (active vs archive)
@@ -75,18 +75,19 @@ bash scripts/synth_itc99.sh
 
 ```bash
 bash scripts/gen_nonscan_masks.sh
-# output: masks/<circuit>_x{5,10,15,20}.mask
+# output: masks/<circuit>_x10.mask
 ```
 
 ### 6. Run progressive residual pipeline (primary evaluation)
 
 ```bash
-# Single case:
-ATPG_PER_TARGET_TIMEOUT=0 python3 scripts/run_progressive_residual.py \
-  --circuit b03 --ratio 0.20 --nonscan $(cat masks/b03_x20.mask | tr '\n' ' ')
+# Single case (@10%):
+ATPG_PER_TARGET_TIMEOUT=0 ATPG_WALL_TIMEOUT=7200 python3 scripts/run_progressive_residual.py \
+  --circuit b03 --ratio 0.10 --nonscan $(cat masks/b03_x10.mask | tr '\n' ' ')
 
-# Tier A sweep (8 circuits × 4 ratios = 32 runs):
-ATPG_PER_TARGET_TIMEOUT=0 python3 scripts/run_progressive_residual_sweep.py
+# Tier A sweep (8 circuits @ 10%):
+ATPG_PER_TARGET_TIMEOUT=0 ATPG_WALL_TIMEOUT=7200 \
+  python3 scripts/run_progressive_residual_sweep.py --fresh
 
 # Regenerate report figures:
 python3 scripts/generate_figures.py
@@ -101,41 +102,45 @@ python3 scripts/generate_figures.py
 grep -cE '\bDFFR?S?_X[12]\b' FAN_ATPG/mod_netlist/b03.v   # should be ~31
 
 # Mask sanity
-wc -l masks/b03_x5.mask    # should be ceil(31 × 0.05) = 2
+wc -l masks/b03_x10.mask
 
 # ATPG sanity — progressive pipeline summary
 head -3 results/progressive_residual_summary.csv
-grep 'b03,0.2' results/progressive_residual_summary.csv
+grep 'b03,0.1' results/progressive_residual_summary.csv
 ```
 
 ---
 
-## Evaluation Cases
+## Evaluation — B1, Experiment, B2
 
-| Case | Description | Metric |
-|------|-------------|--------|
-| **T=1 partial-scan** | Non-scan FFs, single frame | FC_T1 (pipeline baseline) |
-| **+ residual T=2** | ATPG on R1 = F − D1 | FC_T1_T2, gain_T2_pp |
-| **+ residual T=4** | ATPG on R2 = F − D1 − D2 | FC_T1_T2_T4, **total_gain_pp** |
-| `full_scan` | x=0%, separate dataset | FC_scan (context only) |
+| Role | Setup | Metric | Data |
+|------|-------|--------|------|
+| **B1** | Partial-scan @10%, T=1 | `FC_T1` | `progressive_residual_summary.csv` |
+| **Experiment** | Partial-scan @10%, T=1→T=2→T=4 | `FC_T1_T2_T4` | same CSV |
+| **B2** | Full-scan, T=1 | `FC_scan_coll` | `phase_d_fullscan_dataset.csv` |
 
-Primary question: **total_gain_pp = FC_T1_T2_T4 − FC_T1**, not FC vs exclusion ratio.
+### Results @10% (June 2026, 7/8 complete)
+
+| Circuit | B1 | Experiment | B2 | Exp−B1 | B2−Exp |
+|---------|---:|-----------:|---:|-------:|-------:|
+| b03 | 89.54% | 89.54% | 91.62% | 0.00 | +2.08 pp |
+| b04 | 87.60% | 87.60% | 93.46% | 0.00 | +5.86 pp |
+| b05 | 92.81% | 92.81% | 95.34% | 0.00 | +2.53 pp |
+| b07 | 93.50% | 93.50% | 93.46% | 0.00 | −0.04 pp |
+| b08 | 92.75% | 92.75% | 94.03% | 0.00 | +1.28 pp |
+| b09 | 87.63% | 87.63% | 93.44% | 0.00 | +5.81 pp |
+| b13 | 87.59% | 87.59% | 91.13% | 0.00 | +3.54 pp |
+| b11 | — | — | 97.43% | — | — (T=1 TIMEOUT) |
+
+Full table: [`docs/final_report.md`](./docs/final_report.md) §7.2.
 
 ---
 
 ## Current Status (June 2026)
 
-**Completed:**
-- Progressive residual T=1→T=2→T=4 pipeline + union FC accounting
-- OpenSTA mask regeneration on aligned gate-level netlists
-- Tier A sweep: **32/32 PASS** → `results/progressive_residual_summary.csv`
-- Report updated: `docs/final_report.md`
+**Scope:** Tier A @ **10%** only. Two baselines: **B1** partial T=1, **B2** full-scan.
 
-**Key result @20% exclusion:** only **b03** shows pipeline gain (**+2.16pp**, all from T=2); all other Tier A circuits **0.00pp** gain.
-
-**Open issues:**
-- Full-scan FC_scan (91–97%) still has AU/UD headroom — separate from pipeline evaluation
-- b11 pipeline runtime ~277s @20% with zero gain
+**Sweep:** 7/8 PASS in `progressive_residual_summary.csv`; **b11 T=1 TIMEOUT** @ 7200 s. See [`docs/final_report.md`](./docs/final_report.md) §7.2 for B1/B2 comparison table.
 
 ---
 
@@ -197,7 +202,7 @@ Options:
   --timing-ranking <csv>    Timing-criticality CSV
   --timing-netlist <v>      Gate-level netlist for timing-depth proxy
   --exclude-ratio <ratio>   Mark top ratio as non-scan
-  --exclude-sweep           Sweep 5/10/15/20% exclusion ratios
+  --exclude-sweep           Sweep exclusion ratios (legacy ISCAS'89 only)
   --exclude-summary-csv <path>  Write exclusion-sweep summary CSV
   --mode <co|combined|random|co_wear|...>  FF selection strategy
   --lambda <x>              Penalty weight for wear modes

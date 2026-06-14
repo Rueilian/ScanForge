@@ -10,9 +10,9 @@
 
 ## Abstract
 
-In scan-based testing, some flip-flops may remain non-scan due to timing or physical constraints, creating a partial-scan circuit where single-frame ATPG loses controllability and observability. We implement a *progressive residual multi-frame ATPG* pipeline on FAN_ATPG: run T=1 on all faults, target only the residual set at T=2, then target the remaining residual at T=4, and report union coverage FC(T1∪T2∪T4) over the fixed T=1 fault denominator. **The primary evaluation question is how much each pipeline stage adds beyond T=1**, not how fault coverage varies across different non-scan exclusion ratios.
+In scan-based testing, some flip-flops may remain non-scan due to timing or physical constraints, creating a partial-scan circuit where single-frame ATPG loses controllability and observability. We implement a *progressive residual multi-frame ATPG* pipeline on FAN_ATPG and evaluate it against **two baselines**: **(B1)** partial-scan T=1 coverage (`FC_T1`) and **(B2)** full-scan coverage (`FC_scan_coll`).
 
-On the sanity case s27 (3 FFs, 67% non-scan), the pipeline recovers +43.9pp (37.9% → 81.8%), confirming correct sequential residual handling. On Tier A ITC'99 benchmarks with regenerated OpenSTA masks aligned to our gate-level netlists (June 2026 sweep), T=1 already achieves 87.6–96.5% FC at the canonical 20% timing-exclusion setting; **only b03 shows measurable pipeline gain (+2.16pp, entirely from T=2; T=4 adds 0)**. All other evaluated circuits show 0.00pp gain from T=2 and T=4 at every tested exclusion setting (5/10/15/20%), indicating that residual faults are already resolved at T=1 or are not sequentially recoverable at shallow depth. We conclude that the progressive T=1→T=2→T=4 pipeline is a sound analysis framework, but on current Tier A partial-scan instances its practical benefit is limited except where T=1 coverage is intentionally low.
+On the sanity case s27 (3 FFs, 67% non-scan), the pipeline recovers +43.9pp vs B1 (37.9% → 81.8%). On Tier A ITC'99 @ **10%** (June 2026, 7/8 complete): **B1** 87.6–93.5%, **Experiment** equals B1 (0 pp gain), **B2** 91.1–97.4%; remaining gap **B2−Experiment** is 0–5.9 pp unchanged by the pipeline. b11 partial-scan B1 did not finish (7200 s timeout).
 
 ---
 
@@ -41,13 +41,13 @@ This approach preserves T=1 detections, reduces the number of faults targeted at
 
 ### 1.4 Scope and Positioning
 
-This work does **not** propose a new ATPG search algorithm, a new partial-scan selection method, or a new fault model. Timing-driven non-scan FF selection (OpenSTA minimum-path-slack ranking at fixed ratios 5/10/15/20%) is **experimental setup only**: it produces realistic partial-scan circuits. The **research focus** is:
+This work does **not** propose a new ATPG search algorithm, a new partial-scan selection method, or a new fault model. Timing-driven non-scan FF selection uses OpenSTA minimum-path-slack ranking at a **fixed 10%** exclusion ratio — **experimental setup only**. The **research focus** is:
 
 1. **Does the progressive T=1→T=2→T=4 pipeline increase fault coverage beyond T=1 alone?**
 2. **At which stage (T=2 vs T=4) are residual faults recovered, if at all?**
 3. **What is the runtime cost of each stage relative to the coverage gain?**
 
-Cross-ratio comparison of absolute partial-scan FC is **not** a research question; ratios are repeated experimental conditions for the same pipeline evaluation.
+Cross-ratio comparison of absolute partial-scan FC is **not** part of this study; only **x = 10%** is evaluated.
 
 ---
 
@@ -101,11 +101,9 @@ Our analysis questions are:
 2. **RQ2 (stage attribution):** How much of that gain comes from residual T=2 vs residual T=4?
 3. **RQ3 (cost):** What are the T=1 / T=2 / T=4 runtimes, and is deeper staging justified by recovered fault count?
 
-Secondary baselines (direct T=4 on residuals, naive T=4-all) support interpretation but are not the headline metric.
-
 **Important:** For each (circuit, ratio) case, all comparisons use the same T=1 collapsed fault set F as denominator. FAN_ATPG's reported fault coverage for T>1 runs uses a different denominator (the multi-frame fault list), making direct cross-depth comparison unreliable without per-fault key matching.
 
-**Full-scan baseline metric (2026-06-09):** We report **FC_scan** as the primary stuck-at coverage for `ratio=0` full-scan runs. Per commercial DFT practice (Cummings, SNUG 2002), async reset/control primary inputs are held inactive during scan ATPG and their stuck-at faults are classified as tied (TI), excluded from the scan-protocol denominator. Raw fault coverage (FC_raw), which treats reset as a free PI, is reported in the appendix only. Implementation: FAN applies scan protocol automatically after `add_fault --all` (overridable via `set_scan_protocol off`); see `docs/archive/superpowers/plans/2026-06-09-scan-protocol-fc-metric.md`.
+**Full-scan baseline metric:** We report **FC_scan** as the primary stuck-at coverage for `ratio=0` full-scan runs. Per commercial DFT practice, async reset/control primary inputs are held inactive during scan ATPG and their stuck-at faults are classified as tied (TI), excluded from the scan-protocol denominator. FAN applies scan protocol automatically after `add_fault --all`.
 
 ---
 
@@ -125,11 +123,9 @@ Output: Final detection set D_final, coverage FC_final
 7. FC_final ← |D_final| / |F|
 ```
 
-**Baselines for comparison:**
+**Secondary baseline:**
 
-- **Naive T=4-all:** ATPG(T=4, target=F). Run T=4 on all original faults.
-- **Union(T=1, T=4-all):** D1 ∪ D4_all. Tests whether multi-frame detection adds beyond T=1.
-- **T=1→T=4 residual:** ATPG(T=4, target=R1). Skips T=2 to test whether T=2 is necessary.
+- **T=1→T=4 residual:** ATPG(T=4, target=R1). Skips T=2 to test whether T=2 is necessary. Used in s27 sanity case only.
 
 ### 4.1 Why Residual Targeting
 
@@ -146,7 +142,7 @@ FAN_ATPG's `report_statistics` for T>1 runs reports fault coverage against the m
 1. Extract per-fault D1, D2, D4 sets using `report_fault` with stable (gateID, faultyLine, faultType) keys.
 2. Compute union coverage |D1 ∪ D2 ∪ D4| / |F| using the T=1 fault count |F|.
 
-This approach guarantees that **pipeline stage FC values are comparable within each (circuit, x) case**. Cross-ratio absolute FC is reported only as secondary replication; the headline metric is **total_gain_pp** at each x (canonical: 20%).
+This approach guarantees that **pipeline stage FC values are comparable within each circuit** at the fixed 10% setup. The headline metric is **total_gain_pp**.
 
 ---
 
@@ -194,27 +190,33 @@ These are infrastructure fixes; they are not claimed as research contributions.
 | Circuit | Source | FFs | Role |
 |---------|--------|-----|------|
 | s27 | ISCAS'89 | 3 | Sanity / pipeline verification |
-| b07 | ITC'99 | 45 | Stress case |
-| b13 | ITC'99 | 65 | Stress case |
+| b03 | ITC'99 | 30 | Tier A |
+| b04 | ITC'99 | 66 | Tier A |
+| b05 | ITC'99 | 88 | Tier A |
+| b07 | ITC'99 | 44 | Tier A |
+| b08 | ITC'99 | 67 | Tier A |
+| b09 | ITC'99 | 29 | Tier A |
+| b11 | ITC'99 | 84 | Tier A (T=1 timeout) |
+| b13 | ITC'99 | 86 | Tier A |
 
-s27 has only 3 FFs and serves as a sanity check. b07 and b13 are the primary stress cases. ITC'99 circuits are synthesized to NanGate45 gate-level Verilog using Yosys.
+s27 has only 3 FFs and serves as a sanity check. The 8 ITC'99 Tier A circuits are synthesized to NanGate45 gate-level Verilog using Yosys; FF counts are from the synthesized netlists.
 
 ### 6.2 Partial-Scan Setup (Not the Primary Variable)
 
-OpenSTA ranks FFs by minimum-path-slack on our synthesized NanGate45 gate-level netlists. The top x% most timing-critical FFs are designated non-scan. Masks were **regenerated June 2026** (`scripts/gen_nonscan_masks.sh`, OpenSTA 3.1.0, `FAN_ATPG/mod_netlist/b*.v`).
+OpenSTA ranks FFs by minimum-path-slack on our synthesized NanGate45 gate-level netlists. The top **10%** most timing-critical FFs are designated non-scan. Masks: `masks/<circuit>_x10.mask` (`scripts/gen_nonscan_masks.sh`, June 2026).
 
-We evaluate the **same T=1→T=2→T=4 pipeline** at x ∈ {5%, 10%, 15%, 20%} as repeated conditions. The **canonical reporting point** for cross-circuit comparison is **x = 20%** (largest non-scan set per circuit while keeping Tier A sweep manageable).
+| Circuit | FF total (approx.) | Non-scan @10% | Mask |
+|---------|-------------------:|--------------:|------|
+| b03 | 30 | 4 | `masks/b03_x10.mask` |
+| b04 | 66 | 7 | `masks/b04_x10.mask` |
+| b05 | 88 | 9 | `masks/b05_x10.mask` |
+| b07 | 44 | 5 | `masks/b07_x10.mask` |
+| b08 | 67 | 7 | `masks/b08_x10.mask` |
+| b09 | 29 | 3 | `masks/b09_x10.mask` |
+| b11 | 84 | 9 | `masks/b11_x10.mask` |
+| b13 | 86 | 9 | `masks/b13_x10.mask` |
 
-| Circuit | FF total (approx.) | Non-scan @20% | Mask source |
-|---------|-------------------:|--------------:|-------------|
-| b03 | 30 | 7 | `masks/b03_x20.mask` |
-| b04 | 66 | 14 | `masks/b04_x20.mask` |
-| b05 | 88 | 18 | `masks/b05_x20.mask` |
-| b07 | 44 | 9 | `masks/b07_x20.mask` |
-| b08 | 67 | 6 | `masks/b08_x20.mask` |
-| b09 | 29 | 6 | `masks/b09_x20.mask` |
-| b11 | 84 | 12 | `masks/b11_x20.mask` |
-| b13 | 86 | 13 | `masks/b13_x20.mask` |
+Only 10% is evaluated.
 
 ### 6.3 ATPG Configuration
 
@@ -222,22 +224,31 @@ We evaluate the **same T=1→T=2→T=4 pipeline** at x ∈ {5%, 10%, 15%, 20%} a
 - Pipeline depths: T=1 (all faults), T=2 (residual R1), T=4 (residual R2)
 - Static/dynamic compression: off (progressive residual runner)
 - Two-phase ATPG + state justification: **on by default** in FAN_ATPG (engine optimizations; not the measured independent variable)
-- Wall timeout: 3600 s; per-target timeout: 0 s (Tier A sweep)
-- Results file: `results/progressive_residual_summary.csv` (32 runs = 8 circuits × 4 ratios)
+- Wall timeout: 7200 s (b11); per-target timeout: 0 s
+- Results file: `results/progressive_residual_summary.csv` (**8 runs** = 8 circuits @ 10%)
 
-### 6.4 Metrics (Pipeline-Centric)
+### 6.4 Metrics and Baselines
 
-| Metric | Definition |
-|--------|------------|
-| **FC_T1** | \|D1\| / \|F\| — single-frame partial-scan baseline |
-| **FC_T1_T2** | \|D1 ∪ D2\| / \|F\| — union after residual T=2 |
-| **FC_T1_T2_T4** | \|D1 ∪ D2 ∪ D4\| / \|F\| — final pipeline union |
-| **gain_T2_pp** | FC_T1_T2 − FC_T1 |
-| **gain_T4_pp** | FC_T1_T2_T4 − FC_T1_T2 |
-| **total_gain_pp** | FC_T1_T2_T4 − FC_T1 |
-| **T1_rt / T2_rt / T4_rt** | Wall time per stage (seconds) |
+**Two baselines** anchor all Tier A reporting:
 
-Full-scan FC_scan baselines (ratio = 0%) are reported separately in `results/phase_d_fullscan_dataset.csv` for context only.
+| Baseline | Setup | Metric | Source |
+|----------|-------|--------|--------|
+| **B1 — Partial-scan T=1** | 10% non-scan, single frame | **FC_T1** | `progressive_residual_summary.csv` |
+| **B2 — Full-scan** | All FFs scan, T=1 | **FC_scan_coll** | `phase_d_fullscan_dataset.csv` |
+
+Pipeline and comparison metrics (same T=1 fault denominator |F| for partial-scan runs):
+
+| Metric | Definition | Compares |
+|--------|------------|----------|
+| **FC_T1** | \|D1\| / \|F\| | **B1** |
+| **FC_T1_T2_T4** | \|D1 ∪ D2 ∪ D4\| / \|F\| | **Experiment** (T=1→T=2→T=4) |
+| **total_gain_pp** | FC_T1_T2_T4 − FC_T1 | Experiment vs **B1** |
+| **partialscan_gap_pp** | FC_scan_coll − FC_T1 | **B2 − B1** |
+| **remaining_gap_pp** | FC_scan_coll − FC_T1_T2_T4 | **B2 − Experiment** |
+| gain_T2_pp, gain_T4_pp | Stage attribution | vs **B1** |
+| T1_rt / T2_rt / T4_rt | Wall time per stage | Cost |
+
+Full-scan runs use the scan-protocol denominator (reset held inactive; TI faults excluded). Partial-scan and full-scan |F| differ slightly per circuit; FC values are compared as reported percentages, not raw fault counts.
 
 ---
 
@@ -257,65 +268,60 @@ The +43.9pp gain demonstrates that the pipeline correctly recovers faults whose 
 
 **This result should not be interpreted as representative of scalability.** s27 has only 3 FFs and its residual fault profile is favorable for sequential recovery.
 
-### 7.2 Primary Result: T-Stage Pipeline Gain (@20% Non-Scan)
+### 7.2 Primary Result: B1 → Experiment → B2 (@10% Non-Scan)
 
-**Data source:** `results/progressive_residual_summary.csv`, first complete sweep after mask regeneration (June 2026). Denominator |F| is the T=1 collapsed fault count for each case.
+**B1 & experiment:** `results/progressive_residual_summary.csv`. **B2:** `results/phase_d_fullscan_dataset.csv` (`fc_scan_coll`).
 
-| Circuit | Excl FFs | \|F\| | FC T=1 | FC T1∪T2 | FC T1∪T2∪T4 | ΔT2 (pp) | ΔT4 (pp) | **Total gain** | T1 (s) | T2 (s) | T4 (s) |
-|---------|--------:|------:|-------:|---------:|-------------:|---------:|---------:|---------------:|-------:|-------:|-------:|
-| b03 | 7 | 833 | 88.36% | 90.52% | 90.52% | +2.16 | 0.00 | **+2.16** | 0.01 | 0.01 | 0.01 |
-| b04 | 14 | 2347 | 87.60% | 87.60% | 87.60% | 0.00 | 0.00 | 0.00 | 3.91 | 2.54 | 3.36 |
-| b05 | 18 | 4562 | 92.81% | 92.81% | 92.81% | 0.00 | 0.00 | 0.00 | 0.68 | 0.77 | 1.09 |
-| b07 | 9 | 1631 | 93.50% | 93.50% | 93.50% | 0.00 | 0.00 | 0.00 | 0.01 | 0.01 | 0.01 |
-| b08 | 6 | 2290 | 92.75% | 92.75% | 92.75% | 0.00 | 0.00 | 0.00 | 0.04 | 0.01 | 0.01 |
-| b09 | 6 | 954 | 87.63% | 87.63% | 87.63% | 0.00 | 0.00 | 0.00 | 0.02 | 0.02 | 0.02 |
-| b11 | 12 | 6909 | 96.54% | 96.54% | 96.54% | 0.00 | 0.00 | 0.00 | 66.92 | 88.66 | 121.20 |
-| b13 | 13 | 2079 | 87.59% | 87.59% | 87.59% | 0.00 | 0.00 | 0.00 | 0.02 | 0.01 | 0.01 |
+**Experiment** = progressive residual pipeline **T=1 → T=2 → T=4**, union FC `FC_T1_T2_T4` over the T=1 fault denominator.
 
-![T-stage union coverage at 20% non-scan](figures/coverage_bar_chart.png)
+| Circuit | Excl | \|F\| | **B1** partial T=1 | **Experiment** T1∪T2∪T4 | **B2** full-scan | Exp−B1 (pp) | B2−Exp (pp) | +DT@T2 | +DT@T4 | Status |
+|---------|-----:|------:|-------------------:|-------------------------:|-----------------:|------------:|------------:|-------:|-------:|--------|
+| b03 | 4 | 841 | 89.54% | 89.54% | 91.62% | 0.00 | +2.08 | 0 | 0 | PASS |
+| b04 | 7 | 2347 | 87.60% | 87.60% | 93.46% | 0.00 | +5.86 | 0 | 0 | PASS |
+| b05 | 9 | 4562 | 92.81% | 92.81% | 95.34% | 0.00 | +2.53 | 0 | 0 | PASS |
+| b07 | 5 | 1631 | 93.50% | 93.50% | 93.46% | 0.00 | −0.04 | 0 | 0 | PASS |
+| b08 | 7 | 2290 | 92.75% | 92.75% | 94.03% | 0.00 | +1.28 | 0 | 0 | PASS |
+| b09 | 3 | 954 | 87.63% | 87.63% | 93.44% | 0.00 | +5.81 | 0 | 0 | PASS |
+| b13 | 9 | 2079 | 87.59% | 87.59% | 91.13% | 0.00 | +3.54 | 0 | 0 | PASS |
+| b11 | 9 | — | — | — | 97.43% | — | — | — | — | T=1 TIMEOUT |
 
-*Figure 1: Primary metric — union fault coverage after each pipeline stage (20% timing-exclusion setting).*
+**Reading the three coverage columns:**
+
+| Column | Meaning |
+|--------|---------|
+| **B1** | Partial-scan @10%, single-frame ATPG — lower bound / pipeline baseline |
+| **Experiment** | Our T=1→T=2→T=4 progressive residual method |
+| **B2** | Full-scan single-frame ATPG — upper reference |
+
+| Derived column | Meaning |
+|----------------|---------|
+| **Exp−B1** | Pipeline gain (`total_gain_pp`) — did multi-frame staging help? |
+| **B2−Exp** | Remaining gap to full-scan (`remaining_gap_pp`) — did the experiment close the partial-scan penalty? |
+| **+DT@T2 / +DT@T4** | New detections at each residual stage |
+
+On all 7 completed circuits: **Exp = B1** (0 pp gain); **B2−Exp = B2−B1** (pipeline closes none of the partial-scan gap).
+
+![T-stage union coverage at 10% non-scan](figures/coverage_bar_chart.png)
+
+*Figure 1: B1 (T=1) vs pipeline union FC per circuit (10% non-scan).*
 
 ![New detections at T=2 and T=4](figures/recovered_faults_chart.png)
 
-*Figure 2: Count of newly detected faults at each residual stage (20% setting).*
+*Figure 2: New DT at each residual stage vs B1 (10% setting).*
 
-#### Case study: b03 @20% (only positive pipeline gain)
+### 7.3 Key Observations
 
-| Stage | New DT | Union FC | Notes |
-|-------|-------:|---------:|-------|
-| T=1 | 736 | 88.36% | 97 residual targets |
-| T=2 | **+18** | **90.52%** | entire +2.16pp gain |
-| T=4 | +0 | 90.52% | no additional recovery |
+1. **Two baselines separate two questions.** B1→pipeline measures sequential recovery; B2→B1 measures partial-scan penalty at T=1. Both must be reported.
 
-### 7.3 Pipeline Gain vs Exclusion Ratio (Secondary)
+2. **Partial-scan loss vs full-scan is 0–5.9 pp** on completed Tier A circuits (b07 ≈ 0 pp). Largest gaps: b04, b09 (~5.8 pp).
 
-The table below confirms that **pipeline gain is flat (0 pp) at 5/10/15% for all circuits**; only **b03 @20%** shows non-zero gain. This supports treating ratio as setup variation, not the main experimental axis.
+3. **Pipeline adds 0 pp vs B1** on all 7 completed circuits. **Remaining gap to B2 is unchanged** — T=2/T=4 detect no additional faults.
 
-| Circuit | 5% gain | 10% gain | 15% gain | 20% gain |
-|---------|--------:|---------:|---------:|---------:|
-| b03 | 0.00 | 0.00 | 0.00 | **+2.16** |
-| b04 | 0.00 | 0.00 | 0.00 | 0.00 |
-| b05 | 0.00 | 0.00 | 0.00 | 0.00 |
-| b07 | 0.00 | 0.00 | 0.00 | 0.00 |
-| b08 | 0.00 | 0.00 | 0.00 | 0.00 |
-| b09 | 0.00 | 0.00 | 0.00 | 0.00 |
-| b11 | 0.00 | 0.00 | 0.00 | 0.00 |
-| b13 | 0.00 | 0.00 | 0.00 | 0.00 |
+4. **b11** full-scan **B2 = 97.43%**, but partial-scan **B1 was not obtained** (T=1 wall timeout at 7200 s).
 
-### 7.4 Key Observations
+5. **Mask alignment.** Sweep reads `masks/<circuit>_x10.mask`; CSV `excluded_ff` equals mask line count.
 
-1. **T=1 dominates.** With aligned masks and current FAN_ATPG, partial-scan T=1 FC is already 87.6–96.5% at 20% exclusion — close to full-scan baselines in `phase_d_fullscan_dataset.csv` (91–97% FC_scan). The pipeline question becomes: *can T=2/T=4 recover the remaining gap?*
-
-2. **Pipeline gain is rare on Tier A.** Only **b03 @20%** benefits (+2.16pp, all from T=2). Every other (circuit, ratio) pair shows **0.00pp** total gain.
-
-3. **T=4 does not help at current depth.** Even when T=2/T=4 runtimes are large (b11: 67s + 89s + 121s), **T4_new_DT = 0** everywhere in the sweep.
-
-4. **High T=1 FC does not imply low runtime.** b11 T=1 FC is 96.54% but T=1 alone takes ~67s due to fault count (~6909) and search cost; pipeline stages add ~210s with zero coverage return.
-
-5. **Prior draft results superseded.** Earlier report tables showing b07/b13 T=1 FC in the 40–66% range and +8–12pp pipeline gain used **stale non-scan masks** (wrong FF instance names after netlist rebuild). After OpenSTA mask regeneration on our gate-level netlists, b07/b13 T=1 FC recovers to ~93%/88% with **0 pp pipeline gain**.
-
-### 7.5 Denominator and Coverage Accounting
+### 7.4 Denominator and Coverage Accounting
 
 FAN_ATPG's `report_statistics` for multi-frame circuits reports fault counts against a fault list that may differ from the T=1 collapsed list. We observed that the T=4-all reported fault total sometimes exceeds the T=1 total (more gates → more faults), making direct FC comparison unreliable across depths.
 
@@ -330,25 +336,63 @@ Our union coverage is computed externally using stable fault keys (gateID, fault
 
 ### 8.1 When the T=1→T=2→T=4 Pipeline Helps
 
-The s27 sanity case (+43.9pp) and b03 @20% (+2.16pp) show the intended behavior: residual faults undetectable at T=1 because non-scan state is not freely controllable, but detectable after 2-frame sequential justification. **The measured variable is pipeline gain (ΔFC), not absolute partial-scan FC at different ratios.**
+The s27 sanity case (+43.9pp) shows the intended behavior: residual faults undetectable at T=1 because non-scan state is not freely controllable, but detectable after multi-frame sequential justification. **The measured variable is pipeline gain (ΔFC), not absolute partial-scan FC.**
 
-### 8.2 When the Pipeline Does Not Help (Current Tier A)
+### 8.2 When the Pipeline Does Not Help (Current Tier A @10%)
 
-For b04–b13 (except b03 @20%), total pipeline gain is **0.00pp** at all tested ratios. With regenerated masks, T=1 partial-scan FC is already within a few points of full-scan FC_scan. Residual faults at T=2/T=4 are predominantly re-classified as AU without new DT — consistent with structurally hard or engine-untestable faults, not with “T=1 was artificially low.”
+On 7/8 completed circuits, **total_gain_pp = 0** vs **B1**. The **partialscan_gap_pp** to **B2** (0–5.9 pp) is **fully unchanged** after T=2/T=4. The 0-gain result has two independent root causes detailed in §8.6: (1) UD residuals are QN-pin structural observability gaps that FAN_ATPG's engine excludes from targeting at any frame depth; (2) AU residuals are targeted by T=2 but remain untestable because timing-slack-selected non-scan FFs fall outside the AU fault fan-out cones.
 
-**b11** is the extreme runtime case: ~277s total pipeline time @20% with 0 pp gain. Deep multi-frame search on ~239 residual faults is expensive even when coverage is flat.
+**b11:** **B2 = 97.43%** full-scan; partial-scan **B1 not measured** (T=1 timeout @ 7200 s).
 
-### 8.3 Full-Scan FC Context
+### 8.3 Interpreting B1 vs B2
 
-Full-scan FC_scan remains 91–97% on Tier A (`phase_d_fullscan_dataset.csv`). Partial-scan T=1 at 20% exclusion is not dramatically lower on most circuits; therefore **the headroom for pipeline recovery is small**. Improving absolute full-scan FC (reducing AU/UD) is a separate engine/netlist-quality topic, not the progressive pipeline metric.
+**B2 − B1** is the partial-scan coverage penalty at single-frame depth. It is **not** the pipeline metric. On b04/b09 the penalty is ~5.8 pp; the pipeline recovers **none** of it at T=2/T=4. Closing the gap to full-scan would require improvements beyond the current progressive residual flow (e.g., engine AU reduction, different non-scan selection, or deeper frames — not observed to help here).
 
 ### 8.4 T=2 vs T=4
 
-Where gain occurs (b03 @20%), **all recovery is at T=2**; T=4 adds nothing. For deployment, T=1→T=4 residual may suffice when T=2 gain is zero across a pilot sweep.
+On completed @10% runs, **T=4 adds nothing** where T=2 gain is zero.
 
 ### 8.5 Priority Scoring (Negative Result)
 
 Static fault priority scoring (observability/controllability distance, cone size, fanout) showed **no lift over random ordering** for predicting T=2/T=4 recovery. Abandoned.
+
+### 8.6 Root Cause: Residual Fault Profile Decomposition at @10%
+
+Two structurally distinct fault categories compose R1, and each blocks pipeline improvement by a different mechanism.
+
+**Category 1 — UD faults (QN observability gap, faultyLine = −4).**
+In all 7 completed circuits, 100% of UD faults carry `faultyLine = −4`, denoting QN-pin stuck-at faults on flip-flops. FAN_ATPG's ATPG main loop excludes these faults from pattern generation via the condition `faultyLine >= 0` (`atpg.cpp:94`); the same filter applies at T=2 and T=4. The faults are correctly loaded from the residual fault file but are never targeted. Crucially, the same faults appear as UD in B2 (full scan):
+
+| Circuit | B1 UD | B2 UD | Difference |
+|---------|------:|------:|-----------:|
+| b03     |    64 |    62 |          2 |
+| b04     |   137 |   134 |          3 |
+| b05     |   178 |   176 |          2 |
+| b07     |    92 |    90 |          2 |
+| b08     |   138 |   136 |          2 |
+| b09     |    62 |    60 |          2 |
+| b13     |   182 |   180 |          2 |
+
+The ≤3-fault difference is attributable to fault collapsing differences between B1 and B2 denominators. QN observability is a design-level structural property, unchanged by scan configuration. UD faults contribute ≈0.1 pp to the B2−B1 gap; they cannot be recovered by any frame depth.
+
+**Category 2 — AU faults (non-scan FF outside fault fan-out cone).**
+The remaining R1 faults are AU with `faultyLine >= 0` — combinational-gate stuck-at faults that FAN_ATPG targets normally at T=2. Partial scan produces substantially more AU faults than full scan:
+
+| Circuit | B1 AU | B2 AU | Extra AU in B1 |
+|---------|------:|------:|---------------:|
+| b03     |    24 |    21 |              3 |
+| b04     |   154 |    40 |            114 |
+| b05     |   150 |    65 |             85 |
+| b07     |    14 |    33 |            −19 †|
+| b08     |    28 |     1 |             27 |
+| b09     |    56 |     6 |             50 |
+| b13     |    76 |     9 |             67 |
+
+†b07: partial scan produces *fewer* AU than full scan. This anomaly occurs because the excluded FF outputs are in a region where their unknown state relaxes, rather than tightens, testability constraints for certain faults.
+
+The B2−B1 gap is almost entirely explained by this AU count difference. T=2 targets all AU faults in R1 but finds 0 new patterns at @10%. A multi-ratio experiment (x5/x10/x15/x20; archived sweep data) demonstrates that T=1 DT, AU, and FC are **completely flat across all ratios** for 5/6 circuits (b04, b05, b07, b08, b09): adding more non-scan FFs does not change which faults are AU. This confirms that the timing-slack-selected FFs are structurally outside the fan-out cones of the AU faults — their state does not influence AU fault detectability, so T=2 state justification has no effect.
+
+**Effective T=2 target count.** The residual fault file for b04 contains 291 entries (`R1_count`), but the engine targets only the 154 AU faults (`faultyLine >= 0`). The 134 UD faults (`faultyLine = −4`), 2 TI faults, and 1 AB fault are loaded but filtered before pattern generation. The pipeline infrastructure is correct; the 0-gain result is a property of the fault profile, not a loading or accounting error.
 
 ---
 
@@ -386,25 +430,24 @@ Test power during scan shift is an active research area [7][14][15]. Scan-chain 
 
 ## 10. Limitations and Threats to Validity
 
-1. **Benchmark set.** Tier A: 8 ITC'99 circuits; progressive pipeline evaluated at 4 non-scan ratios (setup replication).
-2. **Primary metric scope.** Report emphasizes **pipeline gain (ΔFC)**, not cross-ratio absolute FC trends.
-3. **Canonical point.** Cross-circuit comparison uses **20% exclusion** unless noted.
-4. **s27 is toy-scale.** +43.9pp is pipeline verification only.
-5. **Shallow depth.** T=8 not evaluated; T=4 adds 0 gain in current sweep.
-6. **Mask/netlist alignment.** Results supersede prior drafts that used stale masks (wrong FF names → artificially low T=1 FC on b07/b13).
-7. **Full-scan ceiling.** Partial-scan T=1 already near full-scan on most Tier A circuits, limiting observable pipeline headroom.
-8. **AU semantics.** FAN AU is operational (search failure), not formal untestability proof.
-9. **Single ATPG backend.** Cross-tool validation not performed.
+1. **Benchmark set.** Tier A: 8 ITC'99 circuits @ **10%** non-scan; **7/8** partial-scan runs complete (b11 T=1 timeout).
+2. **Two baselines.** Report **B1** (partial T=1) and **B2** (full-scan) for every circuit; pipeline vs **B1**, gap vs **B2**.
+3. **s27 is toy-scale.** +43.9pp vs B1 is pipeline verification only.
+4. **Shallow depth.** T=8 not evaluated; T=4 adds 0 gain in current @10% sweep.
+5. **Mask/netlist alignment.** Regenerate `masks/<circuit>_x10.mask` after netlist changes.
+6. **Full-scan ceiling.** Partial-scan T=1 already near full-scan on most Tier A circuits.
+7. **AU semantics.** FAN AU is operational (search failure), not formal untestability proof.
+8. **Single ATPG backend.** Cross-tool validation not performed.
 
 ---
 
 ## 11. Conclusion
 
-We implemented a reproducible progressive residual T=1→T=2→T=4 ATPG pipeline with fixed-denominator union accounting on FAN_ATPG. **The evaluation targets pipeline coverage gain over T=1**, not partial-scan FC as a function of exclusion ratio.
+We implemented a reproducible progressive residual T=1→T=2→T=4 ATPG pipeline with fixed-denominator union accounting. Evaluation uses **two baselines**: partial-scan T=1 (**B1**) and full-scan (**B2**).
 
-On regenerated OpenSTA masks aligned to our gate-level netlists (June 2026), Tier A partial-scan T=1 FC is already high (87.6–96.5% @20% exclusion). **Only b03 @20% shows non-zero pipeline benefit (+2.16pp, entirely from T=2).** All other (circuit, ratio) configurations show 0.00pp gain through T=4 despite non-trivial runtime on large circuits (notably b11).
+At 10% non-scan exclusion, **B1** is 87.6–93.5% on 7/8 Tier A circuits; **B2** is 91.1–97.4%. Partial-scan loss (**B2 − B1**) is 0–5.9 pp. **Pipeline gain vs B1 is 0.00 pp** everywhere completed; the gap to **B2** is unchanged. The pipeline is validated on s27; on current Tier A @10% it does not recover additional coverage beyond **B1**, and does not close the distance to **B2**.
 
-The pipeline is validated (s27, b03) and should be applied selectively when T=1 partial-scan FC leaves a measurable residual gap. On current Tier A instances, deeper staging is mostly a cost without coverage return; improving full-scan FC remains an orthogonal engine/netlist-quality effort.
+Fault profile analysis (§8.6) identifies two independent causes. First, UD residuals are QN-pin stuck-at faults (`faultyLine = −4`) that the FAN_ATPG engine excludes from pattern generation at any frame depth; these faults are structurally identical in B1 and B2 and contribute ≈0 pp to the B2−B1 gap. Second, AU residuals are targeted by T=2 but remain untestable because timing-slack-selected non-scan FFs lie outside the AU fault fan-out cones; a multi-ratio experiment confirms T=1 coverage is flat regardless of the exclusion ratio for 5/6 circuits. Closing the B2−B1 gap requires non-scan FF selection aligned to AU fault detection cones, not deeper frame expansion.
 
 ---
 
@@ -414,10 +457,10 @@ The pipeline is validated (s27, b03) and should be applied selectively when T=1 
 
 | File | Content |
 |------|---------|
-| `results/progressive_residual_summary.csv` | 32-run Tier A pipeline results (8 circuits × 4 ratios) |
-| `results/phase_d_fullscan_dataset.csv` | Full-scan FC_scan baselines (ratio = 0%) |
+| `results/progressive_residual_summary.csv` | B1 + pipeline (@10%, 7/8 complete) |
+| `results/phase_d_fullscan_dataset.csv` | **B2** full-scan FC_scan_coll |
 | `results/residual_faults/` | Per-stage residual fault list files |
-| `masks/*_slack.csv`, `masks/*_x*.mask` | OpenSTA slack ranking + non-scan masks (regenerated June 2026) |
+| `masks/*_slack.csv`, `masks/*_x10.mask` | OpenSTA slack ranking + non-scan masks (regenerated June 2026) |
 | `results/archive/` | Superseded CSVs (legacy T=8 sweep, two-phase A/B, ISCAS timing) |
 
 ### B. Engineering Fixes
@@ -439,6 +482,8 @@ The pipeline is validated (s27, b03) and should be applied selectively when T=1 
 | Tier B (b12/b14/b15) | Deferred — hour-scale / crash; out of Tier A pipeline sweep |
 | T=8 pipeline depth | Not evaluated; T=4 adds 0 pp on current Tier A sweep |
 | Archived legacy CSVs | `results/archive/` — do not cite for current report |
+| Non-scan FF selection (cone-aware) | Timing-slack selection shown ineffective for 5/6 circuits (flat T=1 FC across x5–x20); AU fault fan-out cone alignment is the required property for pipeline gain |
+| UD faults (QN, l=−4) | Structurally untestable in both B1 and B2; not reducible by frame depth; design-level observability issue |
 
 ---
 

@@ -8,7 +8,7 @@ Modern industrial testing flows aim to insert scan on as many flip-flops (FFs) a
 
 This project focuses on partial-scan sequential ATPG under timing-driven non-scan constraints. The **primary research question** is whether a **progressive T=1→T=2→T=4 residual pipeline** improves stuck-at fault coverage **beyond T=1 alone** on the same partial-scan circuit.
 
-Timing-driven non-scan FF selection (top x% by OpenSTA slack) is **experimental setup** that produces realistic partial-scan instances. **Cross-ratio FC comparison is not a research goal**; ratios 5/10/15/20% repeat the same pipeline evaluation under different exclusion sizes.
+Timing-driven non-scan FF selection (OpenSTA top **10%** by slack) is **experimental setup** that produces realistic partial-scan instances. **Only 10% is evaluated**.
 
 ## 2. Problem Statement
 
@@ -41,8 +41,8 @@ What are T=1 / T=2 / T=4 runtimes, and is deeper staging justified by newly dete
 
 ### Setup parameters (not primary RQs)
 
-- **Non-scan ratio x ∈ {5%, 10%, 15%, 20%}:** repeated conditions; canonical cross-circuit point = **20%**.
-- **Full-scan baseline (x=0%):** context only (`phase_d_fullscan_dataset.csv`); not the pipeline comparison baseline for RQ1–RQ3.
+- **Non-scan ratio:** fixed at **10%** (`masks/<circuit>_x10.mask`).
+- **Full-scan baseline (B2):** `FC_scan_coll` from `phase_d_fullscan_dataset.csv` — upper bound for comparing partial-scan loss and remaining gap after pipeline.
 
 ## 4. Proposed Method
 
@@ -50,7 +50,7 @@ What are T=1 / T=2 / T=4 runtimes, and is deeper staging justified by newly dete
 
 The ITC'99 benchmark circuits are synthesized to gate-level netlists using Yosys with a **base-gate NanGate45 liberty** (`NangateOpenCellLibrary_base.lib`). Allowed combinational cells: INV/AND/OR/NAND/NOR/XOR and **MUX2**; **OAI*/AOI* compound cells are forbidden** and expanded to primitives by ABC. Sequential cells use `DFFR_X1` (converted to `SDFFR_X1` + scan chain by `fixup_verilog.py --full-scan`).
 
-Netlists are produced by the reproducible pipeline (`scripts/build_itc99_netlists.sh`): RTL prep → Yosys → fixup → validate. See [`docs/archive/superpowers/plans/2026-06-09-primitive-netlist-pipeline-complete.md`](./archive/superpowers/plans/2026-06-09-primitive-netlist-pipeline-complete.md).
+Netlists are produced by the reproducible pipeline (`scripts/build_itc99_netlists.sh`): RTL prep → Yosys → fixup → validate.
 
 Static timing analysis (OpenSTA) uses the **full** `NangateOpenCellLibrary_typical.lib` for timing. Each FF is assigned a criticality score equal to the minimum path slack on any timing path passing through it. FFs are sorted by ascending slack (most timing-critical first), and the top `x%` are marked as non-scan.
 
@@ -63,7 +63,7 @@ FAN_ATPG `PARTIAL_SEQUENTIAL` mode unrolls the circuit across multiple time fram
 - **Non-scan FFs:** frame *t* PPI driven by frame *t−1* PPO (state carries across frames)
 - **Scan FFs:** each frame PPI is independently controllable (scan load)
 
-The engine supports arbitrary depth; **primary evaluation uses T=1, T=2, and T=4** (§4.3). Legacy `scripts/archive/run_atpg_sweep.py` used T=8 and is archived.
+The engine supports arbitrary depth; **primary evaluation uses T=1, T=2, and T=4** (§4.3).
 
 At T=1 with correct partial-scan semantics, non-scan FF initial state is **X** and PPIs are not freely assigned — this yields pipeline baseline **FC_T1**.
 
@@ -142,30 +142,26 @@ run_atpg
 report_statistics
 ```
 
-**Owner: swear01 — DONE** (32/32 Tier A sweep in `results/progressive_residual_summary.csv`)
-
-### 4.4 Legacy single-depth sweep (secondary)
-
-`scripts/archive/run_atpg_sweep.py` ran fixed **T=8** per ratio (archived). It is **not** the primary RQ1–RQ3 metric. Use `results/progressive_residual_summary.csv`.
+**Owner: swear01 — DONE** (7/8 complete; b11 T=1 TIMEOUT @ 7200 s — see `results/progressive_residual_summary.csv`)
 
 ## 5. Experimental Plan
 
 ### Benchmarks
 
-ITC'99 sequential benchmarks synthesized to NanGate45 gate-level Verilog using Yosys. Netlists live in `FAN_ATPG/mod_netlist/b*.v`. Scope is tiered — see [`docs/archive/superpowers/plans/2026-06-10-saf-atpg-speed-improvement.md`](./archive/superpowers/plans/2026-06-10-saf-atpg-speed-improvement.md) and `scripts/archive/itc99_benchmark_scope.sh`.
+ITC'99 sequential benchmarks synthesized to NanGate45 gate-level Verilog using Yosys. Netlists live in `FAN_ATPG/mod_netlist/b*.v`.
 
 #### Tier A — Active (8 circuits, ATPG sweeps)
 
-| Circuit | RTL FFs | FC_scan (full-scan, 2026-06-10) | ATPG runtime |
+| Circuit | RTL FFs | B2 FC_scan_coll (June 2026) | ATPG runtime |
 |---|---:|---:|---|
-| b03 | 31 | 90.59% | < 0.01 s |
-| b04 | 67 | 94.62% | < 1 s |
-| b05 | 88 | 95.47% | < 0.2 s |
-| b07 | 45 | 92.98% | < 0.01 s |
-| b08 | 28 | 95.47% | < 2 s |
-| b09 | 29 | 94.58% | < 0.01 s |
-| b11 | 84 | 97.80% | < 0.2 s |
-| b13 | 86 | 91.54% | < 0.01 s |
+| b03 | 31 | 91.62% | < 0.01 s |
+| b04 | 67 | 93.46% | < 1 s |
+| b05 | 88 | 95.34% | < 0.2 s |
+| b07 | 45 | 93.46% | < 0.01 s |
+| b08 | 28 | 94.03% | < 2 s |
+| b09 | 29 | 93.44% | < 0.01 s |
+| b11 | 84 | 97.43% | < 0.2 s |
+| b13 | 86 | 91.13% | < 0.01 s |
 
 #### Tier B — Deferred (netlist built; ATPG excluded until engine speed fix)
 
@@ -179,38 +175,39 @@ ITC'99 sequential benchmarks synthesized to NanGate45 gate-level Verilog using Y
 
 `b17`, `b18`, `b20`, `b21`, `b22` and mega-ISCAS (`s35932`, `s38417`, `s38584`). Deferred until FAN SAF engine matures on Tier B.
 
-All **Tier A** circuits have ≥20 FFs, ensuring at least one non-scan FF at x=5%.
+All **Tier A** circuits have ≥20 FFs, ensuring a meaningful non-scan set at **x = 10%**.
 
 ### Parameter sweep
 
 | Parameter | Values | Role |
 |---|---|---|
 | Circuits (Tier A) | b03, b04, b05, b07, b08, b09, b11, b13 | Benchmarks |
-| Non-scan ratio `x` | 5%, 10%, 15%, 20% | **Setup replication** (not primary axis) |
+| Non-scan ratio `x` | **10% only** | Fixed partial-scan setup |
 | Pipeline depths | T=1, T=2, T=4 | **Primary measured axis** |
-| Canonical reporting point | **x = 20%** | Cross-circuit comparison |
 | Fault model | SAF | Fixed |
 
-Total progressive pipeline runs: **8 × 4 = 32** (`run_progressive_residual_sweep.py`).
+Total progressive pipeline runs: **8** (`run_progressive_residual_sweep.py`).
 
 ### Baselines
 
-| Baseline | Description |
-|---|---|
-| **FC_T1** | Partial-scan, single frame — pipeline baseline |
-| **FC_T1_T2 / FC_T1_T2_T4** | Progressive union after each stage |
-| **Full-scan FC_scan** | x=0%, separate dataset — context only |
+All Tier A comparisons use **two baselines plus our experiment**, reported in order **B1 → Experiment → B2**:
 
-### Evaluation metrics (primary)
+| Role | Setup | Metric | Data source |
+|---|---|---|---|
+| **B1 — Partial-scan T=1** | 10% non-scan FFs, single frame | **FC_T1** | `results/progressive_residual_summary.csv` |
+| **Experiment — Progressive pipeline** | Same partial-scan, T=1→T=2→T=4 residual | **FC_T1_T2_T4** | same CSV |
+| **B2 — Full-scan** | All FFs scan, T=1, scan protocol | **FC_scan_coll** | `results/phase_d_fullscan_dataset.csv` |
 
-| Metric | Purpose |
-|---|---|
-| **total_gain_pp** | FC_T1_T2_T4 − FC_T1 — **headline result** |
-| gain_T2_pp, gain_T4_pp | Stage attribution |
-| T2_new_DT, T4_new_DT | Recovered fault count |
-| T1_rt, T2_rt, T4_rt | Cost |
+Pipeline stages and derived metrics:
 
-Do **not** headline cross-ratio absolute FC trends; report pipeline gain per (circuit, x), summarize @20%.
+| Quantity | Definition | Compares to |
+|---|---|---|
+| **FC_T1_T2_T4** (experiment) | Union after progressive T=1→T=2→T=4 | **Our method** — column between B1 and B2 |
+| **total_gain_pp** | FC_T1_T2_T4 − FC_T1 | Experiment vs **B1** |
+| **partialscan_gap_pp** | FC_scan_coll − FC_T1 | **B2 vs B1** (partial-scan loss) |
+| **remaining_gap_pp** | FC_scan_coll − FC_T1_T2_T4 | **B2 vs experiment** (unclosed gap) |
+
+**Report layout:** every results table must show three coverage columns in order: **B1 → Experiment → B2**, then derived pp columns.
 
 ## 6. Expected Contributions
 
@@ -226,35 +223,15 @@ Do **not** headline cross-ratio absolute FC trends; report pipeline gain per (ci
 | B | `PARTIAL_SEQUENTIAL` mode in FAN_ATPG | swear01 | **Done** |
 | C | `set_nonscan_ff` command, script integration | swear01 | **Done** |
 | D | Progressive residual runner + CSV (`run_progressive_residual.py`) | swear01 | **Done** |
-| E | Tier A pipeline sweep + report update | swear01 | **Done** (32/32 PASS, June 2026) |
+| E | Tier A pipeline sweep + report update | swear01 | **Done** (7/8 PASS; b11 T=1 TIMEOUT @ 7200 s, June 2026) |
 
-**Verified results (FAN_ATPG, s27, NanGate45, T=1):**
+**ITC'99 pipeline status (June 2026 — complete):**
 
-| Circuit | Mode | x | T | Fault coverage | DT | AU |
-|---|---|---|---|---|---|---|
-| s27 | Full scan | 0% | 1 | 94.55% | 104 | 0 |
-| s27 | Partial scan no recovery | 67% | 1 | 39.36% | 37 | 55 |
-
-The T=1 `partial_scan_no_recovery` case now correctly separates from `full_scan` (94.55% vs 39.36%), confirming non-scan FFs are not treated as scan-controllable. Pattern traces confirm non-scan PPIs are `X` and non-scan PPOs are not observable.
-
-**Verified results (FAN_ATPG, s27, NanGate45, T=4):**
-
-| Circuit | Mode | x | T | Fault coverage |
-|---|---|---|---|---|
-| s27 | Partial scan with recovery | 67% | 4 | 88.68% |
-
-**ITC'99 pipeline status (2026-06-09):**
-
-- **In progress:** base-gate netlist pipeline (`build_itc99_netlists.sh`) — targets undriven=0, OAI/AOI-free netlists, all 11 ITC loadable in FAN
-- **Working (Phase D):** b03 FC_scan **93%**, b07 **94%** (with current compound atomic gates + partial netlists)
-- **Planned migration:** keep FAN **`Gate::MUX`** (D1); revert OAI/AOI atomic gates (D3.2/D3.3); rely on synthesis to expand OAI/AOI
-- Non-scan masks: 55/55 mask files exist; **regenerate after netlist rebuild** if FF instance names change
-- Full-scan baseline uses **FC_scan** (scan-protocol auto-TI on `add_fault --all`); see `docs/archive/superpowers/plans/2026-06-09-scan-protocol-fc-metric.md`
-- Known netlist blockers (pre-pipeline): b05/b08–b15 undriven or syntax errors — addressed by prep + validate gate, not hand edits
-
-**Multi-frame SAF correctness note** (resolved in FAN_ATPG commit `f927b34`):
-
-Pattern `PIFrames_` now stores all PI frames. `writeAtpgValToPatternPI()` writes all frames. Simulator replays all frames. SAF faults are mapped to the final observation frame consistently across ATPG, fault injection, and fault simulation.
+- **Done:** base-gate netlist pipeline (`build_itc99_netlists.sh`) — undriven=0, OAI/AOI-free, all 11 ITC circuits loadable in FAN
+- **Done:** `Gate::MUX` kept (Phase D1); OAI/AOI atomic gates reverted (D3.2/D3.3 rolled back); ABC expands OAI/AOI during synthesis
+- **Done:** all ITC netlists pass `validate_netlist.py` (undriven=0, no OAI/AOI) — ATPG sweeps complete
+- Non-scan masks: **11 × x10 masks** in `masks/<circuit>_x10.mask`
+- Full-scan baseline: `results/phase_d_fullscan_dataset.csv` (`fc_scan_coll`); scan-protocol auto-TI active
 
 ## 8. Scope
 
@@ -296,11 +273,3 @@ No important decision should remain only in chat history.
 - **OAI*/AOI*** compound cells are **forbidden** in synthesis output; ABC maps them to INV/AND/OR/NAND/NOR primitives.
 - FAN **reverts D3.2/D3.3** OAI/AOI atomic gates once base-gate pipeline is validated; D1 MUX and Phase C fixes remain.
 - ITC netlists must pass `validate_netlist.py` (undriven=0, no OAI/AOI) before ATPG sweeps.
-- Plan: [`docs/archive/superpowers/plans/2026-06-09-primitive-netlist-pipeline-complete.md`](./archive/superpowers/plans/2026-06-09-primitive-netlist-pipeline-complete.md)
-- Multi-frame head-line justification note:
-  - In `PARTIAL_SEQUENTIAL` ATPG, a head line whose value has already been fixed by
-    fault activation or propagation must still be eligible for upstream
-    justification.
-  - `findFinalObjective()` must not silently discard non-`X` head lines if they
-    still need justification; otherwise a valid multi-frame sequence can be
-    misclassified as `AU` before any real search occurs.
