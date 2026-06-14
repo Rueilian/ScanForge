@@ -154,7 +154,11 @@ def main():
     if t1["status"] != "PASS":
         print(f"  {t1['status']}")
         return
-    print(f"  FC={t1['fc']:.2f}% DT={t1['dt']} AU={t1['au']} ({t1['elapsed']:.1f}s)")
+    if t1.get("fc") is None:
+        print("  ERROR: T=1 report missing fault coverage")
+        return
+    t1_elapsed = t1.get("elapsed") or 0.0
+    print(f"  FC={t1['fc']:.2f}% DT={t1['dt']} AU={t1['au']} ({t1_elapsed:.1f}s)")
 
     t1_faults, _ = parse_faults(os.path.join(RPT_DIR, f"{tag}_t1_all_faults.txt"))
     if not t1_faults:

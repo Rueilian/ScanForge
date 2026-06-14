@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate report figures from progressive_residual_summary.csv.
 
-Primary chart: T=1 / T1∪T2 / T1∪T2∪T4 at the canonical 20% partial-scan setting.
+Primary chart: T=1 / T1∪T2 / T1∪T2∪T4 at the fixed 10% partial-scan setting.
 """
 import csv
 import os
@@ -17,7 +17,7 @@ FIG_DIR = os.path.join(REPO, "docs", "figures")
 os.makedirs(FIG_DIR, exist_ok=True)
 
 CSV = os.path.join(REPO, "results", "progressive_residual_summary.csv")
-CANONICAL_RATIO = "0.2"
+CANONICAL_RATIO = "0.1"
 CIRCUITS = ["b03", "b04", "b05", "b07", "b08", "b09", "b11", "b13"]
 
 
@@ -78,7 +78,7 @@ def plot_new_dt(rows, out_name):
     ax.bar(x - w / 2, t2new, w, label="New DT at T=2", color="#ED7D31")
     ax.bar(x + w / 2, t4new, w, label="New DT at T=4", color="#70AD47")
     ax.set_ylabel("Newly detected faults")
-    ax.set_title("Residual recovery at T=2 and T=4 (20% non-scan)")
+    ax.set_title("Residual recovery at T=2 and T=4 (10% non-scan)")
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
     ax.legend()
@@ -91,12 +91,12 @@ def main():
     first = load_first_rows()
     rows20 = rows_at_ratio(first, CANONICAL_RATIO)
     if not rows20:
-        raise SystemExit("No 20% rows found in progressive_residual_summary.csv")
+        raise SystemExit("No 10% rows found in progressive_residual_summary.csv")
 
     plot_t_stage_bars(
         rows20,
         "coverage_bar_chart.png",
-        "Progressive residual pipeline: T-stage union coverage (20% non-scan)",
+        "Progressive residual pipeline: T-stage union coverage (10% non-scan)",
     )
     plot_new_dt(rows20, "recovered_faults_chart.png")
 

@@ -42,7 +42,8 @@ CIRCUITS=(
   "b15:b15:CLOCK"
 )
 
-NONSCAN_RATIOS="0.05 0.10 0.15 0.20"
+# Active evaluation uses 10% only; other ratios live in masks/archive/.
+NONSCAN_RATIOS="0.10"
 
 for entry in "${CIRCUITS[@]}"; do
   IFS=: read -r cname module clk_port <<< "$entry"
