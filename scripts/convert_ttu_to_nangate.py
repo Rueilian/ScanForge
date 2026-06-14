@@ -51,13 +51,15 @@ def convert(src: str, circuit_name: str) -> str:
     lines = src.splitlines()
     out_lines: list[str] = []
 
+    # TTU files sometimes have a primitive `module dff(CK,Q,D)` before the actual circuit.
+    # Track whether we are inside the target module (circuit_name) or a primitive stub.
+    in_target_module = False
     module_name = circuit_name
     inputs: list[str] = []
     outputs: list[str] = []
     wires: list[str] = []
     dff_lines: list[str] = []   # DFFR_X1 cells (must appear first for FAN's createCircuitPPI)
     comb_lines: list[str] = []  # all other cells
-    preamble_done = False
 
     i = 0
     while i < len(lines):
@@ -71,10 +73,17 @@ def convert(src: str, circuit_name: str) -> str:
             line = line.rstrip() + ' ' + lines[i].strip()
         i += 1
 
-        # Module header
+        # Module header: reset state; only process if this is the target module
         m = _MODULE_RE.match(line)
         if m:
-            module_name = circuit_name  # always use circuit name, not s953_bench etc.
+            raw_name = m.group(1).lower()
+            in_target_module = (raw_name == circuit_name.lower())
+            # Reset per-module accumulators
+            inputs = []; outputs = []; wires = []
+            dff_lines = []; comb_lines = []
+            continue
+
+        if not in_target_module:
             continue
 
         # Input ports — strip GND/VDD but keep CK
@@ -139,6 +148,7 @@ def convert(src: str, circuit_name: str) -> str:
             continue
 
         if re.match(r'^\s*endmodule', line):
+            in_target_module = False
             # Ensure CK is declared as input (needed when DFFs use implicit 2-port form)
             if 'CK' not in inputs and any('.CK(CK)' in gl for gl in dff_lines):
                 inputs.insert(0, 'CK')

@@ -28,7 +28,8 @@ require_tool curl
 mkdir -p "$TTU_DIR" "$LOG_DIR" "$OUT_DIR"
 
 # circuit_name (module name will be circuit_name after conversion)
-TARGETS=(s953 s1196 s1238 s5378)
+# s208 is not available on TTU (HTTP 404); s27/s510 have <10 FFs (full-scan only)
+TARGETS=(s27 s510 s953 s1196 s1238 s5378 s9234 s15850 s35932 s38417 s38584)
 
 FAIL=0
 
@@ -74,4 +75,4 @@ if [[ "$FAIL" -ne 0 ]]; then
   echo "Build finished with failures. See $LOG_DIR/" >&2
   exit 1
 fi
-echo "ISCAS'89 netlists ready in $OUT_DIR/s{953,1196,1238,5378}.v"
+echo "ISCAS'89 netlists ready in $OUT_DIR/"

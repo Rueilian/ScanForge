@@ -40,10 +40,17 @@ CIRCUITS=(
   "b13:b13:clock"
   "b14:b14:clock"
   "b15:b15:CLOCK"
+  "s27:s27:CK"
+  "s510:s510:CK"
   "s953:s953:CK"
   "s1196:s1196:CK"
   "s1238:s1238:CK"
   "s5378:s5378:CK"
+  "s9234:s9234:CK"
+  "s15850:s15850:CK"
+  "s35932:s35932:CK"
+  "s38417:s38417:CK"
+  "s38584:s38584:CK"
 )
 
 # Active evaluation uses 10% only; other ratios live in masks/archive/.

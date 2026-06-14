@@ -21,7 +21,8 @@ RUNNER_PY = os.path.join(REPO_ROOT, "scripts", "run_progressive_residual.py")
 SUMMARY_CSV = os.path.join(REPO_ROOT, "results", "iscas89_progressive_residual_summary.csv")
 ARCHIVE_DIR = os.path.join(REPO_ROOT, "results", "archive")
 
-CIRCUITS = ["s953", "s1196", "s1238", "s5378"]
+# s27/s510 have <10 FFs; floor(n*0.1)=0 non-scan → full-scan baseline only, not in this sweep
+CIRCUITS = ["s953", "s1196", "s1238", "s5378", "s9234", "s15850", "s35932", "s38417", "s38584"]
 NONSCAN_RATIO = 0.10
 RATIO_PCT = 10
 
