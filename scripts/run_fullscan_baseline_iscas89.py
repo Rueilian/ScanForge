@@ -24,6 +24,7 @@ CIRCUITS = ["s27", "s510", "s953", "s1196", "s1238", "s5378",
             "s9234", "s15850", "s35932", "s38417", "s38584"]
 
 WALL_TIMEOUT = int(os.environ.get("ATPG_WALL_TIMEOUT", "3600"))
+PER_TARGET_TIMEOUT = float(os.environ.get("ATPG_PER_TARGET_TIMEOUT", "0"))
 
 
 def run_fullscan(circuit: str) -> dict:
@@ -39,12 +40,14 @@ def run_fullscan(circuit: str) -> dict:
         src = f.read()
     ff_count = len(re.findall(r'SDFFR_X1 ', src))
 
+    ptt_line = [f"set_per_target_timeout {PER_TARGET_TIMEOUT:.1f}"] if PER_TARGET_TIMEOUT > 0 else []
     lines = [
         "read_lib techlib/mod_nangate45.mdt",
         f"read_netlist mod_netlist/{circuit}.v",
         "build_circuit --frame 1",
         "set_fault_type saf",
         "add_fault --all",
+        *ptt_line,
         "set_static_compression off",
         "set_dynamic_compression off",
         "run_atpg",
