@@ -49,13 +49,11 @@ If old data seems useful, **ask the user** — do not recover it silently from a
 # Masks (10% only)
 bash scripts/gen_nonscan_masks.sh
 
-# ITC'99 sweep (8 circuits @10%, ptt=5s):
-ATPG_PER_TARGET_TIMEOUT=5 ATPG_WALL_TIMEOUT=3600 \
-  python3 scripts/run_progressive_residual_sweep.py --fresh
+# ITC'99 sweep (8 circuits @10%, no per-target timeout):
+ATPG_WALL_TIMEOUT=3600 python3 scripts/run_progressive_residual_sweep.py --fresh
 
-# ISCAS'89 sweep (9 circuits @10%, ptt=5s):
-ATPG_PER_TARGET_TIMEOUT=5 ATPG_WALL_TIMEOUT=3600 \
-  python3 scripts/run_progressive_residual_iscas89_sweep.py --fresh
+# ISCAS'89 sweep (9 circuits @10%, no per-target timeout):
+ATPG_WALL_TIMEOUT=3600 python3 scripts/run_progressive_residual_iscas89_sweep.py --fresh
 
 # Figures + report tables
 python3 scripts/generate_figures.py
@@ -64,9 +62,9 @@ python3 scripts/generate_figures.py
 Single case:
 
 ```bash
-ATPG_PER_TARGET_TIMEOUT=5 ATPG_WALL_TIMEOUT=3600 python3 scripts/run_progressive_residual.py \
+ATPG_WALL_TIMEOUT=3600 python3 scripts/run_progressive_residual.py \
   --circuit b03 --ratio 0.10 \
-  --nonscan "$(tr '\n' ' ' < masks/b03_x10.mask)"
+  --nonscan "$(tr '\n' ' ' < masks/b03_x10.mask)" --per-target-timeout 0
 ```
 
 ## Build
@@ -80,5 +78,5 @@ export PATH=$HOME/local/bin:$PATH   # yosys, sta
 
 - FAN must run with `cwd=FAN_ATPG/` (runners handle this).
 - Regenerate masks after netlist changes (`scripts/build_itc99_netlists.sh`).
-- **b11 @10%** completed at ptt=5s (T=1: 0.52s, T=2: 13.21s).
+- **b11 @10%** excluded — runner exits silently with no output.
 - Full-scan B2: `results/phase_d_fullscan_dataset.csv` (ITC'99), `results/iscas89_fullscan_baseline.csv` (ISCAS'89).
