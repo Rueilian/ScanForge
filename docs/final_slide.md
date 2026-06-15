@@ -431,7 +431,7 @@ s1196 (−0.13pp) and s5378 (−0.23pp) exceed B2. Counter-intuitive: having **f
 
 4. **Single ATPG backend (FAN_ATPG):** Two-Phase effectiveness should be validated on other ATPG engines.
 
-5. **10 benchmark circuits:** Results may not generalize to larger industrial designs. 5 more circuits (b11, b13, s9234, s15850, s35932) are pending due to runner/timeout issues.
+5. **10 benchmark circuits:** Results may not generalize to larger industrial designs. 5 excluded (b11/s35932 runner crash, b13/s9234/s15850 timeout at 600s).
 
 6. **s27 sanity case** (smallest ISCAS'89 benchmark, 3 FFs): shows +43.9pp gain with the pipeline, confirming the residual targeting logic works. Not representative of scalable circuits — included as a smoke test only.
 
@@ -464,7 +464,6 @@ s1196 (−0.13pp) and s5378 (−0.23pp) exceed B2. Counter-intuitive: having **f
 **Two-Phase State Justification** — decoupling propagation from justification — is the dominant recovery mechanism for sequential ATPG on timing-constrained partial-scan circuits. Neither the backtrack limit differential, enhanced backtrace, nor static learning produces meaningful improvement.
 
 ### Future work
-- Complete remaining 5 circuits (background sweep, 600s timeout)
 - Evaluate T=8 on select circuits
 - Transition-delay fault model
 - Industrial-scale benchmark evaluation

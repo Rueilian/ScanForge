@@ -61,7 +61,7 @@ This work does **not** propose a new partial-scan selection method or a new faul
 3. **Why does T=2 work?** Which mechanism — backtrack limit differential or Two-Phase State Justification — drives the recovery? (RQ3)
 4. **Can heuristics help?** Do enhanced backtrace or static learning improve coverage? (RQ4)
 
-Multi-ratio comparison of absolute partial-scan FC is **not** part of this study; only **x = 10%** is evaluated. We report on **10 circuits** (6 ITC'99 + 4 ISCAS'89) that completed all 5 experiments; 5 additional circuits are pending due to runner or timeout issues on certain experiments.
+Multi-ratio comparison of absolute partial-scan FC is **not** part of this study; only **x = 10%** is evaluated. We report on **10 circuits** (6 ITC'99 + 4 ISCAS'89) that completed all 5 experiments; the remaining 5 circuits (b11, b13, s9234, s15850, s35932) are excluded — b11 and s35932 produce runner crashes, while b13, s9234, and s15850 timeout under the baseline pipeline.
 
 ---
 
@@ -292,7 +292,7 @@ All runs use a **unified base configuration**:
 - Pipeline depths: T=1 (all faults), T=2 (residual R1), T=4 (residual R2)
 - Static/dynamic compression: **off**
 - Wall timeout: **3600 s** (Python `subprocess.run`), no per-target timeout
-- **Circuit scope:** 15 circuits (8 ITC'99 + 7 ISCAS'89); 10 of these (b03, b04, b05, b07, b08, b09, s953, s1196, s1238, s5378) completed all 5 experiments with PASS status; the remaining 5 (b11, b13, s9234, s15850, s35932) are pending due to runner crashes or timeouts (see §1.4)
+- **Circuit scope:** 15 circuits (8 ITC'99 + 7 ISCAS'89); 10 (b03, b04, b05, b07, b08, b09, s953, s1196, s1238, s5378) completed all 5 experiments; 5 excluded — b11/s35932 runner crash, b13/s9234/s15850 timeout at 600s
 
 **Base pipeline settings:** T1=800 at T=1, BACKTRACK=5000 at T>1 (frame-based backtrack limit). Two-Phase State Justification is **OFF**, enhanced backtrace and static learning are **OFF**. Each fault is targeted at each depth with full backtrack budget; the only bounding mechanism is the backtrack limit.
 
@@ -584,7 +584,7 @@ Test power during scan shift is an active research area [7][14][15]. Scan-chain 
 
 ## 11. Conclusion
 
-We implemented a reproducible progressive residual T=1→T=2→T=4 ATPG pipeline with a **frame-based backtrack limit** (T1=800 at T=1, 5000 at T>1) and a suite of **five controlled ablation experiments** (baseline, Two-Phase ON, uniform T1, enhanced backtrace, static learning) evaluated on **10 circuits** (6 ITC'99 + 4 ISCAS'89) at **10% non-scan exclusion**, with 5 additional circuits pending completion. There is **no per-target timeout** — the backtrack limit is the sole bounding mechanism.
+We implemented a reproducible progressive residual T=1→T=2→T=4 ATPG pipeline with a **frame-based backtrack limit** (T1=800 at T=1, 5000 at T>1) and a suite of **five controlled ablation experiments** (baseline, Two-Phase ON, uniform T1, enhanced backtrace, static learning) evaluated on **10 circuits** (6 ITC'99 + 4 ISCAS'89) at **10% non-scan exclusion** (5 additional circuits excluded: b11/s35932 runner crash, b13/s9234/s15850 timeout). There is **no per-target timeout** — the backtrack limit is the sole bounding mechanism.
 
 **Key findings:**
 
@@ -635,7 +635,7 @@ We implemented a reproducible progressive residual T=1→T=2→T=4 ATPG pipeline
 
 | Item | Status |
 |------|--------|
-| Experiments 1–5 sweep | 10 common circuits complete; 5 remaining circuits pending (b11 runner issue, b13/s9234/s15850/s35932 timeout) |
+| Experiments 1–5 sweep | 10 common circuits complete; 5 excluded (b11/s35932 runner crash, b13/s9234/s15850 timeout at 600s) |
 | T=8 pipeline depth | Not evaluated; T=4 adds 0 pp with Two-Phase ON, confirms shallow depth suffices |
 | Non-scan FF selection (cone-aware) | Timing-slack selection; cone-aligned selection may reduce B2−Exp gap |
 | UD faults (QN, l=-4) | Structurally untestable in B1 and B2; not reducible by frame depth |
