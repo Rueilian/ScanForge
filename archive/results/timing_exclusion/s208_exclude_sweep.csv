@@ -1,0 +1,5 @@
+circuit,case,ratio,depth,coverage,pattern_count,runtime_sec,non_scan_ff,scan_ff,coverage_proxy_co,coverage_proxy_combined,pattern_applicability,switching_activity,max_segment_stress,segment_variance,hotspot_count
+s208,partial_scan_no_recovery,0.05,0,0.960526,0,1.5003e-05,1,7,0.970588,0.960526,0,0.275862,0,0,0
+s208,partial_scan_no_recovery,0.1,0,0.960526,0,6.414e-06,1,7,0.970588,0.960526,0,0.275862,0,0,0
+s208,partial_scan_no_recovery,0.15,0,0.960526,0,4.522e-06,1,7,0.970588,0.960526,0,0.275862,0,0,0
+s208,partial_scan_no_recovery,0.2,0,0.894737,0,6.622e-06,2,6,0.911765,0.894737,0,0.258621,0,0,0

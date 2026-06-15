@@ -1,0 +1,5 @@
+circuit,case,ratio,depth,coverage,pattern_count,runtime_sec,test_coverage,DT,AU,AB,UD,non_scan_ff
+s27,full_scan,0.00,1,94.55,7,0.000376,94.55,104,0,0,6,0
+s27,partial_scan_no_recovery,0.67,0,94.55,8,0.000642,94.55,104,0,0,6,2
+s27,full_scan,0.00,1,94.55,7,0.001230,94.55,104,0,0,6,0
+s27,partial_scan_no_recovery,0.67,0,94.55,8,0.007462,94.55,104,0,0,6,2

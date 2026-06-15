@@ -55,27 +55,28 @@ Separates the two problems:
 
 ---
 
-## Slide 4 — Technique 2: Progressive Residual Pipeline + ptt
+## Slide 4 — Technique 2: Frame-Based Backtrack Limit + Progressive Pipeline
 
-### Per-target timeout (ptt)
+### Frame-based backtrack limit
 
-- ATPG spends **at most 5 seconds** per fault at T=1
-- Unresolved → **TO** (timeout), not AU
-- **AU = proven untestable; TO = not yet decided**
+- T=1 uses **FAST=800** backtracks per fault (not 5000)
+- Prevents engine from wasting search on faults structurally blocked by non-scan FF X-state
+- These faults → **AB** (backtrack limit hit), not AU → T=2 retries
+- T>1 uses full BACKTRACK=5000
 
-### Why this matters
+### Per-target timeout (ptt=5s) safety net
 
-Without ptt: T=1 proves hard faults AU → T=2 has nothing to recover  
-With ptt=5s: T=1 leaves hard faults TO → T=2 retries with 2 frames → many become DT
+- Wall-clock bound for very large circuits
+- no_ptt ablation: results **identical** to baseline on 8/8 circuits → backtrack limit is the real mechanism
 
 ### Pipeline flow
 
 ```
-T=1 (all faults, single frame, ptt=5s) → D1
+T=1 (all faults, single frame, FAST=800) → D1
 R1 = all − D1
-T=2 (residual R1, two-frame + Two-Phase) → D2
+T=2 (residual R1, two-frame + Two-Phase, BACKTRACK=5000) → D2
 R2 = R1 − D2
-T=4 (residual R2, four-frame + Two-Phase) → D4
+T=4 (residual R2, four-frame + Two-Phase, BACKTRACK=5000) → D4
 Final = D1 ∪ D2 ∪ D4
 ```
 
@@ -139,23 +140,22 @@ Final = D1 ∪ D2 ∪ D4
 
 ## Slide 8 — Why T=2 Works
 
-### Recovery mechanism
+### Two mechanisms, one recovery engine
 
-- T=1 with ptt=5s: hard faults → TO (not AU)
-- T=2 with Two-Phase:
-  - **non-scan FF blocked faults**: T=1 can't propagate past unknown FF state
-  - T=2: frame 1 justifies FF state → frame 2 propagates fault → DT
-  - **State-dependent faults**: require specific sequential initialization
+**1. Frame-based backtrack limit creates the residual (T=1)**
+- FAST=800 prevents wasted search on non-scan-FF-blocked faults
+- These become AB, not AU → T=2 can retry
 
-### ptt creates the opportunity
+**2. Two-Phase State Justification recovers (T=2)**
+- non-scan FF blocked faults: T=1 can't propagate past unknown FF state
+- T=2: Phase 1 treats non-scan PPIs as free PIs → finds propagation path
+- Phase 2 backward-justifies PPI values through frame 0
 
-Without ptt → T=1 proves AU → T=2 can't retry  
-With ptt=5s → T=1 says TO → T=2 has fresh chance
+### ptt is a safety net, not the mechanism
 
-### Two-Phase makes it efficient
-
-- Standard TFE would hit backtrack limit on multi-frame search
-- Two-Phase decouples propagation from justification → lower backtrack pressure
+- no_ptt ablation: identical results on 8/8 circuits
+- Backtrack limit bounds search before ptt fires
+- ptt=5s only matters for very large circuits (s38417: 1636 FFs)
 
 ---
 
@@ -195,7 +195,7 @@ Pipeline recovers 58.49 of the 66.14pp gap to full-scan.
 
 ## Slide 11 — Limitations
 
-1. **ptt sensitivity**: Results depend on ptt=5s choice
+1. **Backtrack limit sensitivity**: Results depend on FAST=800 / BACKTRACK=5000 choice
 2. **Shallow depth**: T=8 not evaluated
 3. **10% only**: Single fixed ratio
 4. **Single backend**: FAN_ATPG only
@@ -210,14 +210,15 @@ Pipeline recovers 58.49 of the 66.14pp gap to full-scan.
 | Contribution | What | Impact |
 |-------------|------|--------|
 | **Two-Phase** | Decoupled search for multi-frame ATPG | Makes multi-frame practical |
-| **Pipeline + ptt** | Progressive residual with per-target timeout | T=2 recovers +4.68–58.49pp |
+| **Fast backtrack limit** | FAST=800 at T=1, 5000 at T>1 | Creates structural AB residual for T=2 |
+| **Pipeline** | Progressive residual T=1→T=2→T=4 | T=2 recovers +4.68–58.49pp |
 | **Evaluation** | 17 circuits, 2 suites, unified setup | Consistent T=2 gain, T=4 = 0 |
 
 ### Key findings
 
-1. T=2 with ptt recovers coverage on **all 17 circuits**
+1. T=2 recovers coverage on **14/17 circuits** (backtrack limit + Two-Phase)
 2. T=4 adds **0 pp universally** — redundant
-3. Two-Phase + pipeline: **practical methodology** for partial-scan coverage recovery
+3. Two-Phase + fast backtrack limit: **practical methodology** for partial-scan coverage recovery
 
 ### Future work
 
