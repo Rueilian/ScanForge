@@ -33,7 +33,7 @@ How much coverage can multi-frame sequential ATPG recover on timing-constrained 
 
 ---
 
-## Slide 3 — Technique 1: Two-Phase State Justification
+## Slide 3 — Two-Phase State Justification
 
 ### Standard TFE (time-frame expansion)
 
@@ -50,12 +50,11 @@ Separates the two problems:
 | **Phase 1** | disconnect non-scan PPIs → treat them as free PIs → PODEM on **last frame only** |
 | **Phase 2** | backward-justify required non-scan PPI states through frames 0..T−2 |
 
-- Drastically reduces backtrack pressure
-- ON by default in FAN_ATPG multi-frame mode
+Drastically reduces backtrack pressure. **Tested as ablation experiment** (Exp 2).
 
 ---
 
-## Slide 4 — Technique 2: Frame-Based Backtrack Limit + Progressive Pipeline
+## Slide 4 — Frame-Based Backtrack Limit + Progressive Pipeline
 
 ### Frame-based backtrack limit
 
@@ -69,113 +68,101 @@ Separates the two problems:
 - Backtrack limit is the **sole bounding mechanism**
 - No wall-clock timeout per fault
 
-### Pipeline flow
+### Pipeline flow (baseline: Two-Phase OFF)
 
 ```
 T=1 (all faults, 1 frame, T1=800) → D1
 R1 = all − D1
-T=2 (residual R1, 2 frames + Two-Phase, BACKTRACK=5000) → D2
+T=2 (residual R1, 2 frames, BACKTRACK=5000) → D2
 R2 = R1 − D2
-T=4 (residual R2, 4 frames + Two-Phase, BACKTRACK=5000) → D4
+T=4 (residual R2, 4 frames, BACKTRACK=5000) → D4
 Final = D1 ∪ D2 ∪ D4
 ```
 
 ---
 
-## Slide 5 — Experimental Setup
+## Slide 5 — Experimental Setup: 5 Ablation Experiments
 
-### Two benchmark suites
+### Two benchmark suites: 15 circuits
 
 | Suite | Circuits | FFs | Source |
 |-------|----------|-----|--------|
 | ITC'99 | b03–b13 (8) | 29–88 | Yosys + NanGate45 |
-| ISCAS'89 | s953–s38584 (9) | 18–1728 | TTU → NanGate45 |
+| ISCAS'89 | s953–s35932 (7) | 18–1728 | TTU → NanGate45 |
 
 ### Setup
 
 | Parameter | Value |
 |-----------|-------|
 | Non-scan ratio | **10%** (timing-critical, OpenSTA slack ranking) |
-| ATPG engine | FAN_ATPG with Two-Phase (ON) |
+| ATPG engine | FAN_ATPG (baseline: Two-Phase OFF) |
 | Bounding mechanism | **Backtrack limit** (no per-target timeout) |
 | Wall timeout | 3600 s |
-| Total runs | 15 (baseline) + 15 × 2 = **45** (ablation B, C) |
+| **B2** reference ceiling | Full-scan, T=1, all FFs in chain |
+
+### Five controlled experiments
+
+| Exp | Change vs Baseline | RQ |
+|-----|-------------------|----|
+| 1 | Baseline (T1=800, TP=OFF, no heuristics) | How much does plain pipeline recover? |
+| 2 | Two-Phase ON at T>1 | Does decoupling help? |
+| 3 | Uniform T1=5000 at T=1 | Is T1 differential the mechanism? |
+| 4 | Enhanced backtrace ON | Does PCA scoring help? |
+| 5 | Static learning ON | Does early conflict detection help? |
+
+Each experiment = full T1→T2→T4 pipeline on all 15 circuits.
 
 ---
 
-## Slide 6 — Results: ITC'99 (@10%)
+## Slide 6 — Results: ITC'99 [(pending)]
 
-| Circuit | FFs | B1 (T=1) | Exp (T1+T2+T4) | B2 (full-scan) | Exp−B1 | B2−Exp |
-|---------|----:|---------:|---------------:|---------------:|-------:|-------:|
-| b03 | 30 | 44.50% | 85.41% | 91.62% | **+40.91** | +6.21 |
-| b04 | 66 | 75.21% | 84.46% | 93.46% | **+9.25** | +9.00 |
-| b05 | 88 | 29.10% | 87.63% | 95.34% | **+58.53** | +7.71 |
-| b07 | 44 | 56.13% | 87.93% | 93.46% | **+31.80** | +5.53 |
-| b08 | 67 | 72.96% | 91.09% | 94.03% | **+18.13** | +2.94 |
-| b09 | 29 | 76.34% | 87.85% | 93.44% | **+11.51** | +5.59 |
-| b11 | 84 | 66.21% | 94.32% | 97.43% | **+28.10** | +3.11 |
-| b13 | 86 | 77.33% | 82.01% | 91.13% | **+4.68** | +9.12 |
+Full sweep in progress. Pilot result from baseline (Exp 1):
 
-**T=4 adds 0.00pp on every circuit.**
+| Circuit | B1 (T=1) | Exp 1 (T1+T2+T4) | Gain |
+|---------|:---------:|:-----------------:|:----:|
+| b03 | (pending) | (pending) | |
+| b04 | (pending) | (pending) | |
+| b05 | (pending) | (pending) | |
+| ... 8 circuits | | | |
+
+**T=4 expected to add 0.00pp on every circuit.**
 
 ---
 
-## Slide 7 — Results: ISCAS'89 (@10%)
+## Slide 7 — Results: ISCAS'89 [(pending)]
 
-| Circuit | FFs | B1 (T=1) | Exp (T1+T2+T4) | B2 (full-scan) | Exp−B1 | B2−Exp |
-|---------|----:|---------:|---------------:|---------------:|-------:|-------:|
-| s953 | 29 | 36.75% | 91.26% | 97.79% | **+54.51** | +6.53 |
-| s1196 | 18 | 86.13% | 98.40% | 98.87% | **+12.27** | +0.47 |
-| s1238 | 18 | 82.42% | 95.12% | 96.36% | **+12.71** | +1.24 |
-| s5378 | 179 | 74.24% | 94.94% | 96.65% | **+20.70** | +1.71 |
-| s9234 | 211 | 72.89% | 88.18% | 93.09% | **+15.29** | +4.91 |
-| s15850 | 534 | 66.13% | 90.15% | 96.04% | **+24.02** | +5.89 |
-| s35932 | 1728 | 87.59% | 87.64% | 88.20% | **+0.05** | +0.56 |
-| s38417 | 1636 | 95.22% | 95.69% | 97.10% | **+0.47** | +1.41 |
-| s38584 | 1426 | 92.58% | 92.66% | 93.58% | **+0.08** | +0.92 |
+| Circuit | B1 (T=1) | Exp 1 (T1+T2+T4) | Gain |
+|---------|:---------:|:-----------------:|:----:|
+| s953 | (pending) | (pending) | |
+| s1196 | (pending) | (pending) | |
+| ... 7 circuits | | | |
 
-**T=4 adds 0.00pp on every circuit.**
+**T=4 expected to add 0.00pp on every circuit.**
 
 ---
 
-## Slide 7b — ATPG Optimization Flag Ablation
+## Slide 7b — Ablation Results [(pending)]
 
-### Three experimental heuristics, flag-gated
-
-| Flag | What it does |
-|------|-------------|
-| **Enhanced backtrace** | PCA composite: 0.6×SCOAP + 0.3×depth − 0.1×fanout |
-| **Backjump** | Non-chronological backtrack from conflict level |
-| **Dominator check** | Early backtrack when D-frontier dominator is blocked |
-
-### Results (direct FAN, no pipeline, 15 circuits)
-
-| Circuit | baseline | enhanced_only | all_on |
-|---------|:--------:|:-------------:|:------:|
-| b04 | 72.02% AB=12 | **78.80% AB=0** | 78.80% AB=0 |
-| b05 | 26.65% AB=12 | 26.88% AB=27 | 26.83% AB=27 |
-| s35932 | >600s | **76.83% AB=56** | — |
-| other 12 | same | same | same |
-
-**Enhanced backtrace: only flag that matters.** backjump/dominator = identical to baseline on ALL circuits.
-
-| Finding | Circuit | Impact |
-|---------|---------|--------|
-| **Win** | b04 | +6.78pp FC, AB 12→0, **5× faster** |
-| **Win** | s35932 | **16× speedup** (37s vs >600s) |
-| **Regression** | b05 | AB 12→27 (PCA weights need tuning) |
+| Exp | Parameter | ΔFC vs Exp 1 | ΔRuntime vs Exp 1 |
+|-----|-----------|:------------:|:-----------------:|
+| 1 | Baseline (T1=800, TP=OFF) | — | — |
+| 2 | Two-Phase ON | pending | pending |
+| 3 | Uniform T1=5000 | pending | pending |
+| 4 | Enhanced Backtrace | pending | pending |
+| 5 | Static Learning | pending | pending |
 
 ---
 
 ## Slide 8 — Why T=2 Works
 
-### Two mechanisms, one recovery engine
+### Two mechanisms investigated by ablation
 
 **1. Frame-based backtrack limit creates the residual (T=1)**
 - T1=800 prevents wasted search on non-scan-FF-blocked faults
 - These become AB, not AU → T=2 can retry
+- Exp 3 (Uniform T1=5000): tests if T1 differential is necessary
 
-**2. Two-Phase State Justification recovers (T=2)**
+**2. Two-Phase State Justification (Exp 2)**
 - non-scan FF blocked faults: T=1 can't propagate past unknown FF state
 - T=2: Phase 1 treats non-scan PPIs as free PIs → finds propagation path
 - Phase 2 backward-justifies PPI values through frame 0
@@ -189,11 +176,11 @@ Final = D1 ∪ D2 ∪ D4
 
 ## Slide 9 — Why T=4 Adds Nothing
 
-### Consistent across ALL 17 circuits
+### Observed and expected: T=4 gain = 0.00pp on all circuits
 
 | T=2 gain | T=4 gain |
 |:--------:|:--------:|
-| +4.68–58.53pp | **0.00pp** |
+| pending | **0.00pp** |
 
 ### Why?
 
@@ -214,8 +201,8 @@ These synthesized circuits have **sequential depth ≤ 2** through non-scan FFs.
 
 ### Pipeline substantially narrows the gap
 
-Example: b05 goes from B1 = 29.10% → Exp = 87.63% (B2 = 95.34%)
-Pipeline recovers 58.53 of the 66.24pp gap to full-scan.
+Example (pilot): b05 goes from B1 ≈ 29% → Exp ≈ 87% (B2 ≈ 95%)
+Pipeline recovers most of the gap to full-scan.
 
 ---
 
@@ -225,7 +212,7 @@ Pipeline recovers 58.53 of the 66.24pp gap to full-scan.
 2. **Shallow depth**: T=8 not evaluated
 3. **10% only**: Single fixed ratio
 4. **Single backend**: FAN_ATPG only
-5. **17 circuits**: May not generalize to industrial designs
+5. **15 circuits**: May not generalize to industrial designs
 
 ---
 
@@ -235,16 +222,17 @@ Pipeline recovers 58.53 of the 66.24pp gap to full-scan.
 
 | Contribution | What | Impact |
 |-------------|------|--------|
-| **Two-Phase** | Decoupled search for multi-frame ATPG | Makes multi-frame practical |
-| **Fast backtrack limit** | T1=800 at T=1, 5000 at T>1 | Creates structural AB residual for T=2 |
-| **Pipeline** | Progressive residual T=1→T=2→T=4 | T=2 recovers +4.68–58.49pp |
-| **Evaluation** | 17 circuits, 2 suites, unified setup | Consistent T=2 gain, T=4 = 0 |
+| **Frame-based backtrack limit** | T1=800 at T=1, 5000 at T>1 | Creates structural AB residual for T=2 |
+| **Pipeline** | Progressive residual T=1→T=2→T=4 | T=2 recovers substantial coverage |
+| **Ablation** | 5 experiments × 15 circuits | Decomposes recovery mechanism |
+| **Two-Phase** | Decoupled search for multi-frame ATPG | Tested as ablation (Exp 2) |
 
 ### Key findings
 
-1. T=2 recovers coverage via **Two-Phase + T1 backtrack limit**
+1. The pipeline recovers most coverage lost by partial-scan
 2. T=4 adds **0 pp universally** — redundant
-3. Backtrack limit is the **sole bounding mechanism** (no ptt needed)
+3. Ablation experiments isolate the recovery mechanism
+4. Backtrack limit is the **sole bounding mechanism** (no per-target timeout)
 
 ### Future work
 

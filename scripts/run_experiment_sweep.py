@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Master experiment sweep. Runs Exp 1, 3, 4, 5, 6 on 15 circuits.
+Master experiment sweep. Runs Exp 1–5 on 15 circuits.
 Each experiment writes its own CSV to results/.
 """
 import csv, os, subprocess, sys, time
@@ -34,6 +34,14 @@ EXPERIMENTS = [
         "extra": "",
     },
     {
+        "name": "exp2_two_phase",
+        "csv": os.path.join(RES_DIR, "exp2_two_phase.csv"),
+        "desc": "Two-Phase ON at T=2, T=4",
+        "env": {},
+        "t1tp": "off", "t2tp": "on", "t4tp": "on",
+        "extra": "",
+    },
+    {
         "name": "exp3_uniform_T1",
         "csv": os.path.join(RES_DIR, "exp3_uniform_T1.csv"),
         "desc": "Uniform T1=5000 (same as T>1)",
@@ -42,24 +50,16 @@ EXPERIMENTS = [
         "extra": "",
     },
     {
-        "name": "exp4_two_phase",
-        "csv": os.path.join(RES_DIR, "exp4_two_phase.csv"),
-        "desc": "Two-Phase ON at T=2, T=4",
-        "env": {},
-        "t1tp": "off", "t2tp": "on", "t4tp": "on",
-        "extra": "",
-    },
-    {
-        "name": "exp5_enhanced_backtrace",
-        "csv": os.path.join(RES_DIR, "exp5_enhanced_backtrace.csv"),
+        "name": "exp4_enhanced_backtrace",
+        "csv": os.path.join(RES_DIR, "exp4_enhanced_backtrace.csv"),
         "desc": "Enhanced backtrace ON",
         "env": {},
         "t1tp": "off", "t2tp": "off", "t4tp": "off",
         "extra": "set_enhanced_backtrace on",
     },
     {
-        "name": "exp6_static_learning",
-        "csv": os.path.join(RES_DIR, "exp6_static_learning.csv"),
+        "name": "exp5_static_learning",
+        "csv": os.path.join(RES_DIR, "exp5_static_learning.csv"),
         "desc": "Static learning ON",
         "env": {},
         "t1tp": "off", "t2tp": "off", "t4tp": "off",
