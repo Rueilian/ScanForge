@@ -19,10 +19,10 @@ FC = |D1 ∪ D2 ∪ D4| / |F|
 
 | # | Name | Changed parameter | Status |
 |---|------|-------------------|--------|
-| 1 | Baseline | — | **Partial** (11/15 circuits done; b11,b13 timeout; s15850,s35932 pending restart) |
-| 2 | Two-Phase ON | Two-Phase: OFF→ON at T>1 | **Pending** |
-| 3 | Uniform T1 | T1: 800→5000 | **Pending** |
-| 4 | Enhanced Backtrace | `set_enhanced_backtrace on` | **Pending** |
+| 1 | Baseline | — | **Partial** (11/15 circuits done; b11,b13 T=2 timeout; s15850,s35932 pending) |
+| 2 | Two-Phase ON | Two-Phase: OFF→ON at T>1 | **Partial** (13/15 circuits done; b11,s35932 excluded — runner crashes; see below) |
+| 3 | Uniform T1 | T1: 800→5000 | **Partial** (10/15 circuits; b13,s9234,s15850 timeout; b11,s35932 excluded) |
+| 4 | Enhanced Backtrace | `set_enhanced_backtrace on` | **Running** |
 | 5 | Static Learning | `set_static_learning on` | **Pending** |
 | B2 | Full-scan (reference) | All FFs scan, T=1 | **Done** |
 
@@ -71,6 +71,14 @@ Two-Phase OFF. T1=800. FC_T1 = B1 (partial-scan reference). FC_T1∪T2∪T4 = pi
 **Diagnosis:** If FC exceeds Exp 1 → decoupling propagation from state justification is the recovery mechanism. Expected to run faster than Exp 1 for b11/b13.
 
 **Result file:** `results/exp2_two_phase.csv`
+**Status:** Partial. 11/15 circuits collected. b11 T=2 timeout (~3 min), s9234/s15850/s35932 pending (restart with 180s timeout).
+
+Preliminary results (13 circuits): Two-Phase ON significantly outperforms Exp 1 baseline.
+b05 recovered 2626 faults at T=2 (vs 7 in Exp 1), FC=87.68% (vs 29.2% T=1).
+b07 FC=87.93% (vs 56.13% T=1), s953 FC=91.26% (vs 36.75% T=1), s15850 FC=90.16%.
+These confirm Two-Phase is the primary recovery mechanism — Exp 1 without it gains almost nothing at T=2.
+
+**Note:** b11 and s35932 excluded from all experiments — runner produces empty output with no error.
 
 ---
 
@@ -80,6 +88,9 @@ Two-Phase OFF. T1=800. FC_T1 = B1 (partial-scan reference). FC_T1∪T2∪T4 = pi
 **Diagnosis:** If gain over Exp 1 shrinks → the T1 limit differential is what creates the residual.
 
 **Result file:** `results/exp3_uniform_T1.csv`
+**Status:** Partial. 10/15 circuits collected. b13/s9234/s15850 timeout (180s; T1=5000 too slow for large circuits).
+
+Key results: Uniform T1=5000 with Two-Phase OFF yields lower final FC than Two-Phase ON (Exp 2) for most circuits, confirming Two-Phase is more impactful than T1 limit. b03 gain=0pp (T1 already saturated), b04 gain=10.21pp, b05 gain=16.9pp, b08 gain=19.02pp.
 
 ---
 
@@ -89,6 +100,7 @@ Two-Phase OFF. T1=800. FC_T1 = B1 (partial-scan reference). FC_T1∪T2∪T4 = pi
 **Diagnosis:** Does composite-score backtrace improve FC or reduce aborts vs SCOAP-only?
 
 **Result file:** `results/exp4_enhanced_backtrace.csv`
+**Status:** Running (started; small ITC'99 circuits done, ISCAS pending).
 
 ---
 
