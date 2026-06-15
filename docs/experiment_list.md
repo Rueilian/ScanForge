@@ -142,22 +142,22 @@ been shown via separate ablation (no_ptt on b03–b09, results identical to
 baseline) to be irrelevant given the backtrack limits — the frame-based
 fast limit is the real bounding mechanism.
 
-**Design:** Three conditions on all 17 circuits:
+**Design:** Three conditions on 15 circuits (excl. s38417, s38584 due to wall-timeout risk at ptt=0):
 
-| Condition | T1 fast limit | T2 Two-Phase | T>1 fast limit | Tests |
-|-----------|--------------|-------------|----------------|-------|
-| (A) Baseline | 800 | ON | 5000 | Same as Exp. 1 |
-| (B) No fast limit | **5000** | ON | 5000 | If gain drops → fast T=1 limit creates the recovery opportunity |
-| (C) No Two-Phase | 800 | **OFF** at T=2 only | 5000 | If gain drops → Two-Phase drives the recovery |
+| Condition | T1 fast limit | T1/T>1 ptt | T2 Two-Phase | T>1 fast limit |
+|-----------|--------------|-----------|-------------|----------------|
+| (A) Baseline | 800 | **0** | ON | 5000 |
+| (B) No fast limit | **5000** | 0 | ON | 5000 |
+| (C) No Two-Phase | 800 | 0 | **OFF** at T=2 only | 5000 |
 
-All other parameters (backtrack limit=5000 at T>1, ptt=5 s, compression,
-library, wall timeout) match Experiment 1.
+All conditions use **ptt=0** to avoid confound: the bounding mechanism must
+be the backtrack limit, not the per-target timeout. All other parameters match
+Experiment 1.
 
-**Implementation:** The fast limit is configured via the environment variable
-`ATPG_FAST_BACKTRACK_LIMIT` (default 800). Condition B sets `ATPG_FAST_BACKTRACK_LIMIT=5000`
-to equalize T=1 and T>1 backtrack budgets.
+**Implementation:** `ATPG_FAST_BACKTRACK_LIMIT=5000` for condition B;
+`--t2-two-phase off` for condition C; `ATPG_PER_TARGET_TIMEOUT=0` for all.
 
-**Circuits:** All 17 circuits from both suites.
+**Circuits:** 15 circuits (8 ITC'99 + 7 ISCAS'89, excluding s38417, s38584).
 
 **Predictions:**
 - **Condition B:** T=1 FC approaches T=2 FC → T=2 gain shrinks. Proves the
@@ -170,7 +170,7 @@ to equalize T=1 and T>1 backtrack budgets.
 
 | Condition | Status |
 |-----------|--------|
-| (A) Baseline | Complete (from Exp. 1) |
+| (A) Baseline (ptt=0, re-run) | Pending (separate run) |
 | (B) No fast limit (T1=5000) | Pending |
 | (C) No Two-Phase at T=2 | Pending |
 
@@ -181,6 +181,7 @@ to equalize T=1 and T>1 backtrack budgets.
 | Experiment | Scope | RQs | Key parameters | Completion |
 |------------|-------|-----|----------------|------------|
 | 1. Progressive Residual Pipeline | 17 circuits | RQ1, RQ2, RQ4 | T=1→T=2→T=4, ptt=5s, Two-Phase ON, 10% non-scan | 17/17 |
+| 1b. Baseline (ptt=0) for ablation comparison | 15 circuits | RQ3 control | Same as Exp. 1 but ptt=0 | Pending |
 | 2. Full-Scan Baselines | 17 circuits | Ceiling | T=1 only, no non-scan, ptt=5s (ISCAS'89) / ptt=0 (ITC'99) | 17/17 |
-| 3a. Ablation: no fast limit at T=1 | 17 circuits | RQ3 | ATPG_FAST_BACKTRACK_LIMIT=5000, Two-Phase ON at T2 | Pending |
-| 3b. Ablation: no Two-Phase at T=2 | 17 circuits | RQ3 | FAST=800, Two-Phase OFF at T2 | Pending |
+| 3a. Ablation: no fast limit at T=1 | 15 circuits | RQ3 | ptt=0, FAST=5000 at T1, Two-Phase ON at T2 | Pending |
+| 3b. Ablation: no Two-Phase at T=2 | 15 circuits | RQ3 | ptt=0, FAST=800, Two-Phase OFF at T2 | Pending |
