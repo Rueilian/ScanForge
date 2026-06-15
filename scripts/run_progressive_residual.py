@@ -121,6 +121,8 @@ def parse_faults(path):
 def write_fault_list(faults, path):
     with open(path, "w") as f:
         for gid, fl, ft in sorted(faults):
+            if fl < 0:  # skip QN-pin faults (faultyLine=-4): FAN always leaves them UD
+                continue
             f.write(f"{gid} {ft} {fl}\n")
 
 def main():
