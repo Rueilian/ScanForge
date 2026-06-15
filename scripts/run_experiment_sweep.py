@@ -12,7 +12,7 @@ MASK_DIR = os.path.join(REPO_ROOT, "masks")
 RES_DIR = os.path.join(REPO_ROOT, "results")
 LOG = os.path.join(RES_DIR, "sweep_log.txt")
 
-os.makedirs(RES_DIR, exist_ok=True)
+PER_CIRCUIT_TIMEOUT = 300  # skip circuits taking >5 min
 
 CIRCUITS = ["b03","b04","b05","b07","b08","b09","b11","b13",
             "s953","s1196","s1238","s5378","s9234","s15850","s35932"]
@@ -113,11 +113,11 @@ for exp in EXPERIMENTS:
             cmd += ["--extra-flags", exp["extra"]]
         t0 = time.time()
         try:
-            proc = subprocess.run(cmd, cwd=FAN_DIR, env=env, capture_output=True, text=True, timeout=7200)
+            proc = subprocess.run(cmd, cwd=FAN_DIR, env=env, capture_output=True, text=True, timeout=PER_CIRCUIT_TIMEOUT)
             elapsed = time.time() - t0
             log_msg(f"    done ({elapsed:.1f}s)  rc={proc.returncode}")
         except subprocess.TimeoutExpired:
-            log_msg(f"    TIMEOUT after 7200s")
+            log_msg(f"    TIMEOUT after {PER_CIRCUIT_TIMEOUT}s — skipping")
             continue
         except Exception as e:
             log_msg(f"    ERROR: {e}")
