@@ -25,14 +25,16 @@ def get_mask(circuit):
     return ""
 
 EXPERIMENTS = [
-    {
-        "name": "exp1_baseline",
-        "csv": os.path.join(RES_DIR, "exp1_baseline.csv"),
-        "desc": "Baseline: T1=800, Two-Phase OFF",
-        "env": {},
-        "t1tp": "off", "t2tp": "off", "t4tp": "off",
-        "extra": "",
-    },
+    # Exp 1 collected 11/15 circuits; remaining (b11,b13,s15850,s35932) need
+    # Two-Phase OFF which is extremely slow — run Exp 2 (Two-Phase ON) first.
+    # {
+    #     "name": "exp1_baseline",
+    #     "csv": os.path.join(RES_DIR, "exp1_baseline.csv"),
+    #     "desc": "Baseline: T1=800, Two-Phase OFF",
+    #     "env": {},
+    #     "t1tp": "off", "t2tp": "off", "t4tp": "off",
+    #     "extra": "",
+    # },
     {
         "name": "exp2_two_phase",
         "csv": os.path.join(RES_DIR, "exp2_two_phase.csv"),
