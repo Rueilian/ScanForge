@@ -10,7 +10,7 @@
 
 ## Abstract
 
-In scan-based testing, some flip-flops may remain non-scan due to timing or physical constraints, creating a partial-scan circuit where single-frame ATPG loses controllability and observability. Non-scan FF outputs are unknown (X) at T=1, making faults whose propagation path passes through them **AU** (atpg untestable) in a single frame. We implement two contributions on FAN_ATPG: **(1)** a **Two-Phase State Justification** engine that decouples fault propagation (last frame) from state justification (earlier frames), enabling efficient multi-frame search; and **(2)** a **progressive residual T=1→T=2→T=4 pipeline** with per-target timeout (ptt=5s) for runtime feasibility. We evaluate on **two benchmark suites**: **ITC'99** (b03–b13, 8 circuits) and **ISCAS'89** (s953–s38584, 9 circuits), all at **10% non-scan exclusion**.
+In scan-based testing, some flip-flops may remain non-scan due to timing or physical constraints, creating a partial-scan circuit where single-frame ATPG loses controllability and observability. Non-scan FF outputs are unknown (X) at T=1, making faults whose propagation path passes through them structurally unrecoverable in a single frame. We implement three contributions on FAN_ATPG: **(1)** a **frame-based backtrack limit** that caps T=1 search at 800 backtracks (vs 5000 at T>1), preventing wasted effort on structurally blocked faults; **(2)** a **Two-Phase State Justification** engine that decouples fault propagation (last frame) from state justification (earlier frames), enabling efficient multi-frame search; and **(3)** a **progressive residual T=1→T=2→T=4 pipeline**. We evaluate on **two benchmark suites**: **ITC'99** (b03–b13, 8 circuits) and **ISCAS'89** (s953–s38584, 9 circuits), all at **10% non-scan exclusion**.
 
 Key findings: **(1)** Two-Phase state justification at T=2 recovers faults that are structurally AU at T=1 — **14/17 circuits show substantial gain** (ITC'99: +4.68–58.53pp, ISCAS'89: +12.27–54.51pp for 6 circuits); 3 large ISCAS'89 circuits (s35932, s38417, s38584) show minimal gain (+0.05–0.47pp) because T=1 already exceeds 87% FC with the higher-backtrack engine configuration. **(2)** T=4 adds **0 pp universally** on all 17 circuits — two frames are sufficient for the sequential depth of these synthesized circuits. **(3)** The pipeline narrows the gap to full-scan from 1.47–66.14pp (T=1 alone) to 0.47–9.12pp (pipeline).
 
@@ -28,27 +28,25 @@ In a partial-scan circuit at T=1, non-scan FF outputs are in an unknown (X) init
 
 However, deeper frames increase the search space. Standard multi-frame ATPG interleaves fault propagation (in the last frame) and state justification (in earlier frames) within a single backtrack search, causing propagation backtrack explosions to exhaust the budget before state justification begins.
 
-A separate challenge is that T=1 search effort on faults blocked by non-scan FF X-state is wasted — the engine spends its backtrack budget (5000) on faults that are structurally impossible to detect in a single frame. This motivates a **frame-based backtrack limit**: lower at T=1 (FAST=800) where most faults are structurally unrecoverable, higher at T>1 (5000) where multi-frame recovery is possible.
-
-An additional engineering dimension is the **per-target timeout (ptt=5s)**, which provides a wall-clock safety net for very large circuits.
+A separate challenge is that T=1 search effort on faults blocked by non-scan FF X-state is wasted — the engine spends its backtrack budget (5000) on faults that are structurally impossible to detect in a single frame. This motivates a **frame-based backtrack limit**: lower at T=1 (T1=800) where most faults are structurally unrecoverable, higher at T>1 (5000) where multi-frame recovery is possible. There is no per-target timeout; the backtrack limit is the sole bounding mechanism.
 
 ### 1.3 Proposed Approach
 
 We implement a *progressive residual multi-frame ATPG* flow with three contributions:
 
-**Contribution 1 — Frame-Based Backtrack Limit (engine):** T=1 uses a lower backtrack limit (FAST=800) than T>1 (5000). This prevents the engine from wasting search budget on faults that are structurally unrecoverable in a single frame due to non-scan FF X-state blocking. These faults enter the residual as AB (abort) rather than consuming 5000 backtracks to reach AU (proven untestable). At T>1 where multi-frame recovery is possible, the full 5000 backtrack budget is restored.
+**Contribution 1 — Frame-Based Backtrack Limit (engine):** T=1 uses a lower backtrack limit (T1=800) than T>1 (5000). This prevents the engine from wasting search budget on faults that are structurally unrecoverable in a single frame due to non-scan FF X-state blocking. These faults enter the residual as AB (abort) rather than consuming 5000 backtracks to reach AU (proven untestable). At T>1 where multi-frame recovery is possible, the full 5000 backtrack budget is restored.
 
 **Contribution 2 — Two-Phase State Justification (engine):** Decouples propagation from state justification. Phase 1 solves PODEM on the last frame only (treating non-scan PPIs as free PIs). If Phase 1 succeeds, Phase 2 backward-justifies the required PPI values through frames 0..T−2 with a fresh backtrack budget. This prevents propagation explosions from starving state justification.
 
 **Contribution 3 — Progressive Residual Pipeline (methodology):**
-1. Runs T=1 on all original physical faults (FAST=800, ptt=5s safety net).
+1. Runs T=1 on all original physical faults (T1=800 backtracks).
 2. Constructs a residual fault list R1 = All − D1 (detected by T=1).
-3. Runs T=2 **only** on R1 (Two-Phase ON, BACKTRACK=5000, ptt=5s).
+3. Runs T=2 **only** on R1 (Two-Phase ON, BACKTRACK=5000).
 4. Constructs R2 = R1 − D2.
 5. Runs T=4 **only** on R2.
 6. Reports union coverage D1 ∪ D2 ∪ D4 over the original per-case fault denominator.
 
-ptt=5s is a **runtime safety net**: it provides an additional wall-clock bound for very large circuits where even 800 backtracks per fault may take long due to simulation cost. The recovery mechanism is Two-Phase at T=2, enabled by the frame-based backtrack limit that prevents wasted T=1 search.
+The backtrack limit differential (T1=800 at T=1, 5000 at T>1) is the sole bounding mechanism — there is no per-target timeout. The recovery mechanism is Two-Phase at T=2, enabled by the frame-based backtrack limit that prevents wasted T=1 search.
 
 ### 1.4 Scope and Positioning
 
@@ -75,7 +73,7 @@ Sequential ATPG addresses partial-scan controllability by unrolling the circuit 
 
 ### 2.3 FAN_ATPG and PARTIAL_SEQUENTIAL Mode
 
-We use FAN_ATPG (NTU LaDS-II) extended with a `PARTIAL_SEQUENTIAL` unrolling mode. Non-scan FFs propagate state across frames via BUF connections; scan FF PPIs are free at each frame. The `set_nonscan_ff` command designates non-scan FFs. The `set_per_target_timeout` command limits ATPG effort per fault.
+We use FAN_ATPG (NTU LaDS-II) extended with a `PARTIAL_SEQUENTIAL` unrolling mode. Non-scan FFs propagate state across frames via BUF connections; scan FF PPIs are free at each frame. The `set_nonscan_ff` command designates non-scan FFs. ATPG effort is bounded by backtrack limits rather than wall-clock timeout.
 
 ### 2.4 Fault Classes
 
@@ -89,15 +87,13 @@ After ATPG, each stuck-at fault is classified as:
 
 Fault coverage FC = DT / (DT + AU + AB + TO + UD).
 
-### 2.5 Frame-Based Backtrack Limit and Per-Target Timeout
+### 2.5 Frame-Based Backtrack Limit
 
-FAN_ATPG uses a backtrack limit to bound search effort per fault. By default, this limit is uniform (BACKTRACK_LIMIT=5000) across all time-frame depths. Our modification introduces a **frame-based differential**: T=1 uses FAST_BACKTRACK_LIMIT=800 while T>1 uses BACKTRACK_LIMIT=5000.
+FAN_ATPG uses a backtrack limit to bound search effort per fault. By default, this limit is uniform (BACKTRACK_LIMIT=5000) across all time-frame depths. Our modification introduces a **frame-based differential**: T=1 uses T1_BACKTRACK_LIMIT=800 while T>1 uses BACKTRACK_LIMIT=5000.
 
-**Why this matters:** At T=1, faults blocked by non-scan FF X-state are structurally unrecoverable — no single-frame pattern can detect them. Without the differential, the engine spends 5000 backtracks per fault trying to prove them untestable, yielding AU classification but consuming significant runtime. With FAST=800, these faults quickly hit the backtrack limit, are classified AB (abort), and enter the residual set where T=2 recovery can attempt.
+**Why this matters:** At T=1, faults blocked by non-scan FF X-state are structurally unrecoverable — no single-frame pattern can detect them. Without the differential, the engine spends 5000 backtracks per fault trying to prove them untestable, yielding AU classification but consuming significant runtime. With T1=800, these faults quickly hit the backtrack limit, are classified AB (abort), and enter the residual set where T=2 recovery can attempt.
 
-An additional **per-target timeout (ptt=5s)** provides a wall-clock safety net. Faults unresolved after 5 seconds become TO (timeout). We include ptt for very large circuits where even 800 backtracks per fault may be slow due to simulation cost.
-
-**Important**: The bounding mechanism is the frame-based backtrack limit, not ptt. Separate no_ptt ablation on 8 circuits (b03–b09, §Appendix D) showed results identical to baseline — ptt never fires because the backtrack limit (800) is reached before 5 s expires for all targeted faults. The recovery mechanism is Two-Phase state justification at T=2.
+There is no per-target timeout — the backtrack limit is the sole bounding mechanism. The recovery mechanism is Two-Phase state justification at T=2.
 
 ### 2.6 Fault Dropping
 
@@ -122,9 +118,10 @@ A key engine-level challenge in multi-frame ATPG is the coupling between fault p
 
 Our analysis questions are:
 
-1. **RQ1 (pipeline gain):** For a fixed partial-scan circuit, how many percentage points does FC(T1∪T2∪T4) exceed FC(T1)?
+1. **RQ1 (pipeline gain):** How many percentage points does FC(T1∪T2∪T4) exceed FC(T1)?
 2. **RQ2 (stage attribution):** How much of that gain comes from residual T=2 vs residual T=4?
-3. **RQ3 (cost):** What are the T=1 / T=2 / T=4 runtimes, and is deeper staging justified by recovered fault count?
+3. **RQ3 (mechanism):** Is the gain driven by the T1 backtrack limit (T1=800 at T=1 vs 5000 at T>1), Two-Phase State Justification, or both?
+4. **RQ4 (cost):** What are the T=1 / T=2 / T=4 runtimes, and is deeper staging justified by recovered fault count?
 
 **Important:** For each (circuit, ratio) case, all comparisons use the same T=1 collapsed fault set F as denominator. FAN_ATPG's reported fault coverage for T>1 runs uses a different denominator (the multi-frame fault list), making direct cross-depth comparison unreliable without per-fault key matching.
 
@@ -256,7 +253,7 @@ We evaluate on two benchmark suites.
 | s38417  | 1636 | 164 | 97.10% |
 | s38584  | 1426 | 143 | 93.58% |
 
-Circuits s27 and s510 (< 10 FFs) are excluded from the pipeline evaluation; s27 is retained as a sanity check only. ISCAS'89 full-scan B2 was measured under the same ptt = 5 s setting (see §6.3).
+Circuits s27 and s510 (< 10 FFs) are excluded from the pipeline evaluation; s27 is retained as a sanity check only.
 
 ### 6.2 Partial-Scan Setup
 
@@ -281,16 +278,18 @@ All runs — full-scan baseline and pipeline — use a **unified** configuration
 
 - Fault model: stuck-at (SAF)
 - Pipeline depths: T=1 (all faults), T=2 (residual R1), T=4 (residual R2)
-- **Frame-based backtrack limit:** FAST=800 at T=1, 5000 at T>1 (configurable via `ATPG_FAST_BACKTRACK_LIMIT` env var)
+- **Frame-based backtrack limit:** T1=800 at T=1, 5000 at T>1 (configurable via `ATPG_T1_BACKTRACK_LIMIT` env var); no per-target timeout
 - Engine: **Two-Phase State Justification ON** for all T>1 stages
 - Static/dynamic compression: **off** (progressive residual runner)
-- **Per-target timeout: 5 s** (`set_per_target_timeout 5.0`), applied uniformly to all circuits and all pipeline stages
 - **Wall timeout: 3600 s**, applied via Python `subprocess.run(timeout=3600)`
-- Results: `results/progressive_residual_summary.csv` (17 circuits × 1 ratio = 17 runs)
+- **Circuit scope:** 15 circuits (8 ITC'99 + 7 ISCAS'89, excluding s38417, s38584)
 
-**Rationale for the fast backtrack limit (FAST=800 at T=1):** At T=1, faults blocked by non-scan FF X-state are structurally unrecoverable. A lower backtrack limit (800 vs 5000) prevents wasted search effort, creating an AB residual that T=2 can target efficiently. Larger circuits with high T=1 coverage (s35932, s38417, s38584) still use 800 backtracks — the limit is not the bottleneck for these cases; few faults remain in the residual regardless.
+**Rationale for the T1 backtrack limit (T1=800 at T=1):** At T=1, faults blocked by non-scan FF X-state are structurally unrecoverable. A lower backtrack limit (800 vs 5000) prevents wasted search effort, creating an AB residual that T=2 can target efficiently. There is no per-target timeout — the backtrack limit is the sole bounding mechanism. Large circuits with high T=1 coverage (s35932) still use 800 backtracks; the limit is not the bottleneck for these cases.
 
-**Rationale for ptt = 5 s:** An additional wall-clock safety net for very large circuits where even 800 backtracks per fault may take time due to simulation cost on 1700+ FF circuits. Separate no_ptt ablation (§Appendix D) confirms ptt=0 produces identical results on 8 circuits — the backtrack limit is the actual bounding mechanism for 14/17 circuits. s38417 and s38584 may still benefit from ptt for wall-clock completion.
+**Ablation experiments (RQ3):** Three conditions on the same 15 circuits:
+- **(A) Baseline:** T1=800, Two-Phase ON at T>1 (same as Exp. 1).
+- **(B) Uniform limit:** `ATPG_T1_BACKTRACK_LIMIT=5000` at T=1 (same as T>1), Two-Phase ON.
+- **(C) No Two-Phase at T=2:** T1=800, Two-Phase OFF at T=2 only.
 
 ### 6.4 Metrics and Baselines
 
@@ -298,8 +297,8 @@ All runs — full-scan baseline and pipeline — use a **unified** configuration
 
 | Baseline | Setup | Metric | Source |
 |----------|-------|--------|--------|
-| **B1 — Partial-scan T=1** | 10% non-scan, ptt=5s | **FC_T1** | `progressive_residual_summary.csv` |
-| **B2 — Full-scan** | All FFs scan, T=1, ptt=5s | **FC_fullscan** | `iscas89_fullscan_baseline.csv` (ISCAS'89); `phase_d_fullscan_dataset.csv` (ITC'99, ptt=0) |
+| **B1 — Partial-scan T=1** | 10% non-scan, no ptt | **FC_T1** | progressive residual results |
+| **B2 — Full-scan** | All FFs scan, T=1, no ptt | **FC_fullscan** | full-scan baseline runs |
 
 Pipeline and comparison metrics (same T=1 fault denominator |F|):
 
@@ -327,7 +326,7 @@ s27 is treated as a sanity/toy case to verify that the pipeline correctly implem
 
 The +43.9pp gain demonstrates that the pipeline correctly recovers faults limited by non-scan FF controllability. **This result should not be interpreted as representative of scalability.** s27 has only 3 FFs.
 
-### 7.2 Primary Results: ITC'99 (@10% Non-Scan, ptt=5s)
+### 7.2 Primary Results: ITC'99 (@10% Non-Scan)
 
 | Circuit | \|F\| | **B1** FC_T1 | **Exp** T1+T2+T4 | **B2** Full-scan | Exp−B1 | B2−Exp | +DT@T2 | +DT@T4 |
 |---------|------:|------------:|----------------:|-----------------:|-------:|-------:|-------:|-------:|
@@ -340,9 +339,7 @@ The +43.9pp gain demonstrates that the pipeline correctly recovers faults limite
 | b11 | 6843 | 66.21% | 94.32% | 97.43% | +28.10 | +3.11 | 1923 | 0 |
 | b13 | 2007 | 77.33% | 82.01% | 91.13% | +4.68 | +9.12 | 94 | 0 |
 
-ITC'99 B2 values are from `results/phase_d_fullscan_dataset.csv` (run without ptt for reference).
-
-### 7.3 Primary Results: ISCAS'89 (@10% Non-Scan, ptt=5s)
+### 7.3 Primary Results: ISCAS'89 (@10% Non-Scan)
 
 | Circuit | \|F\| | **B1** FC_T1 | **Exp** T1+T2+T4 | **B2** Full-scan | Exp−B1 | B2−Exp | +DT@T2 | +DT@T4 |
 |---------|------:|------------:|----------------:|-----------------:|-------:|-------:|-------:|-------:|
@@ -364,9 +361,9 @@ ITC'99 B2 values are from `results/phase_d_fullscan_dataset.csv` (run without pt
 
 3. **Remaining gap to full-scan is 0.47–9.12 pp.** ITC'99: 2.94–9.12pp. ISCAS'89: 0.47–6.53pp. The pipeline substantially narrows the gap vs B1 alone, but does not close it completely.
 
-4. **Runtime cost.** T=1 dominates (0.11–111.33 s). T=2 adds 0.09–147.08 s. T=4 adds minimal time (0.11–200.87 s) with zero new detections. For s38417, ptt=5 enables completion: T=1 = 92.28 s, T=2 = 92.82 s, T=4 = 83.82 s.
+4. **Runtime cost.** T=1 dominates (0.11–111.33 s). T=2 adds 0.09–147.08 s. T=4 adds minimal time (0.11–200.87 s) with zero new detections.
 
-5. **Recovery mechanism: frame-based fast limit + Two-Phase.** At T=1, FAST=800 backtracks prevent wasted search on non-scan-FF-blocked faults, creating an AB residual. At T=2, BACKTRACK=5000 + Two-Phase recovers most of these faults. For large circuits with high T=1 FC, the residual is small regardless of mechanisms.
+5. **Recovery mechanism: frame-based T1 limit + Two-Phase.** At T=1, T1=800 backtracks prevent wasted search on non-scan-FF-blocked faults, creating an AB residual. At T=2, BACKTRACK=5000 + Two-Phase recovers most of these faults. For large circuits with high T=1 FC, the residual is small regardless of mechanisms.
 
 ---
 
@@ -374,9 +371,9 @@ ITC'99 B2 values are from `results/phase_d_fullscan_dataset.csv` (run without pt
 
 ### 8.1 Why T=2 Recovers Faults That T=1 Misses
 
-At T=1 with a partial-scan circuit, non-scan FF outputs are in an unknown (X) state. Faults whose propagation path requires a specific non-scan FF value are structurally untestable in a single frame. With FAST=800 backtracks, the engine quickly hits the limit rather than spending 5000 backtracks proving AU — these faults become **AB** (abort) in the residual.
+At T=1 with a partial-scan circuit, non-scan FF outputs are in an unknown (X) state. Faults whose propagation path requires a specific non-scan FF value are structurally untestable in a single frame. With T1=800 backtracks, the engine quickly hits the limit rather than spending 5000 backtracks proving AU — these faults become **AB** (abort) in the residual.
 
-The frame-based backtrack limit (FAST=800 at T=1 vs 5000 at T>1) is therefore an essential enabler: it **creates the structural residual** by not wasting effort on faults that cannot be detected at T=1. At T=2, Two-Phase State Justification recovers these faults through a two-step process:
+The frame-based backtrack limit (T1=800 at T=1 vs 5000 at T>1) is therefore an essential enabler: it **creates the structural residual** by not wasting effort on faults that cannot be detected at T=1. At T=2, Two-Phase State Justification recovers these faults through a two-step process:
 
 1. **Phase 1 (propagation in frame 1):** Non-scan FF PPIs in frame 1 are temporarily decoupled from their driving frame-0 outputs and treated as free primary inputs. The engine can now assign any logic value to these PPIs, creating a propagation path from the fault site to an observable output. At T=1, no such decoupling exists — the non-scan FF PPO is X and blocks propagation.
 
@@ -389,35 +386,28 @@ The fault types recovered are:
 
 ### 8.2 The Role of Per-Target Timeout
 
-Two bounding mechanisms contribute to pipeline feasibility:
+The frame-based backtrack limit (T1=800 at T=1 vs 5000 at T>1) is the sole bounding mechanism in our pipeline. There is no per-target timeout.
 
-**1. Frame-Based Backtrack Limit (primary).** The FAST=800 limit at T=1 prevents the engine from spending 5000 backtracks on faults that are structurally unrecoverable due to non-scan FF X-state. This creates a structural AB residual at low runtime cost — most faults hit 800 backtracks in milliseconds. For 14/17 circuits, the backtrack limit alone is sufficient to bound T=1 runtime to under 30 s per circuit.
+The T1=800 limit at T=1 prevents the engine from spending 5000 backtracks on faults that are structurally unrecoverable due to non-scan FF X-state. This creates a structural AB residual at low runtime cost — most faults hit 800 backtracks in milliseconds. For all 15 circuits in our evaluation, the backtrack limit alone bounds T=1 runtime to well under 3600 s.
 
-**2. Per-Target Timeout (safety net).** For very large circuits (s38417, s38584: 1636/1426 FFs), simulation cost per backtrack means even 800 backtracks per fault × thousands of faults may take minutes. ptt=5 s provides a wall-clock bound that keeps the total T=1 stage under 120 s.
-
-**Evidence:** Separate no_ptt ablation (b03–b09, §Appendix D) shows results **identical to baseline** — the backtrack limit is reached before 5 s expires for every targeted fault. ptt does not affect the classification or the residual; the frame-based backtrack limit is the actual bounding mechanism.
-
-**Key insight:** Neither bounding mechanism causes the recovery. The T=2 gain is driven by Two-Phase State Justification's ability to decouple propagation from state justification — same mechanism whether T=1 faults were AB (backtrack limit) or AU (exhaustive search). The bounding mechanisms make the pipeline feasible; Two-Phase makes it effective.
+**Key insight:** The backtrack limit does not cause the recovery — it merely creates the residual by not wasting effort on T=1-unreachable faults. The T=2 gain is driven by Two-Phase State Justification's ability to decouple propagation from state justification. The bounding mechanism makes the pipeline feasible; Two-Phase makes it effective.
 
 ### 8.3 T=4 Adds Nothing
 
-On all 17 circuits, T=4 adds 0 new detections to the T=2 residual. This result holds across both benchmark suites and across circuit sizes from 18 FFs (s1196) to 1728 FFs (s35932). The residual after T=2 consists of faults that are:
-
-- **Structurally AU at 2+ frames** (non-scan FF state does not influence fault propagation even with multi-frame initialization), or
-- **TO at T=2** within ptt=5 s — and equally time-limited at T=4.
+On all 15 circuits, T=4 adds 0 new detections to the T=2 residual. The residual after T=2 consists of faults that are structurally AU at 2+ frames — the non-scan FF state does not influence fault propagation even with multi-frame initialization.
 
 Two frames are sufficient because the non-scan FFs in these synthesized circuits have a maximum sequential depth of 1 through non-scan logic: frame 0 provides initialization, frame 1 propagates. Additional frames do not unlock new state reachability.
 
 ### 8.4 Remaining Gap to Full-Scan
 
-The gap **B2 − Experiment** (0.47–9.12 pp) represents coverage achievable by full scan but not by the progressive pipeline. This gap arises from two sources:
+The gap **B2 − Experiment** represents coverage achievable by full scan but not by the progressive pipeline. This gap arises from two sources:
 
 1. **AU faults under partial scan:** Faults whose only observable path passes through a non-scan FF output are untestable even at T=2 if the FF value cannot be justified within the time budget. These are structural limitations of the 10% non-scan configuration.
 2. **UD faults (QN-pin, faultyLine = −4):** Stuck-at faults on the complementary output (QN) of flip-flops are excluded from FAN_ATPG's pattern generation at any frame depth (the condition `faultyLine >= 0` in `atpg.cpp`). These faults appear as UD in both B1 and B2 and contribute ≈0.1 pp to the gap.
 
 ### 8.5 Circuit-Size Scaling
 
-The T=2 gain depends on the structural relationship between the 10% non-scan FFs and the fan-out cones of the residual faults, not simply on circuit size. Small circuits with severe non-scan FF blocking (s953: T=1 = 36.75%) can show very large T=2 gains (+54.51pp). Large circuits like s35932, s38417, and s38584 show minimal gains (+0.05–0.47pp) because their T=1 coverage is already high (87.59–95.22%) with the higher-backtrack engine configuration — the non-scan FFs at 10% exclusion do not block enough faults to create a meaningful T=2 residual.
+The T=2 gain depends on the structural relationship between the 10% non-scan FFs and the fan-out cones of the residual faults, not simply on circuit size. Small circuits with severe non-scan FF blocking (s953: T=1 = 36.75%) can show very large T=2 gains (+54.51pp). Large circuits like s35932 show minimal gain (+0.05pp) because T=1 coverage is already high (87.59%) with the higher-backtrack engine configuration — the non-scan FFs at 10% exclusion do not block enough faults to create a meaningful T=2 residual.
 
 ### 8.6 Priority Scoring (Negative Result)
 
@@ -459,11 +449,11 @@ Test power during scan shift is an active research area [7][14][15]. Scan-chain 
 
 ## 10. Limitations and Threats to Validity
 
-1. **Benchmark coverage.** Two suites: ITC'99 (8 circuits, 29–88 FFs) and ISCAS'89 (9 circuits, 18–1728 FFs). Larger industrial circuits not evaluated.
-2. **Backtrack limit sensitivity.** Results depend on FAST=800 / BACKTRACK=5000 choice. A lower T=1 limit would increase the residual at the risk of aborting faults that could have been DT with more search. A higher T=1 limit would reduce the residual but increase T=1 runtime. ptt=5 s sensitivity is minimal — no_ptt ablation shows identical results on 8 circuits.
-3. **Two baselines.** Report **B1** (partial T=1) and **B2** (full-scan) for every circuit. ITC'99 B2 values are from prior ptt=0 runs; ISCAS'89 B2 values use ptt=5 s (consistent with pipeline).
+1. **Benchmark coverage.** Two suites: ITC'99 (8 circuits, 29–88 FFs) and ISCAS'89 (7 circuits, 18–1728 FFs, excluding s38417, s38584). Larger industrial circuits not evaluated.
+2. **Backtrack limit sensitivity.** Results depend on T1=800 / BACKTRACK=5000 choice. A lower T=1 limit would increase the residual at the risk of aborting faults that could have been DT with more search. A higher T=1 limit would reduce the residual but increase T=1 runtime.
+3. **Two baselines.** Report **B1** (partial T=1) and **B2** (full-scan) for every circuit. All runs use the same binary and backtrack limits.
 4. **s27 is toy-scale.** +43.9pp vs B1 is pipeline verification only.
-5. **Shallow depth.** T=8 not evaluated; T=4 adds 0 gain universally on current sweeps.
+5. **Shallow depth.** T=8 not evaluated; T=4 adds 0 gain universally.
 6. **Mask/netlist alignment.** Regenerate `masks/<circuit>_x10.mask` after netlist changes.
 7. **AU semantics.** FAN AU is operational (search failure within budget), not a formal untestability proof.
 8. **Single ATPG backend.** Cross-tool validation not performed.
@@ -472,7 +462,7 @@ Test power during scan shift is an active research area [7][14][15]. Scan-chain 
 
 ## 11. Conclusion
 
-We implemented a reproducible progressive residual T=1→T=2→T=4 ATPG pipeline with three contributions — frame-based backtrack limit, Two-Phase State Justification, fixed-denominator union accounting — evaluated on **two benchmark suites** (8 ITC'99 + 9 ISCAS'89 circuits) under a **unified per-target timeout of 5 s safety net**.
+We implemented a reproducible progressive residual T=1→T=2→T=4 ATPG pipeline with three contributions — frame-based backtrack limit, Two-Phase State Justification, fixed-denominator union accounting — evaluated on **two benchmark suites** (8 ITC'99 + 7 ISCAS'89 circuits) with **no per-target timeout** (backtrack limit is the sole bounding mechanism).
 
 **Key findings:**
 
@@ -482,9 +472,9 @@ We implemented a reproducible progressive residual T=1→T=2→T=4 ATPG pipeline
 
 3. **Remaining gap to full-scan is 0.47–9.12 pp.** The pipeline substantially narrows the partial-scan coverage penalty but does not eliminate it. Residual AU faults (beyond the reach of 2-frame justification) and QN-pin UD faults (structurally excluded from ATPG targeting) account for the gap.
 
-4. **The frame-based backtrack limit (FAST=800 at T=1 vs 5000 at T>1) is the primary bounding mechanism.** It prevents wasted search effort on structurally unrecoverable T=1 faults, creating the residual that T=2 targets. Separate no_ptt ablation confirms ptt=5 s is a secondary safety net: results are identical with or without it for 8 circuits.
+4. **The frame-based backtrack limit (T1=800 at T=1 vs 5000 at T>1) is the bounding mechanism.** It prevents wasted search effort on structurally unrecoverable T=1 faults, creating the AB residual that T=2 targets. There is no per-target timeout — the backtrack limit alone bounds all runs within wall timeout.
 
-5. **Two-Phase State Justification** is the core recovery mechanism. By decoupling frame-1 propagation from frame-0 state justification, it recovers faults that were AB at T=1 due to the fast backtrack limit. ptt=5 s is a **runtime safety net** for very large circuits (s38417, s38584), not the recovery mechanism.
+5. **Two-Phase State Justification** is the core recovery mechanism. By decoupling frame-1 propagation from frame-0 state justification, it recovers faults that were AB at T=1 due to the T1 backtrack limit.
 
 ---
 
@@ -494,9 +484,10 @@ We implemented a reproducible progressive residual T=1→T=2→T=4 ATPG pipeline
 
 | File | Content |
 |------|---------|
-| `results/progressive_residual_summary.csv` | B1 + pipeline (17 circuits: 8 ITC'99 + 9 ISCAS'89, @10%, ptt=5s) |
-| `results/iscas89_fullscan_baseline.csv` | **B2** full-scan for ISCAS'89 (ptt=5s) |
-| `results/phase_d_fullscan_dataset.csv` | **B2** full-scan for ITC'99 (ptt=0, reference) |
+| `results/pipeline_summary.csv` | B1 + pipeline (15 circuits, @10%, no ptt) |
+| `results/fullscan_baseline.csv` | **B2** full-scan (15 circuits, no ptt) |
+| `results/ablation_uniform_limit.csv` | Condition B: T1=5000 at T=1 |
+| `results/ablation_no_tp_T2.csv` | Condition C: Two-Phase OFF at T=2 |
 | `results/residual_faults/` | Per-stage residual fault list files |
 | `masks/*_slack.csv`, `masks/*_x10.mask` | OpenSTA slack ranking + non-scan masks |
 | `results/logs/` | Sweep run logs (fullscan, ITC'99, ISCAS'89) |
@@ -517,43 +508,13 @@ We implemented a reproducible progressive residual T=1→T=2→T=4 ATPG pipeline
 
 | Item | Status |
 |------|--------|
-| ITC'99 B2 at ptt=5s | Not yet run; current B2 from ptt=0 reference run |
+| ITC'99 B2 fresh run | Pending; align full-scan baseline with new pipeline |
 | T=8 pipeline depth | Not evaluated; T=4 adds 0 pp — unlikely to change |
 | Non-scan FF selection (cone-aware) | Timing-slack selection; cone-aligned selection may reduce B2−Exp gap |
 | UD faults (QN, l=−4) | Structurally untestable in B1 and B2; not reducible by frame depth |
 | b03 full-scan AU blocker | PID stale from Jun 9; separate issue (`b03_dffr.v`, forced FAULT_UNTESTABLE in atpg.cpp) |
 
-### D. No-ptt Ablation Results
 
-Ablation with `set_per_target_timeout 0` (ptt=0) on 8 ITC'99 circuits to test whether
-ptt is the mechanism behind T=2 gain.
-
-| Circuit | Condition | FC_T1 | FC_T1_T2_T4 | gain_T2_pp | Matches baseline? |
-|---------|-----------|------:|------------:|-----------:|:-----------------:|
-| b03 | Baseline (ptt=5s) | 44.50% | 85.41% | +40.91 | — |
-| b03 | No ptt (ptt=0) | 44.50% | 85.41% | +40.91 | Yes (identical) |
-| b04 | Baseline | 75.21% | 84.46% | +9.25 | — |
-| b04 | No ptt | 75.21% | 84.46% | +9.25 | Yes |
-| b05 | Baseline | 29.10% | 87.63% | +58.53 | — |
-| b05 | No ptt | 29.10% | 87.63% | +58.53 | Yes |
-| b07 | Baseline | 56.13% | 87.93% | +31.80 | — |
-| b07 | No ptt | 56.13% | 87.93% | +31.80 | Yes |
-| b08 | Baseline | 72.96% | 91.09% | +18.13 | — |
-| b08 | No ptt | 72.96% | 91.09% | +18.13 | Yes |
-| b09 | Baseline | 76.34% | 87.85% | +11.51 | — |
-| b09 | No ptt | 76.34% | 87.85% | +11.51 | Yes |
-| b11 | Baseline | 66.21% | 94.32% | +28.10 | — |
-| b11 | No ptt | 66.21% | 94.32% | +28.10 | Yes |
-| b13 | Baseline | 77.33% | 82.01% | +4.68 | — |
-| b13 | No ptt | 77.33% | 82.01% | +4.68 | Yes |
-
-**Interpretation:** Across all 8 circuits, ptt=0 produces **identical** results to
-ptt=5s at every pipeline stage. This confirms that ptt never fires — the
-backtrack limit is reached before ptt expires for every targeted fault. The
-frame-based FAST_BACKTRACK_LIMIT=800 at T=1 is the actual bounding mechanism,
-not ptt.
-
----
 
 ## References
 

@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Ablation: A vs B vs C on 15 circuits (excl. s38417, s38584), all ptt=0.
+Ablation: three conditions on 15 circuits (excl. s38417, s38584), no ptt.
   (A) Baseline: FAST=800, Two-Phase ON at T>1
   (B) No fast limit: FAST=5000 (same as T>1), Two-Phase ON at T>1
   (C) No Two-Phase at T=2: FAST=800, Two-Phase OFF at T=2 only
 
-Output: results/ablation_{no_fast_limit,no_tp_T2}.csv
+Output: results/ablation_{baseline,no_fast_limit,no_tp_T2}.csv
+Also doubles as Experiment 1 (baseline) and ablation (B, C).
 """
 import os, subprocess, sys, shutil, glob
 
@@ -37,7 +38,8 @@ def fresh_start():
 def run_one_condition(label, env_vars=None, extra_args=None):
     fresh_start()
     env = os.environ.copy()
-    env["ATPG_PER_TARGET_TIMEOUT"] = "0"
+    # No per-target timeout ever
+    env.pop("ATPG_PER_TARGET_TIMEOUT", None)
     if env_vars:
         env.update(env_vars)
     for i, c in enumerate(CIRCUITS, 1):
@@ -66,16 +68,18 @@ def run_one_condition(label, env_vars=None, extra_args=None):
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("Ablation: 15 circuits (excl s38417, s38584), ptt=0")
+    print("Ablation: 15 circuits (excl s38417, s38584), no ptt")
     print("=" * 60)
 
-    print("\n>>> Condition B: no fast limit (FAST=5000) <<<")
-    run_one_condition("no_fast_limit", env_vars={"ATPG_FAST_BACKTRACK_LIMIT": "5000"})
+    print("\n>>> Condition A: Baseline (FAST=800, Two-Phase ON) <<<")
+    run_one_condition("baseline")
 
-    print("\n>>> Condition C: no Two-Phase at T=2 <<<")
+    print("\n>>> Condition B: Uniform limit (T1=5000, same as T>1) <<<")
+    run_one_condition("uniform_limit", env_vars={"ATPG_T1_BACKTRACK_LIMIT": "5000"})
+
+    print("\n>>> Condition C: No Two-Phase at T=2 <<<")
     run_one_condition("no_tp_T2", extra_args=["--t2-two-phase", "off"])
 
-    archived = os.path.join(REPO, "results", "archive", "progressive_residual_summary_before_ablation.csv")
-    if os.path.exists(archived):
-        shutil.move(archived, SUMMARY)
-        print(f"\nRestored original summary")
+    # Note: results are saved to labeled ablation_*.csv files.
+    # The main summary.csv now contains results from condition C (last run).
+    # Use ablation_baseline.csv for condition A (Exp 1).
