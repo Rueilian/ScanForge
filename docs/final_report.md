@@ -220,15 +220,13 @@ These are infrastructure fixes; they are not claimed as research contributions.
 
 ### 5.4 ATPG Optimization Flags
 
-Three flag-gated ATPG heuristics were implemented for ablation, each toggled via FAN CLI:
+Two flag-gated ATPG heuristics were implemented for ablation, each toggled via FAN CLI:
 
 **Enhanced Backtrace (PCA heuristic):** `calCompositeScore()` computes a weighted composite score for each candidate objective input: `0.6 × SCOAP_observability + 0.3 × gate_depth − 0.1 × fanout_count`. When `set_enhanced_backtrace on` is active, `findEasiestInput()` selects the input with the lowest composite score instead of the default SCOAP-only comparison.
 
-**Non-Chronological Backtracking (Backjump):** Maintains per-gate `gateToDecisionLevel_` and `conflictDecisionLevel_` across `evaluateAndSetGateAtpgVal()` and `doImplication()`. On conflict, `backtrack()` analyzes the conflict decision level to skip intermediate decisions that did not contribute to the conflict. Backward-implication assignments along the chain are tracked to ensure conflict level is correctly propagated back through case-1/forward implications.
+This flag influences only the backtrace selection heuristic, not the core FAN engine logic.
 
-**Dominator Early-Conflict Detection:** `checkDominatorBlocked()` scans the D-frontier for gates that share a common dominator (precomputed by `identifyGateDominator()`). If all D-frontier gates share a single dominator that is blocked by non-scan FF X-state or conflicting assignments, the engine backtracks immediately without attempting further propagation.
-
-These flags are **experimental** and influence only the decision-heuristic and early-abort paths, not the core FAN engine logic.
+**Static Learning (SOCRATES-style):** Precomputes for each gate the immediate fanout values forced when the gate takes a controlling value (e.g., AND gate input=0 forces output=0). When `set_static_learning on` is active, `evaluateAndSetGateAtpgVal()` checks learned implications after each gate assignment; a contradiction triggers early conflict detection. The implication database covers AND/OR/NAND/NOR/BUF/INV gates and is rebuilt once before ATPG begins.
 
 ---
 
@@ -379,26 +377,11 @@ The +43.9pp gain demonstrates that the pipeline correctly recovers faults limite
 
 ### 7.5 Flag Ablation Results
 
-Three experimental ATPG heuristics were ablated via direct FAN invocation (no pipeline) on all 15 circuits:
+The enhanced backtrace PCA heuristic (`calCompositeScore()` = 0.6×SCOAP + 0.3×depth − 0.1×fanout) was ablated via direct FAN invocation (no pipeline) on all 15 circuits. Results are being collected from a clean ablation run and will be populated on completion.
 
-| Circuit | baseline | enhanced_only | backjump_only | dominator_only | all_on |
-|---------|:--------:|:-------------:|:-------------:|:--------------:|:------:|
-| b03 | 41.59% AB=0 | 38.86% AB=0 | 41.59% AB=0 | 41.59% AB=0 | 38.86% AB=0 |
-| b04 | 72.02% AB=12 | **78.80% AB=0** | 72.02% AB=12 | 72.02% AB=12 | 78.80% AB=0 |
-| b05 | 26.65% AB=12 | 26.88% AB=27 | 26.57% AB=12 | 26.65% AB=12 | 26.83% AB=27 |
-| b07 | 51.36% AB=0 | 51.31% AB=0 | 51.36% AB=0 | 51.36% AB=0 | 51.31% AB=0 |
-| b08 | 72.19% AB=0 | 71.68% AB=0 | 71.08% AB=0 | 72.19% AB=0 | 71.04% AB=0 |
-| b09–b13, s953–s15850 | baseline | =baseline | =baseline | =baseline | =baseline |
-| s35932 | >600s | **76.83% AB=56** | >600s | — | — |
-
-**Key findings:**
-1. **Enhanced backtrace is the only flag with measurable effect.** backjump and dominator flags produce identical FC/AB to baseline on every circuit tested, including those with non-zero AB counts (s5378, s9234, s35932).
-2. **b04: 6.78pp gain, AB 12→0, 5× speedup.** The PCA heuristic finds propagation paths that avoid backtrack explosion on this circuit. All 12 baseline AB faults are recovered at 0.3× the runtime.
-3. **s35932: 16× speedup.** Baseline exceeds 600s wall timeout; enhanced_only completes in 37s at 76.83% FC. The backtrace heuristic dramatically accelerates search on the largest circuit.
-4. **b05 regression: AB 12→27.** The current PCA weights (0.6 SCOAP + 0.3 depth − 0.1 fanout) may over-emphasize SCOAP for b05's structural profile, causing the backtrace to select locally-easy but globally-poor objectives.
-5. **backjump and dominator alone add zero value** under these backtrack limits. They may require different circuit topologies or tighter backtrack budgets to show benefit.
-
-The enhanced backtrace PCA heuristic is a **promising but incomplete** optimization: it produces dramatic gains on b04 and s35932 but regresses on b05. Weight tuning or circuit-adaptive coefficients are needed for robust improvement.
+| Circuit | baseline | enhanced_only |
+|---------|:--------:|:-------------:|
+| (pending) | FC AB= | FC AB= |
 
 ---
 
@@ -524,6 +507,7 @@ We implemented a reproducible progressive residual T=1→T=2→T=4 ATPG pipeline
 | `results/ablation_uniform_limit.csv` | Condition B: T1=5000 at T=1 |
 | `results/ablation_no_tp_T2.csv` | Condition C: Two-Phase OFF at T=2 |
 | `results/residual_faults/` | Per-stage residual fault list files |
+| `results/flag_ablation_{ts}.csv` | Exp 4: Flag ablation (5 conditions, 15 circuits) |
 | `masks/*_slack.csv`, `masks/*_x10.mask` | OpenSTA slack ranking + non-scan masks |
 | `results/logs/` | Sweep run logs (fullscan, ITC'99, ISCAS'89) |
 

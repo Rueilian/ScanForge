@@ -16,7 +16,7 @@ RPT_DIR = os.path.join(FAN_DIR, "rpt")
 SCRIPT_DIR = os.path.join(FAN_DIR, "script", "fanScripts")
 RES_FAULT_DIR = os.path.join(REPO_ROOT, "results", "residual_faults")
 RES_STATUS_DIR = os.path.join(REPO_ROOT, "results", "fault_status")
-SUMMARY_CSV = os.path.join(REPO_ROOT, "results", "progressive_residual_summary.csv")
+SUMMARY_CSV = os.environ.get("ATPG_SUMMARY_CSV") or os.path.join(REPO_ROOT, "results", "progressive_residual_summary.csv")
 
 os.makedirs(RES_FAULT_DIR, exist_ok=True)
 os.makedirs(RES_STATUS_DIR, exist_ok=True)
@@ -33,7 +33,7 @@ SUMMARY_FIELDS = [
     "per_target_timeout_sec", "status"
 ]
 
-def run_fan(label, circuit, frame, nonscan_ffs, fault_file=None, timeout_s=None, per_target_timeout=None, two_phase=True):
+def run_fan(label, circuit, frame, nonscan_ffs, fault_file=None, timeout_s=None, per_target_timeout=None, two_phase=True, extra_flags=""):
     if timeout_s is None:
         timeout_s = WALL_TIMEOUT_S
     if per_target_timeout is None:
@@ -55,6 +55,8 @@ def run_fan(label, circuit, frame, nonscan_ffs, fault_file=None, timeout_s=None,
     if per_target_timeout > 0:
         lines.append(f"set_per_target_timeout {per_target_timeout}")
     lines.append(f"set_two_phase_justification {'on' if two_phase else 'off'}")
+    if extra_flags:
+        lines.append(extra_flags)
     lines += [
         "set_static_compression off", "set_dynamic_compression off",
         "run_atpg",
@@ -141,6 +143,8 @@ def main():
                     help="Two-Phase setting for T=2 stage (default on)")
     ap.add_argument("--t4-two-phase", choices=["on","off"], default="on",
                     help="Two-Phase setting for T=4 stage (default on)")
+    ap.add_argument("--extra-flags", default="",
+                    help="Extra FAN CLI commands before run_atpg (e.g. 'set_enhanced_backtrace on')")
     args = ap.parse_args()
 
     c = args.circuit; ratio = args.ratio; ns_ffs = args.nonscan
@@ -159,7 +163,7 @@ def main():
 
     # ── Phase 1: T=1 all faults ──
     print("Phase 1: T=1 all faults")
-    t1 = run_fan(f"{tag}_t1_all", c, 1, ns_ffs, per_target_timeout=ptt, two_phase=args.t1_two_phase=="on")
+    t1 = run_fan(f"{tag}_t1_all", c, 1, ns_ffs, per_target_timeout=ptt, two_phase=args.t1_two_phase=="on", extra_flags=args.extra_flags)
     if t1["status"] != "PASS":
         print(f"  {t1['status']}")
         return
@@ -180,7 +184,7 @@ def main():
     r1_file = os.path.join(RES_FAULT_DIR, f"{tag}_after_T1.faults")
     write_fault_list(R1, r1_file)
     print(f"Phase 2: T=2 on {len(R1)} residual faults")
-    t2 = run_fan(f"{tag}_t2_res", c, 2, ns_ffs, fault_file=r1_file, per_target_timeout=ptt, two_phase=args.t2_two_phase=="on")
+    t2 = run_fan(f"{tag}_t2_res", c, 2, ns_ffs, fault_file=r1_file, per_target_timeout=ptt, two_phase=args.t2_two_phase=="on", extra_flags=args.extra_flags)
     t2_new = D2_au = D2_ab = D2_to = 0
     if t2["status"] == "PASS":
         t2_faults, _ = parse_faults(os.path.join(RPT_DIR, f"{tag}_t2_res_faults.txt"))
@@ -199,7 +203,7 @@ def main():
     r2_file = os.path.join(RES_FAULT_DIR, f"{tag}_after_T1_T2.faults")
     write_fault_list(R2, r2_file)
     print(f"Phase 3: T=4 on {len(R2)} remaining residual faults")
-    t4 = run_fan(f"{tag}_t4_res", c, 4, ns_ffs, fault_file=r2_file, per_target_timeout=ptt, two_phase=args.t4_two_phase=="on")
+    t4 = run_fan(f"{tag}_t4_res", c, 4, ns_ffs, fault_file=r2_file, per_target_timeout=ptt, two_phase=args.t4_two_phase=="on", extra_flags=args.extra_flags)
     t4_new = D4_au = D4_ab = D4_to = 0
     if t4["status"] == "PASS":
         t4_faults, _ = parse_faults(os.path.join(RPT_DIR, f"{tag}_t4_res_faults.txt"))

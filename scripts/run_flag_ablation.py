@@ -1,24 +1,26 @@
 #!/usr/bin/env python3
 """
-Quick flag ablation: test 3 ATPG flags individually + all-on.
+Ablation: test enhanced backtrace flag vs baseline.
 Runs FAN directly (no T1/T2/T4 progressive pipeline) on all 15 circuits
-with 5 flag conditions. Reports FC(scan), AB, TO, runtime per run.
+with 2 conditions. Reports FC(scan), AB, TO, runtime per run.
 
 Conditions:
-  baseline, enhanced_only, backjump_only, dominator_only, all_on
+  baseline, enhanced_only
 
 Usage:
-  python3 scripts/run_flag_ablation.py [--resume]
+  python3 scripts/run_flag_ablation.py
 
-Output: results/flag_ablation.csv
+Output: results/flag_ablation_{timestamp}.csv
 """
-import argparse, csv, os, re, subprocess, sys, time
+import csv, os, re, subprocess, time
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 FAN_DIR = os.path.join(REPO, "FAN_ATPG")
 FAN_BIN = os.path.join(FAN_DIR, "bin", "opt", "fan")
 MASK_DIR = os.path.join(REPO, "masks")
-OUT_CSV = os.path.join(REPO, "results", "flag_ablation.csv")
+SCRIPT_GEN = os.path.join(FAN_DIR, "script", "gen")
+OUT_CSV = os.path.join(REPO, "results",
+    f"flag_ablation_{time.strftime('%Y%m%d_%H%M%S')}.csv")
 
 CIRCUITS = ["b03","b04","b05","b07","b08","b09","b11","b13",
             "s953","s1196","s1238","s5378","s9234","s15850","s35932"]
@@ -26,11 +28,6 @@ CIRCUITS = ["b03","b04","b05","b07","b08","b09","b11","b13",
 FLAGS = {
     "baseline":       [],
     "enhanced_only":  ["set_enhanced_backtrace on"],
-    "backjump_only":  ["set_backjump on"],
-    "dominator_only": ["set_dominator_check on"],
-    "all_on":         ["set_enhanced_backtrace on",
-                       "set_backjump on",
-                       "set_dominator_check on"],
 }
 
 def load_mask(circuit):
@@ -73,43 +70,19 @@ def parse_rpt(text):
         if m: runtime = float(m.group(1))
     return fc, ab, to, runtime
 
-def run_already_done():
-    """Return set of (circuit, condition) already recorded."""
-    done = set()
-    if os.path.exists(OUT_CSV):
-        with open(OUT_CSV) as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                done.add((row["circuit"], row["condition"]))
-    return done
-
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--resume", action="store_true",
-                        help="Skip already-recorded (circuit,condition) pairs")
-    args = parser.parse_args()
-
-    done = run_already_done() if args.resume else set()
-
-    os.makedirs(os.path.dirname(OUT_CSV), exist_ok=True)
-    file_exists = os.path.exists(OUT_CSV)
-    fout = open(OUT_CSV, "a" if args.resume else "w")
+    os.makedirs(SCRIPT_GEN, exist_ok=True)
+    fout = open(OUT_CSV, "w")
     writer = csv.writer(fout)
-    if not file_exists or not args.resume:
-        writer.writerow(["circuit", "condition", "FC_pct", "AB", "TO", "runtime_s"])
+    writer.writerow(["circuit", "condition", "FC_pct", "AB", "TO", "runtime_s"])
 
     total = len(CIRCUITS) * len(FLAGS)
-    done_count = len(done)
     idx = 0
     for ckt in CIRCUITS:
         for cond, cmds in FLAGS.items():
             idx += 1
-            key = (ckt, cond)
-            if key in done:
-                print(f"  [{idx}/{total}] SKIP {ckt}/{cond} (already done)")
-                continue
             script = build_script(ckt, cmds)
-            script_path = os.path.join(FAN_DIR, "script", f"flag_ablation_{ckt}_{cond}.script")
+            script_path = os.path.join(SCRIPT_GEN, f"flag_ablation_{ckt}_{cond}.script")
             with open(script_path, "w") as f:
                 f.write(script)
             print(f"  [{idx}/{total}] {ckt}/{cond} ...", end=" ", flush=True)
@@ -143,6 +116,10 @@ def main():
                 writer.writerow([ckt, cond, "", "", "1", "600.0"])
             fout.flush()
     fout.close()
+    # cleanup generated scripts
+    for f in os.listdir(SCRIPT_GEN):
+        os.remove(os.path.join(SCRIPT_GEN, f))
+    os.rmdir(SCRIPT_GEN)
     print(f"\nDone -> {OUT_CSV}")
 
 if __name__ == "__main__":
