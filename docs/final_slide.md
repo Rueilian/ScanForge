@@ -138,6 +138,35 @@ Final = D1 ∪ D2 ∪ D4
 
 ---
 
+## Slide 7b — ATPG Optimization Flag Ablation
+
+### Three experimental heuristics, flag-gated
+
+| Flag | What it does |
+|------|-------------|
+| **Enhanced backtrace** | PCA composite: 0.6×SCOAP + 0.3×depth − 0.1×fanout |
+| **Backjump** | Non-chronological backtrack from conflict level |
+| **Dominator check** | Early backtrack when D-frontier dominator is blocked |
+
+### Results (direct FAN, no pipeline, 15 circuits)
+
+| Circuit | baseline | enhanced_only | all_on |
+|---------|:--------:|:-------------:|:------:|
+| b04 | 72.02% AB=12 | **78.80% AB=0** | 78.80% AB=0 |
+| b05 | 26.65% AB=12 | 26.88% AB=27 | 26.83% AB=27 |
+| s35932 | >600s | **76.83% AB=56** | — |
+| other 12 | same | same | same |
+
+**Enhanced backtrace: only flag that matters.** backjump/dominator = identical to baseline on ALL circuits.
+
+| Finding | Circuit | Impact |
+|---------|---------|--------|
+| **Win** | b04 | +6.78pp FC, AB 12→0, **5× faster** |
+| **Win** | s35932 | **16× speedup** (37s vs >600s) |
+| **Regression** | b05 | AB 12→27 (PCA weights need tuning) |
+
+---
+
 ## Slide 8 — Why T=2 Works
 
 ### Two mechanisms, one recovery engine

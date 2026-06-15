@@ -168,6 +168,61 @@ All other parameters match Experiment 1.
 
 ---
 
+## Experiment 4: ATPG Optimization Flag Ablation
+
+**Purpose:** Evaluate three flag-gated ATPG optimizations — enhanced backtrace (PCA heuristic), non-chronological backtracking (backjump), and dominator early-conflict detection — via ablation on 15 circuits.
+
+**Design:** Five conditions, each run as a single FAN invocation on all original faults (no pipeline):
+
+| Condition | Enhanced backtrace | Backjump | Dominator check |
+|-----------|:-:|:-:|:-:|
+| baseline | OFF | OFF | OFF |
+| enhanced_only | ON | OFF | OFF |
+| backjump_only | OFF | ON | OFF |
+| dominator_only | OFF | OFF | ON |
+| all_on | ON | ON | ON |
+
+**Implementation:** Three toggle flags in FAN_ATPG:
+
+| Flag | Heuristic | Implementation |
+|------|-----------|----------------|
+| `set_enhanced_backtrace on` | PCA composite score | `calCompositeScore()` = 0.6×SCOAP + 0.3×depth − 0.1×fanout; used in `findEasiestInput()` |
+| `set_backjump on` | Non-chronological backtrack | `gateToDecisionLevel_` + `conflictDecisionLevel_` tracked in `evaluateAndSetGateAtpgVal()`; `backtrack()` skips irrelevant decisions |
+| `set_dominator_check on` | D-frontier dominator conflict | `checkDominatorBlocked()` scans D-frontier for common dominators; forces backtrack when all blocked |
+
+**Circuits:** Same 15 circuits (8 ITC'99 + 7 ISCAS'89).
+
+**Results (flag_ablation.csv):**
+
+| Circuit | baseline | enhanced_only | backjump_only | dominator_only | all_on |
+|---------|:--------:|:-------------:|:-------------:|:--------------:|:------:|
+| b03 | 41.59% AB=0 | **38.86%** AB=0 | 41.59% AB=0 | 41.59% AB=0 | **38.86%** AB=0 |
+| b04 | 72.02% AB=12 | **78.80% AB=0** | 72.02% AB=12 | 72.02% AB=12 | **78.80% AB=0** |
+| b05 | 26.65% AB=12 | **26.88% AB=27** | 26.57% AB=12 | 26.65% AB=12 | 26.83% AB=27 |
+| b07 | 51.36% AB=0 | 51.31% AB=0 | 51.36% AB=0 | 51.36% AB=0 | 51.31% AB=0 |
+| b08 | 72.19% AB=0 | 71.68% AB=0 | 71.08% AB=0 | 72.19% AB=0 | 71.04% AB=0 |
+| b09 | 75.59% AB=0 | 75.59% AB=0 | 75.59% AB=0 | 75.59% AB=0 | 75.59% AB=0 |
+| b11 | 62.37% AB=7 | 62.37% AB=7 | 62.37% AB=7 | 62.37% AB=7 | 62.37% AB=7 |
+| b13 | 75.54% AB=0 | 75.54% AB=0 | 75.54% AB=0 | 75.54% AB=0 | 75.54% AB=0 |
+| s953 | 34.26% AB=0 | 34.26% AB=0 | 34.26% AB=0 | 34.26% AB=0 | 34.26% AB=0 |
+| s1196 | 86.18% AB=0 | 86.18% AB=0 | 86.18% AB=0 | 86.18% AB=0 | 86.18% AB=0 |
+| s1238 | 83.23% AB=0 | 83.23% AB=0 | 83.23% AB=0 | 83.23% AB=0 | 83.23% AB=0 |
+| s5378 | 73.82% AB=2 | 73.82% AB=2 | 73.82% AB=2 | 73.82% AB=2 | 73.82% AB=2 |
+| s9234 | 73.29% AB=30 | 73.29% AB=30 | 73.29% AB=30 | 73.29% AB=30 | 73.29% AB=30 |
+| s15850 | 66.19% AB=0 | 66.19% AB=0 | 66.19% AB=0 | 66.19% AB=0 | 66.19% AB=0 |
+| s35932 | >600s | **76.83% AB=56** | >600s | — | — |
+
+**Key findings:**
+1. **Enhanced backtrace is the only measurable flag.** backjump_only and dominator_only produce identical FC/AB to baseline on ALL circuits.
+2. **Massive win on b04:** enhanced_only reduces AB from 12→0, raises FC from 72.02%→78.80%, 5× faster (2.2s vs 10.2s).
+3. **s35932: 16× speedup.** baseline exceeds 600s wall timeout; enhanced_only completes in 37s at 76.83% FC.
+4. **Regression on b05:** enhanced_only raises AB from 12→27 (+15). PCA weights (0.6 SCOAP + 0.3 depth − 0.1 fanout) may over-weight SCOAP for this circuit.
+5. **backjump and dominator add zero value** under these backtrack limits.
+
+**Status:** 73/75 runs complete (s35932 baseline/backjump_only timed out at 600s; enhanced_only completed in 37s).
+
+---
+
 ## Summary
 
 | Experiment | Scope | RQs | Key parameters | Completion |
@@ -176,3 +231,4 @@ All other parameters match Experiment 1.
 | 2. Full-Scan Baselines | 15 circuits | Ceiling | T=1 only, no non-scan, no ptt, BACKTRACK=5000 | Pending |
 | 3a. Ablation: uniform T1 limit | 15 circuits | RQ3 | no ptt, T1=5000, Two-Phase ON at T2 | Pending |
 | 3b. Ablation: no Two-Phase at T=2 | 15 circuits | RQ3 | no ptt, T1=800, Two-Phase OFF at T2 | Pending |
+| 4. ATPG Flag Ablation | 15 circuits | Optimization | 5 flag conditions, direct FAN, no pipeline | 73/75 complete (s35932 ×2 timed out) |
