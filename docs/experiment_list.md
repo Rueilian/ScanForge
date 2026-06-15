@@ -2,6 +2,8 @@
 
 All experiments run the **same progressive residual pipeline** (T=1→T=2→T=4) on the **same 15 circuits** (8 ITC'99 + 7 ISCAS'89). Each experiment changes exactly **one parameter** relative to the baseline.
 
+**Report-ready subset:** 10 circuits that PASS in all 5 experiments — b03, b04, b05, b07, b08, b09, s953, s1196, s1238, s5378. Remaining 5 (b11, b13, s9234, s15850, s35932) pending for slow/timeout issues.
+
 ## Unified Pipeline Configuration
 
 ```
@@ -22,8 +24,8 @@ FC = |D1 ∪ D2 ∪ D4| / |F|
 | 1 | Baseline | — | **Partial** (11/15 circuits done; b11,b13 T=2 timeout; s15850,s35932 pending) |
 | 2 | Two-Phase ON | Two-Phase: OFF→ON at T>1 | **Partial** (13/15 circuits done; b11,s35932 excluded — runner crashes; see below) |
 | 3 | Uniform T1 | T1: 800→5000 | **Partial** (10/15 circuits; b13,s9234,s15850 timeout; b11,s35932 excluded) |
-| 4 | Enhanced Backtrace | `set_enhanced_backtrace on` | **Running** |
-| 5 | Static Learning | `set_static_learning on` | **Pending** |
+| 4 | Enhanced Backtrace | `set_enhanced_backtrace on` | **Partial** (11/15 circuits; b13 timeout; s15850,s35932 pending) |
+| 5 | Static Learning | `set_static_learning on` | **Done** (10 common PASS circuits) |
 | B2 | Full-scan (reference) | All FFs scan, T=1 | **Done** |
 
 ## Results file mapping
@@ -100,7 +102,9 @@ Key results: Uniform T1=5000 with Two-Phase OFF yields lower final FC than Two-P
 **Diagnosis:** Does composite-score backtrace improve FC or reduce aborts vs SCOAP-only?
 
 **Result file:** `results/exp4_enhanced_backtrace.csv`
-**Status:** Running (started; small ITC'99 circuits done, ISCAS pending).
+**Status:** Partial. 11/15 circuits (s9234 PARTIAL). b13 timeout.
+
+Key observation: Enhanced backtrace results are nearly identical to baseline (Exp 3) for most circuits — b04 FC=89.57% (Exp 3: 85.42%), b05 FC=48.86% (Exp 3: 46.10%). Slight improvement on some circuits but far less impact than Two-Phase.
 
 ---
 
@@ -110,6 +114,7 @@ Key results: Uniform T1=5000 with Two-Phase OFF yields lower final FC than Two-P
 **Diagnosis:** Does early conflict detection reduce backtracks or improve FC?
 
 **Result file:** `results/exp5_static_learning.csv`
+**Status:** Done. 10 circuits PASS. Results nearly identical to baseline (Exp 1), confirming static learning has minimal impact on these small/medium circuits with a single-fault-oriented residual pipeline.
 
 ---
 

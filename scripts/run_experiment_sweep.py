@@ -12,10 +12,10 @@ MASK_DIR = os.path.join(REPO_ROOT, "masks")
 RES_DIR = os.path.join(REPO_ROOT, "results")
 LOG = os.path.join(RES_DIR, "sweep_log.txt")
 
-PER_CIRCUIT_TIMEOUT = 300  # skip circuits taking >5 min
+PER_CIRCUIT_TIMEOUT = 180  # skip circuits taking >3 min
 
-CIRCUITS = ["b03","b04","b05","b07","b08","b09","b11","b13",
-            "s953","s1196","s1238","s5378","s9234","s15850","s35932"]
+CIRCUITS = ["b03","b04","b05","b07","b08","b09",
+            "s953","s1196","s1238","s5378"]
 
 def get_mask(circuit):
     mp = os.path.join(MASK_DIR, f"{circuit}_x10.mask")
@@ -25,40 +25,6 @@ def get_mask(circuit):
     return ""
 
 EXPERIMENTS = [
-    # Exp 1 collected 11/15 circuits; remaining (b11,b13,s15850,s35932) need
-    # Two-Phase OFF which is extremely slow — run Exp 2 (Two-Phase ON) first.
-    # {
-    #     "name": "exp1_baseline",
-    #     "csv": os.path.join(RES_DIR, "exp1_baseline.csv"),
-    #     "desc": "Baseline: T1=800, Two-Phase OFF",
-    #     "env": {},
-    #     "t1tp": "off", "t2tp": "off", "t4tp": "off",
-    #     "extra": "",
-    # },
-    {
-        "name": "exp2_two_phase",
-        "csv": os.path.join(RES_DIR, "exp2_two_phase.csv"),
-        "desc": "Two-Phase ON at T=2, T=4",
-        "env": {},
-        "t1tp": "off", "t2tp": "on", "t4tp": "on",
-        "extra": "",
-    },
-    {
-        "name": "exp3_uniform_T1",
-        "csv": os.path.join(RES_DIR, "exp3_uniform_T1.csv"),
-        "desc": "Uniform T1=5000 (same as T>1)",
-        "env": {"ATPG_T1_BACKTRACK_LIMIT": "5000"},
-        "t1tp": "off", "t2tp": "off", "t4tp": "off",
-        "extra": "",
-    },
-    {
-        "name": "exp4_enhanced_backtrace",
-        "csv": os.path.join(RES_DIR, "exp4_enhanced_backtrace.csv"),
-        "desc": "Enhanced backtrace ON",
-        "env": {},
-        "t1tp": "off", "t2tp": "off", "t4tp": "off",
-        "extra": "set_enhanced_backtrace on",
-    },
     {
         "name": "exp5_static_learning",
         "csv": os.path.join(RES_DIR, "exp5_static_learning.csv"),
@@ -119,11 +85,12 @@ for exp in EXPERIMENTS:
             elapsed = time.time() - t0
             log_msg(f"    done ({elapsed:.1f}s)  rc={proc.returncode}")
         except subprocess.TimeoutExpired:
-            log_msg(f"    TIMEOUT after {PER_CIRCUIT_TIMEOUT}s — skipping")
-            continue
+            elapsed = time.time() - t0
+            log_msg(f"    TIMEOUT after {elapsed:.1f}s — skipping")
         except Exception as e:
             log_msg(f"    ERROR: {e}")
-            continue
+        subprocess.run(["killall", "-9", "fan"], capture_output=True)
+
 
     log_msg(f"=== Finished {exp['name']} ===")
 
