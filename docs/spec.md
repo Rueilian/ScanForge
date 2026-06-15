@@ -142,7 +142,7 @@ run_atpg
 report_statistics
 ```
 
-**Owner: swear01 — DONE** (7/8 complete; b11 T=1 TIMEOUT @ 7200 s — see `results/progressive_residual_summary.csv`)
+**Owner: swear01 — DONE** (8/8 ITC'99 + 9/9 ISCAS'89 complete; b11 PASS at ptt=5s — see `results/progressive_residual_summary.csv`)
 
 ## 5. Experimental Plan
 
@@ -173,20 +173,25 @@ ITC'99 sequential benchmarks synthesized to NanGate45 gate-level Verilog using Y
 
 #### Tier C — Out of scope (not in pipeline)
 
-`b17`, `b18`, `b20`, `b21`, `b22` and mega-ISCAS (`s35932`, `s38417`, `s38584`). Deferred until FAN SAF engine matures on Tier B.
+`b17`, `b18`, `b20`, `b21`, `b22`. Deferred until FAN SAF engine matures on Tier B.
 
-All **Tier A** circuits have ≥20 FFs, ensuring a meaningful non-scan set at **x = 10%**.
+#### ISCAS'89 — Additional test set (9 circuits, full ATPG sweeps)
+
+All 9 ISCAS'89 circuits (s953–s38584, 18–1728 FFs) completed with the same @10% pipeline.
+
+All **Tier A** and **ISCAS'89** circuits have ≥18 FFs, ensuring a meaningful non-scan set at **x = 10%**.
 
 ### Parameter sweep
 
 | Parameter | Values | Role |
 |---|---|---|
-| Circuits (Tier A) | b03, b04, b05, b07, b08, b09, b11, b13 | Benchmarks |
-| Non-scan ratio `x` | **10% only** | Fixed partial-scan setup |
+| Circuits (Tier A) | b03, b04, b05, b07, b08, b09, b11, b13 | ITC'99 benchmarks |
+| Circuits (ISCAS'89) | s953, s1196, s1238, s5378, s9234, s15850, s35932, s38417, s38584 | ISCAS'89 benchmarks |
+| **Non-scan ratio `x`** | **10% only** | Fixed partial-scan setup |
 | Pipeline depths | T=1, T=2, T=4 | **Primary measured axis** |
 | Fault model | SAF | Fixed |
 
-Total progressive pipeline runs: **8** (`run_progressive_residual_sweep.py`).
+Total progressive pipeline runs: **17** (8 ITC'99 + 9 ISCAS'89).
 
 ### Baselines
 
@@ -223,9 +228,10 @@ Pipeline stages and derived metrics:
 | B | `PARTIAL_SEQUENTIAL` mode in FAN_ATPG | swear01 | **Done** |
 | C | `set_nonscan_ff` command, script integration | swear01 | **Done** |
 | D | Progressive residual runner + CSV (`run_progressive_residual.py`) | swear01 | **Done** |
-| E | Tier A pipeline sweep + report update | swear01 | **Done** (7/8 PASS; b11 T=1 TIMEOUT @ 7200 s, June 2026) |
+| E | ITC'99 pipeline sweep + report update | swear01 | **Done** (8/8 PASS, June 2026) |
+| F | ISCAS'89 pipeline sweep + report update | swear01 | **Done** (9/9 PASS, June 2026) |
 
-**ITC'99 pipeline status (June 2026 — complete):**
+**Pipeline status (June 2026 — complete):**
 
 - **Done:** base-gate netlist pipeline (`build_itc99_netlists.sh`) — undriven=0, OAI/AOI-free, all 11 ITC circuits loadable in FAN
 - **Done:** `Gate::MUX` kept (Phase D1); OAI/AOI atomic gates reverted (D3.2/D3.3 rolled back); ABC expands OAI/AOI during synthesis

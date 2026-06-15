@@ -30,8 +30,13 @@ Results tables must include **all three coverage columns** in this order.
 ## Evaluation protocol
 
 ```bash
-ATPG_PER_TARGET_TIMEOUT=0 ATPG_WALL_TIMEOUT=7200 \
+# ITC'99 sweep (8 circuits @10%, ptt=5s):
+ATPG_PER_TARGET_TIMEOUT=5 ATPG_WALL_TIMEOUT=3600 \
   python3 scripts/run_progressive_residual_sweep.py --fresh
+
+# ISCAS'89 sweep (9 circuits @10%, ptt=5s):
+ATPG_PER_TARGET_TIMEOUT=5 ATPG_WALL_TIMEOUT=3600 \
+  python3 scripts/run_progressive_residual_iscas89_sweep.py --fresh
 
 python3 scripts/generate_figures.py
 ```
