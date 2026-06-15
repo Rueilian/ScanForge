@@ -75,6 +75,8 @@ bool parseScanData(const std::string &path, ScanData &out)
     out.numFF    = 0;
     out.ffs      = {};
     out.patterns = {};
+    out.seq_edges.clear();
+    out.seq_netlist_loaded = false;
     int expectedPatterns = 0;
 
     while (std::getline(f, line)) {
@@ -112,6 +114,59 @@ bool parseScanData(const std::string &path, ScanData &out)
     if (out.numFF == 0 || (int)out.ffs.size() != out.numFF) {
         std::cerr << "Error: malformed .sf file — FF count mismatch\n";
         return false;
+    }
+    return true;
+}
+
+bool parseScanDataHeader(const std::string &path, ScanData &out)
+{
+    std::ifstream f(path);
+    if (!f) {
+        std::cerr << "Error: cannot open " << path << "\n";
+        return false;
+    }
+
+    std::string line;
+    if (!std::getline(f, line) || line.substr(0, 9) != "SCAN_DATA") {
+        std::cerr << "Error: " << path << " is not a valid .sf file\n";
+        return false;
+    }
+
+    out.numFF    = 0;
+    out.ffs      = {};
+    out.patterns = {};
+    out.seq_edges.clear();
+    out.seq_netlist_loaded = false;
+    bool saw_scoap = false;
+
+    while (std::getline(f, line)) {
+        if (line.empty()) continue;
+        std::istringstream ss(line);
+        std::string tok;
+        ss >> tok;
+
+        if (tok == "NUM_FF") {
+            ss >> out.numFF;
+            out.ffs.resize(out.numFF);
+        } else if (tok == "FF_NAMES") {
+            for (int i = 0; i < out.numFF; ++i)
+                ss >> out.ffs[i].name;
+        } else if (tok == "SCOAP") {
+            saw_scoap = true;
+            for (int i = 0; i < out.numFF; ++i)
+                ss >> out.ffs[i].cc0 >> out.ffs[i].cc1 >> out.ffs[i].co;
+        } else if (tok == "PATTERNS") {
+            break;
+        }
+    }
+
+    if (out.numFF == 0 || (int)out.ffs.size() != out.numFF) {
+        std::cerr << "Error: malformed .sf file — FF count mismatch\n";
+        return false;
+    }
+    if (!saw_scoap) {
+        for (auto &ff : out.ffs)
+            ff.cc0 = ff.cc1 = ff.co = 0;
     }
     return true;
 }
