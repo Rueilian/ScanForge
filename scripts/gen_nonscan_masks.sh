@@ -53,8 +53,8 @@ CIRCUITS=(
   "s38584:s38584:CK"
 )
 
-# Active evaluation uses 10% only; other ratios live in masks/archive/.
-NONSCAN_RATIOS="0.10"
+# Ratio sweep grid: 5%, 10%, 15%, 20%.
+NONSCAN_RATIOS="0.05 0.10 0.15 0.20"
 
 for entry in "${CIRCUITS[@]}"; do
   IFS=: read -r cname module clk_port <<< "$entry"
