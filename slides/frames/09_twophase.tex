@@ -1,0 +1,11 @@
+\begin{frame}{Hypothesis B: Two-Phase State Justification}
+  \centering
+  \input{figures/twophase.tex}
+  \vspace{0.5em}
+  \begin{itemize}
+    \item \textbf{Phase 1} (last frame): FF inputs \alert{free} $\to$ PODEM finds a path
+    \item \textbf{Phase 2} (earlier frames): \alert{justify} those values backward
+    \item Propagation no longer \alert{blocked by X}, no budget competition
+  \end{itemize}
+  \note{Standard multi-frame search interleaves propagation and justification, so it exhausts its budget on propagation and never reaches justification. Two-phase decouples them: phase 1 treats non-scan FF inputs as free and finds a propagation path with PODEM on the last frame; phase 2 justifies those values backward through earlier frames with a fresh budget. This is the hypothesis we test.}
+\end{frame}

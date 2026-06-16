@@ -1,0 +1,20 @@
+% Closing the gap, stacked: 1-frame (B1) + two-phase recovery + remaining gap to full-scan.
+% blue+orange = two-phase coverage; grey top = gap to full-scan (0 where it exceeds). report §7 / §8.4
+\begin{tikzpicture}
+\begin{axis}[
+  slidestyle, ybar stacked, bar width=16pt,
+  width=\textwidth, height=5.1cm,
+  enlarge x limits=0.05, ymin=0, ymax=105,
+  ytick={0,20,40,60,80,100}, ymajorgrids=true,
+  ylabel={Coverage (\%)},
+  symbolic x coords={b03,b04,b05,b07,b08,b09,s953,s1196,s1238,s5378},
+  xtick=data, xticklabel style={font=\tiny, rotate=30, anchor=east},
+  yticklabel style={font=\scriptsize}, ylabel style={font=\scriptsize},
+  legend style={font=\scriptsize, at={(0.5,1.03)}, anchor=south, legend columns=3},
+]
+\addplot[draw=PubBlue,        fill=PubBlue!75]      coordinates {(b03,44.50)(b04,75.21)(b05,29.10)(b07,56.13)(b08,72.96)(b09,76.34)(s953,36.75)(s1196,86.13)(s1238,82.42)(s5378,74.25)};
+\addplot[draw=HidOrange,      fill=HidOrange!85]    coordinates {(b03,40.91)(b04,9.25)(b05,58.58)(b07,31.80)(b08,18.13)(b09,11.51)(s953,54.51)(s1196,12.27)(s1238,12.70)(s5378,20.72)};
+\addplot[draw=slidetext!40,   fill=slidetext!18]    coordinates {(b03,6.21)(b04,9.00)(b05,7.66)(b07,5.53)(b08,2.94)(b09,5.59)(s953,5.65)(s1196,0.00)(s1238,0.02)(s5378,0.00)};
+\legend{1 frame, two-phase recovery, remaining gap}
+\end{axis}
+\end{tikzpicture}

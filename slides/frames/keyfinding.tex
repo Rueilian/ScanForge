@@ -1,0 +1,10 @@
+\begin{frame}{Key Finding}
+  \centering
+  \vspace{1.0em}
+  {\large Most lost partial-scan coverage is \alert{not} about}\\[0.5em]
+  {\large insufficient \alert{depth}, search \alert{budget}, or \alert{heuristics}}\\[1.3em]
+  {\large it is \alert{interleaved propagation \& state justification}}\\[1.7em]
+  Two-phase decoupling recovers most of the full-scan gap:\\[0.6em]
+  {\LARGE \alert{31.26 pp} $\;\to\;$ \alert{4.24 pp}}
+  \note{This is the punchline up front. In timing-constrained partial-scan circuits, the coverage lost at one frame is not mainly about needing more time frames, a larger backtrack budget, or smarter heuristics. It is about the search interleaving fault propagation and state justification. Decoupling them into two phases recovers most of the gap to full scan, from 31.26 points down to 4.24. The rest of the talk is the evidence for this claim.}
+\end{frame}

@@ -1,0 +1,18 @@
+% Step 1 stacked: 1-frame coverage (B1) + gap to full-scan (B2 - B1). Bar top = full scan. report §7.1
+\begin{tikzpicture}
+\begin{axis}[
+  slidestyle, ybar stacked, bar width=16pt,
+  width=\textwidth, height=5.1cm,
+  enlarge x limits=0.05, ymin=0, ymax=105,
+  ytick={0,20,40,60,80,100}, ymajorgrids=true,
+  ylabel={Coverage (\%)},
+  symbolic x coords={b03,b04,b05,b07,b08,b09,s953,s1196,s1238,s5378},
+  xtick=data, xticklabel style={font=\tiny, rotate=30, anchor=east},
+  yticklabel style={font=\scriptsize}, ylabel style={font=\scriptsize},
+  legend style={font=\scriptsize, at={(0.5,1.03)}, anchor=south, legend columns=2},
+]
+\addplot[draw=PubBlue,      fill=PubBlue!80]   coordinates {(b03,44.50)(b04,75.21)(b05,29.10)(b07,56.13)(b08,72.96)(b09,76.34)(s953,36.75)(s1196,86.13)(s1238,82.42)(s5378,74.25)};
+\addplot[draw=slidetext!45, fill=slidetext!22] coordinates {(b03,47.12)(b04,18.25)(b05,66.24)(b07,37.33)(b08,21.07)(b09,17.10)(s953,60.16)(s1196,12.14)(s1238,12.72)(s5378,20.49)};
+\legend{1 frame, gap to full scan}
+\end{axis}
+\end{tikzpicture}

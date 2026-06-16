@@ -1,0 +1,23 @@
+% Progressive residual flow: 1 -> residual -> 2 -> residual -> 4 frames, union below.
+\begin{tikzpicture}[
+  >=Stealth, node distance=0.7cm,
+  stage/.style={draw=PubBlue, fill=PubBlue!85, text=black, rounded corners=3pt,
+                minimum width=2.0cm, minimum height=0.95cm, align=center, font=\scriptsize\bfseries},
+  res/.style={draw=HidOrange, fill=HidOrange!85, text=black, rounded corners=3pt,
+              minimum width=1.55cm, minimum height=0.7cm, align=center, font=\scriptsize\bfseries},
+  fin/.style={draw=GoodGreen, fill=GoodGreen!85, text=black, rounded corners=3pt,
+              minimum width=3.4cm, minimum height=0.85cm, align=center, font=\scriptsize\bfseries},
+  arr/.style={->, thick, gray!70},
+]
+  \node[stage] (t1) {1 frame\\all faults};
+  \node[res, right=of t1] (r1) {residual};
+  \node[stage, right=of r1] (t2) {2 frames\\two-phase};
+  \node[res, right=of t2] (r2) {residual};
+  \node[stage, right=of r2] (t4) {4 frames};
+  \node[fin, below=1.05cm of t2] (u) {detected (union)};
+  \draw[arr] (t1)--(r1); \draw[arr] (r1)--(t2);
+  \draw[arr] (t2)--(r2); \draw[arr] (r2)--(t4);
+  \draw[arr] (t1) |- (u);
+  \draw[arr] (t2) -- (u);
+  \draw[arr] (t4) |- (u);
+\end{tikzpicture}

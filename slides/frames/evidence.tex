@@ -1,0 +1,19 @@
+\begin{frame}[noframenumbering]{Per-Circuit Recovery}
+  \centering
+  \small
+  \begin{tabular}{@{}l c c c@{}}
+    \toprule
+    Circuit & Baseline & Two-phase & $\Delta$ \\
+    \midrule
+    b03  & 44.50\% & \alert{85.41\%} & \alert{+40.91} \\
+    b05  & 45.94\% & \alert{87.68\%} & \alert{+41.74} \\
+    s953 & 37.40\% & \alert{91.26\%} & \alert{+53.86} \\
+    \midrule
+    b04  & 85.42\% & 84.46\% & $-$0.96 \\
+    \bottomrule
+  \end{tabular}
+  \vspace{0.6em}
+
+  {\footnotesize Near-failure $\to$ near-full recovery; a few already-favorable circuits barely move}
+  \note{The per-circuit numbers make the average concrete. s953 goes from 37.4\% to 91.3\%, a 53.86-point jump; b03 and b05 each gain about 41 points, turning near-failure into near-full recovery. A few circuits that already had favorable topology, like b04, barely move or slightly regress, which is expected.}
+\end{frame}

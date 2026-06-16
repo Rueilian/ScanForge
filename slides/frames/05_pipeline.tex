@@ -1,0 +1,24 @@
+\begin{frame}{Method \& Setup}
+  \centering
+  \input{figures/pipeline.tex}
+  \vspace{0.6em}
+  \begin{columns}[T]
+    \begin{column}{0.5\textwidth}
+      \footnotesize
+      \begin{itemize}
+        \item \alert{10} circuits: \eng{ITC'99} + \eng{ISCAS'89}
+        \item Collapsed \alert{stuck-at}; one ATPG engine
+        \item Non-scan = OpenSTA slack, \alert{bottom 10\%}
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \footnotesize
+      \begin{itemize}
+        \item Each stage targets \alert{only the residual}
+        \item Backtrack \BTone\,/\,\BThi; \alert{no timeout}
+        \item Full-scan baseline: \alert{same engine \& limits}
+      \end{itemize}
+    \end{column}
+  \end{columns}
+  \note{The platform is a progressive residual pipeline: one frame on all faults, then two and four frames on the undetected residual, reporting the union over a fixed fault set so coverage is comparable. Setup: ten circuits from ITC'99 and ISCAS'89, collapsed stuck-at, one ATPG engine, non-scan flip-flops are the bottom 10\% by OpenSTA slack, backtrack limits 800 and 5000 with no per-target timeout, and the full-scan baseline uses the same engine and limits for a fair comparison.}
+\end{frame}

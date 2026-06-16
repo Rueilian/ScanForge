@@ -1,0 +1,10 @@
+\begin{frame}[noframenumbering]{Two Hypotheses}
+  \begin{itemize}
+    \item \textbf{A. Backtrack-limit differential} (\BTone$\to$\BThi): residual exists only because 1 frame is capped
+    \item \textbf{B. Two-phase justification}: decouple propagation from state justification
+    \item Plus two controls: \alert{enhanced backtrace}, \alert{static learning}
+  \end{itemize}
+  \vspace{0.5em}
+  \centering\footnotesize Test each by changing \alert{exactly one parameter} --- a controlled ablation
+  \note{Two hypotheses could explain the recovery. Hypothesis A: the backtrack-limit differential, where the low one-frame budget creates the residual that deeper frames retry. Hypothesis B: two-phase state justification, decoupling propagation from justification. We also add two control heuristics, enhanced backtrace and static learning. Each is tested by changing exactly one parameter.}
+\end{frame}

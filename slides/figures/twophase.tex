@@ -1,0 +1,16 @@
+% Two-phase state justification across two frames.
+\begin{tikzpicture}[
+  >=Stealth,
+  box/.style={draw=PubBlue, fill=PubBlue!80, text=black, rounded corners=3pt,
+              minimum width=2.9cm, minimum height=1.5cm, align=center, font=\scriptsize},
+  po/.style={draw=GoodGreen, fill=GoodGreen!80, text=black, rounded corners=3pt,
+             minimum width=2.9cm, minimum height=1.5cm, align=center, font=\scriptsize},
+  ph/.style={font=\scriptsize\bfseries, text=accentorange},
+  arr/.style={->, thick, gray!70},
+]
+  \node[box] (f0) {\textbf{Frame 0}\\justify FF state};
+  \node[box, right=2.5cm of f0] (f1) {\textbf{Frame 1}\\propagate fault\\FF input = free};
+  \node[po, right=1.9cm of f1] (po) {observable\\output};
+  \draw[arr] (f0) -- node[ph, above]{Phase 2} (f1);
+  \draw[arr] (f1) -- node[ph, above]{Phase 1} (po);
+\end{tikzpicture}

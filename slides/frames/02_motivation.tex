@@ -1,0 +1,13 @@
+\begin{frame}{Partial Scan Creates an X-State Barrier}
+  \begin{itemize}
+    \item Scan-MUX delay breaks timing $\to$ top \alert{10\%} FFs kept \alert{non-scan}
+    \item At one frame, non-scan FF outputs are \alert{unknown (X)}
+  \end{itemize}
+  \vspace{0.5em}
+  \centering
+  \input{figures/xblock.tex}
+  \vspace{0.7em}
+
+  {\footnotesize X on the path $\Rightarrow$ fault effect \alert{cannot propagate} $\Rightarrow$ structurally \alert{untestable}}
+  \note{Timing-critical paths cannot afford the scan-MUX delay, so the most timing-critical 10\% of flip-flops are kept non-scan. At one frame those FF outputs are unknown (X). When a fault's propagation path runs through such an FF output, the X blocks the effect from reaching an observable output, making the fault structurally untestable. Recovering these faults is the whole problem.}
+\end{frame}

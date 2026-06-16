@@ -1,0 +1,19 @@
+% Baseline (Two-Phase OFF) stacked: T1 base + gain at 2 frames + gain at 4 frames. report §7.2
+\begin{tikzpicture}
+\begin{axis}[
+  slidestyle, ybar stacked, bar width=16pt,
+  width=\textwidth, height=5.1cm,
+  enlarge x limits=0.05, ymin=0, ymax=105,
+  ytick={0,20,40,60,80,100}, ymajorgrids=true,
+  ylabel={Coverage (\%)},
+  symbolic x coords={b03,b04,b05,b07,b08,b09,s953,s1196,s1238,s5378},
+  xtick=data, xticklabel style={font=\tiny, rotate=30, anchor=east},
+  yticklabel style={font=\scriptsize}, ylabel style={font=\scriptsize},
+  legend style={font=\scriptsize, at={(0.5,1.03)}, anchor=south, legend columns=3},
+]
+\addplot[draw=PubBlue,   fill=PubBlue!75]   coordinates {(b03,44.50)(b04,75.21)(b05,29.10)(b07,56.13)(b08,72.96)(b09,76.34)(s953,36.75)(s1196,86.13)(s1238,82.42)(s5378,74.25)};
+\addplot[draw=HidOrange, fill=HidOrange!85] coordinates {(b03,0.00)(b04,4.88)(b05,0.16)(b07,0.00)(b08,14.86)(b09,10.22)(s953,0.65)(s1196,12.27)(s1238,12.71)(s5378,14.93)};
+\addplot[draw=GoodGreen, fill=GoodGreen!75] coordinates {(b03,0.00)(b04,5.33)(b05,16.69)(b07,1.51)(b08,4.17)(b09,0.00)(s953,0.00)(s1196,0.00)(s1238,0.00)(s5378,2.68)};
+\legend{1 frame, +2 frames, +4 frames}
+\end{axis}
+\end{tikzpicture}
