@@ -76,7 +76,16 @@ cd ScanForge
 
 ```bash
 sudo apt install bison flex
-cd FAN_ATPG && make -j$(nproc) && cd ..
+cd FAN_ATPG
+# NOTE: plain `make` / `make -j` can fail with "cannot find -lcore" — the core
+# package's test binary (logic_test) links -lcore before libcore.a is archived
+# into the global lib dir. Build the libraries in dependency order first:
+make -C pkg/common    global MODE=opt
+make -C pkg/interface global MODE=opt
+make -C pkg/core lib/opt/libcore.a MODE=opt && cp pkg/core/lib/opt/libcore.a lib/opt/
+make -C pkg/core global MODE=opt
+make -C pkg/fan  global MODE=opt
+cd ..
 # binary: FAN_ATPG/bin/opt/fan
 ```
 
@@ -531,6 +540,20 @@ Run command for any circuit:
     --seq-graph \
     --seq-netlist FAN_ATPG/netlist/<circuit>.v
 ```
+
+---
+
+## Reports, Paper & Slides
+
+- **Report (standard of truth):** `docs/final_report.md`
+- **IEEE paper:** `paper/main.tex` (IEEEtran). Build:
+  ```bash
+  cd paper && ~/.local/bin/tectonic -X compile main.tex --outdir .   # → paper/main.pdf
+  # fallback (no tectonic): pdflatex main && pdflatex main
+  ```
+- **Slides:** `slides/main.tex` (Beamer). Build: `bash slides/build.sh` (dark) / `bash slides/build.sh light`
+- **Figures:** regenerated from result CSVs via `python scripts/generate_figures.py`
+- **Data status:** see `results/DATA_ISSUES.md`; delivery progress in `docs/DELIVERY_PLAN.md`
 
 ---
 

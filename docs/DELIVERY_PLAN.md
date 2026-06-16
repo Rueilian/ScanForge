@@ -41,14 +41,18 @@
       (numbers currently mirror `final_report.md`, the standard).
 
 ## Phase 3 — Code cleanup (refactor allowed; git backstop)
-- [ ] Remove stale/untracked: `logs/`, `results/{experiments,fault_status,logs,residual_faults}`,
-      `scripts/__pycache__`, `scripts/docs`, build artifacts (`src/*.o`, `src/scanforge`,
-      `slides/*.aux|log|nav|out|snm|toc`); tighten `.gitignore`.
-- [ ] `scripts/`: identify orphan/duplicate `run_*.py`; keep canonical pipeline, move rest to
-      `scripts/legacy/`; add one-line purpose header to each kept script.
-- [ ] `results/`: separate canonical vs raw/appendix (e.g. `results/raw/`).
-- [ ] Update top-level `README.md`: build (incl. libcore.a workaround), reproduce, figures, paper.
-- [ ] Cross-check doc/script file references still resolve after cleanup.
+- [x] Merge already removed the big cruft (archive/, FAN_ATPG build artifacts, stale data).
+      All noisy dirs (`logs/`, `results/{experiments,fault_status,logs,residual_faults}`,
+      `__pycache__`, `scripts/docs`) are untracked & gitignored — repo tree is clean.
+- [x] Tightened `.gitignore` (`results/logs/`, `scripts/docs/`, `dist/`, `*.bak`, paper TeX aux).
+- [x] Added `scripts/README.md` — index of all scripts by role (runners / netlist prep /
+      masks / analysis / utils). No script moved: every `run_*.py` + prep script is referenced
+      by the report or README and is actively used by the team re-running data.
+- [x] Updated top-level `README.md`: reliable FAN_ATPG staged build (libcore.a workaround) +
+      new "Reports, Paper & Slides" section (paper/slides/figures/data-status pointers).
+- [x] Verified `backup_divider.tex` is `\input` (kept); slides intentionally track built PDFs.
+- Deferred (do NOT do mid re-run): physically reorg `scripts/` into `legacy/` and split
+  `results/` into canonical vs raw — would break the classmate's active pipeline paths.
 
 ## Phase 4 — Zip packaging
 - [ ] `REPRODUCE.md`: (1) build fan+scanforge; (2) regenerate figures; (3) build paper + slides.
