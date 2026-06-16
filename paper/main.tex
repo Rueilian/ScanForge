@@ -12,6 +12,9 @@
 
 \graphicspath{{figures/}{../docs/figures/}}
 
+% compact table helper
+\newcolumntype{R}{>{\raggedleft\arraybackslash}X}
+
 \begin{document}
 
 \title{Sequential ATPG with Progressive Residual Targeting on\\
@@ -54,14 +57,646 @@ expansion, stuck-at faults, state justification.
 
 \section{Introduction}
 \label{sec:intro}
-Placeholder --- full conversion of \texttt{docs/final\_report.md} in progress.
+
+\subsection{Motivation}
+Full-scan design grants ATPG direct controllability and observability over all
+flip-flops, enabling high single-frame stuck-at fault coverage. In practice,
+however, a subset of FFs may remain non-scan: converting them to scan cells
+would add multiplexer delay on timing-critical paths, pushing slack negative.
+Once these FFs are fixed as non-scan, the circuit becomes a \emph{partial-scan}
+design, and single-frame ATPG loses coverage because non-scan FFs are not
+freely controllable nor directly observable.
+
+\textbf{Initial measurement:} At $T{=}1$ with 10\% non-scan exclusion, the
+average gap to full-scan coverage across our 10 circuits is \textbf{31.26\,pp}.
+This loss motivates the search for recovery through sequential ATPG.
+
+\subsection{Problem and Discovery}
+In a partial-scan circuit at $T{=}1$, non-scan FF outputs are in an unknown (X)
+initial state. Any fault whose propagation path passes through a non-scan FF
+pseudo-primary output (PPO) is therefore \emph{structurally untestable in a
+single frame}---classified AU (atpg untestable) by the ATPG engine.
+
+Multi-frame sequential ATPG---unrolling the circuit across multiple time frames
+so that non-scan FF state can be justified through functional clocking---is the
+standard approach to recover this loss. However, deeper frames increase the
+search space, and standard multi-frame ATPG interleaves fault propagation and
+state justification within a single backtrack search, causing propagation
+backtrack explosions to exhaust the budget before state justification begins.
+
+We implement a frame-based backtrack limit: $T1{=}800$ at $T{=}1$ (preventing
+wasted search on structurally unrecoverable faults), $\mathrm{BACKTRACK}{=}5000$
+at $T{>}1$ (full budget for sequential recovery). There is no per-target
+timeout; the backtrack limit is the sole bounding mechanism.
+
+\textbf{Empirical observation:} The baseline pipeline recovers 10.10\,pp (from
+63.38\% to 73.48\%). $T{=}2$ and $T{=}4$ each contribute, but the recovery is
+inconsistent across circuits. Some circuits gain most at $T{=}2$ (s5378:
++14.93\,pp), others at $T{=}4$ (b05: +16.69\,pp), and some show almost no
+recovery (b03: +0.00\,pp, s953: +0.65\,pp). This raises the central question:
+\emph{what drives recovery?}
+
+\subsection{Approach}
+We implement a \emph{progressive residual multi-frame ATPG} pipeline
+($T{=}1{\rightarrow}T{=}2{\rightarrow}T{=}4$) with a frame-based backtrack
+limit and fault-denominator-consistent union accounting. This pipeline serves
+as the experimental platform. To discover \emph{why} recovery occurs, we design
+five controlled ablation experiments (Table~\ref{tab:exp-design}), each changing
+exactly one parameter, run on the same 10 circuits.
+
+\begin{table}[t]
+\caption{Five controlled ablation experiments.}
+\label{tab:exp-design}
+\centering
+\footnotesize
+\begin{tabular}{@{}clp{3.6cm}@{}}
+\toprule
+Exp & Name & Parameter changed \\
+\midrule
+1 & Baseline & --- \\
+2 & Two-Phase ON & \texttt{useTwoPhaseJustification\_} at $T{>}1$ \\
+3 & Uniform T1 & $T1{=}5000$ (same as $T{>}1$) \\
+4 & Enhanced Backtrace & composite-score heuristic ON \\
+5 & Static Learning & fanout-implication ON \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Scope and Positioning}
+This work does \textbf{not} propose a new partial-scan selection method or a new
+fault model. Timing-driven non-scan FF selection uses OpenSTA
+minimum-path-slack ranking at a fixed 10\% exclusion ratio---experimental setup
+only. The research narrative follows a discovery path: (RQ1) What is the gap
+between $T{=}1$ and full-scan? (RQ2) How much does $T{=}2$ recover, and does
+$T{=}4$ add more? (RQ3) Which mechanism---backtrack-limit differential or
+Two-Phase State Justification---drives recovery? (RQ4) Do enhanced backtrace or
+static learning help? We report on \textbf{10 circuits} (6 ITC'99 + 4
+ISCAS'89) that completed all five experiments; the remaining five circuits
+(b11, b13, s9234, s15850, s35932) are excluded---b11 and s35932 produce runner
+crashes, while b13, s9234, and s15850 time out under the baseline pipeline.
+
+\section{Background}
+\label{sec:background}
+
+\subsection{Full Scan vs.\ Partial Scan}
+In full-scan design, every FF participates in the scan chain; ATPG can set any
+FF state arbitrarily in one cycle. In partial scan, some FFs (non-scan) are
+excluded from the chain. At $T{=}1$ with unknown (X) initial state, non-scan
+FFs are uncontrollable---their values cannot be set by scan loading.
+
+\subsection{Sequential ATPG and Time-Frame Expansion}
+Sequential ATPG addresses partial-scan controllability by unrolling the circuit
+across $T$ time frames. Each frame is a copy of the combinational portion.
+Non-scan FF outputs (PPOs) at frame $t$ connect to their inputs (PPIs) at frame
+$t{+}1$, while scan FF PPIs remain independently controllable at each frame.
+The initial state at frame 0 is typically X. $T{=}1$ is a single-frame model
+where non-scan FF PPOs remain X; $T{>}1$ provides initialization cycles to
+justify non-scan FF state.
+
+\subsection{FAN\_ATPG and PARTIAL\_SEQUENTIAL Mode}
+We use FAN\_ATPG (NTU LaDS-II) extended with a \texttt{PARTIAL\_SEQUENTIAL}
+unrolling mode. Non-scan FFs propagate state across frames via BUF connections;
+scan FF PPIs are free at each frame. The \texttt{set\_nonscan\_ff} command
+designates non-scan FFs. ATPG effort is bounded by backtrack limits rather than
+wall-clock timeout.
+
+\subsection{Fault Classes}
+After ATPG, each stuck-at fault is classified as: \textbf{DT} (detected, a test
+pattern was found); \textbf{AU} (atpg untestable, no pattern exists within the
+search limit); \textbf{AB} (abort, backtrack limit reached before a pattern was
+found); \textbf{TO} (timeout, per-target time expired); \textbf{UD}
+(undetected, not targeted). Fault coverage
+$\mathrm{FC} = \mathrm{DT}/(\mathrm{DT}{+}\mathrm{AU}{+}\mathrm{AB}{+}\mathrm{TO}{+}\mathrm{UD})$.
+
+\subsection{Frame-Based Backtrack Limit}
+FAN\_ATPG uses a backtrack limit to bound search effort per fault. By default
+this limit is uniform ($\mathrm{BACKTRACK}{=}5000$) across all depths. Our
+modification introduces a \emph{frame-based differential}: $T{=}1$ uses
+$T1{=}800$ while $T{>}1$ uses 5000. At $T{=}1$, faults blocked by non-scan FF
+X-state are structurally unrecoverable; without the differential the engine
+spends 5000 backtracks per fault proving them untestable (AU) at significant
+runtime. With $T1{=}800$, these faults quickly hit the limit, are classified AB,
+and enter the residual set that $T{=}2$ recovery can attempt.
+
+\subsection{Fault Dropping}
+FAN\_ATPG performs \emph{within-run} fault dropping: after generating a pattern,
+fault simulation marks other faults detected by that pattern as DT. However,
+each \texttt{add\_fault --all} call rebuilds the entire fault list, and there is
+no built-in mechanism to import detections from a $T{=}1$ run into a $T{=}2$
+run. This motivates our custom residual fault-list loading.
+
+\section{Problem Formulation}
+\label{sec:formulation}
+Given a partial-scan circuit $C$ with scan FF set $S$ and non-scan FF set $N$
+(selected by timing prioritization), let $F$ be the original physical fault set
+extracted at $T{=}1$ (the collapsed stuck-at fault list). For time-frame depth
+$T$, let $D_T$ be the set of faults in $F$ detected at depth $T$. Define:
+\begin{align*}
+R_1 &= F - D_1, & R_2 &= F - D_1 - D_2,\\
+D_{\text{final}} &= D_1 \cup D_2 \cup D_4, & \mathrm{FC}_{\text{final}} &= |D_{\text{final}}|/|F|.
+\end{align*}
+
+A key engine-level challenge is the coupling between fault propagation and state
+justification. In single-frame ATPG, D-drive and line justification operate on
+the same logic cone. In multi-frame partial-sequential ATPG, fault effects
+propagate within the last frame while non-scan FF state must be justified across
+earlier frames---two structurally different search problems. An engine that
+treats all frames uniformly applies the same backtrack budget to both, often
+exhausting it on propagation before justification begins. Two-Phase State
+Justification (\S\ref{sec:twophase}) addresses this decoupling.
+
+Our analysis questions are: \textbf{RQ1} (pipeline gain): how many pp does
+$\mathrm{FC}(D_1{\cup}D_2{\cup}D_4)$ exceed $\mathrm{FC}(D_1)$? \textbf{RQ2}
+(stage attribution): how much comes from $T{=}2$ vs $T{=}4$? \textbf{RQ3}
+(mechanism): is the gain driven by the $T1$ limit, Two-Phase, or both?
+\textbf{RQ4} (enhancements): do enhanced backtrace or static learning help? For
+each circuit, all comparisons use the same $T{=}1$ collapsed fault set $F$ as
+denominator, since FAN\_ATPG's reported FC for $T{>}1$ uses a different
+(multi-frame) denominator.
+
+\section{Proposed Method: Progressive Residual Multi-Frame ATPG}
+\label{sec:method}
+
+\begin{table}[t]
+\caption{Progressive residual multi-frame ATPG.}
+\label{tab:algo}
+\centering
+\footnotesize
+\begin{tabular}{@{}l@{}}
+\toprule
+\textbf{Input:} circuit $C$, non-scan set $N$, fault set $F$ ($T{=}1$ collapsed)\\
+\textbf{Output:} $D_{\text{final}}$, $\mathrm{FC}_{\text{final}}$\\
+\midrule
+1.\ \ $D_1 \leftarrow \mathrm{ATPG}(T{=}1,\ \text{target}{=}F)$\\
+2.\ \ $R_1 \leftarrow F - D_1$\\
+3.\ \ $D_2 \leftarrow \mathrm{ATPG}(T{=}2,\ \text{target}{=}R_1)$\\
+4.\ \ $R_2 \leftarrow F - D_1 - D_2$\\
+5.\ \ $D_4 \leftarrow \mathrm{ATPG}(T{=}4,\ \text{target}{=}R_2)$\\
+6.\ \ $D_{\text{final}} \leftarrow D_1 \cup D_2 \cup D_4$;\ \
+$\mathrm{FC}_{\text{final}} \leftarrow |D_{\text{final}}|/|F|$\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Why Residual Targeting}
+Progressive residual targeting (Table~\ref{tab:algo}) (i) preserves $T{=}1$
+detections---deeper frames never re-target detected faults; (ii) reduces target
+count---$T{=}2$ targets only $R_1$, $T{=}4$ only $R_2$; (iii) enables
+recoverability analysis by isolating which faults are recovered at each depth.
+
+\subsection{Two-Phase State Justification}
+\label{sec:twophase}
+Multi-frame ATPG on partial-scan circuits has two logically distinct
+subproblems per target fault (Fig.~\ref{fig:flow}):
+\begin{itemize}
+\item \textbf{Phase~1 --- Propagation (last frame):} drive a D-frontier from the
+fault site to an observable output in frame $T{-}1$. Non-scan FF PPIs in this
+frame are treated as free PIs---the engine may assign any value to support
+propagation.
+\item \textbf{Phase~2 --- State Justification (frames $0..T{-}2$):} for each
+non-scan FF PPI assigned in Phase~1, justify that value backward through earlier
+frames. Frame-0 non-scan FF values start as X and must be justified through
+functional paths.
+\end{itemize}
+
+Standard multi-frame ATPG interleaves these tasks in a single unified backtrack
+search. FAN\_ATPG's \texttt{useTwoPhaseJustification\_} mode decouples them:
+Phase~1 temporarily disconnects non-scan PPIs from their frame-$(T{-}2)$
+drivers, treating them as PIs, and runs PODEM on the last frame with the full
+budget; Phase~2 reconnects the PPIs and justifies each required value across
+frames $T{-}2..0$ with a fresh budget. If any PPI value cannot be justified the
+fault remains AU. This prevents propagation backtrack explosions from exhausting
+the budget before justification begins. The mode is \emph{disabled in the
+baseline} and tested as Exp~2.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{fig1_two_phase_flow.png}
+\caption{Two-Phase State Justification decouples propagation (last frame) from
+state justification (earlier frames).}
+\label{fig:flow}
+\end{figure}
+
+\subsection{Fixed-Denominator Union Accounting}
+To ensure fair comparison, we (1) extract per-fault $D_1,D_2,D_4$ sets using
+\texttt{report\_fault} with stable (gateID, faultyLine, faultType) keys, and (2)
+compute $|D_1{\cup}D_2{\cup}D_4|/|F|$ using the $T{=}1$ fault count $|F|$. This
+guarantees pipeline-stage FC values are comparable within each circuit; the
+headline metric is \texttt{total\_gain\_pp}.
+
+\section{Implementation}
+\label{sec:impl}
+
+\subsection{FAN\_ATPG Extensions}
+We extended FAN\_ATPG with \texttt{add\_fault -f <file>}, which loads a custom
+fault list (\texttt{gateID SA0$|$SA1 faultyLine} per line) so $T{=}2$/$T{=}4$
+target exactly the residual set, and per-fault reporting via
+\texttt{report\_fault} (\texttt{g=<ID> l=<line> <type> <status> <name>}) for
+stable fault-key matching across runs.
+
+\subsection{Pipeline Scripts}
+Table~\ref{tab:scripts} lists the pipeline drivers.
+
+\begin{table}[t]
+\caption{Pipeline scripts.}
+\label{tab:scripts}
+\centering
+\footnotesize
+\begin{tabular}{@{}p{4.0cm}p{4.0cm}@{}}
+\toprule
+Script & Purpose \\
+\midrule
+\texttt{run\_progressive\_residual.py} & $T{=}1{\to}T{=}2{\to}T{=}4$ pipeline \\
+\texttt{..\_sweep.py} & ITC'99 sweep driver \\
+\texttt{..\_iscas89\_sweep.py} & ISCAS'89 sweep driver \\
+\texttt{run\_fullscan\_baseline\_iscas89.py} & ISCAS'89 full-scan ceiling (B2) \\
+\texttt{analyze\_residual.py} & per-fault overlap analysis \\
+\texttt{generate\_figures.py} & report chart generation \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Engineering Stabilization}
+Several backend fixes were required (Table~\ref{tab:fixes}); these are
+infrastructure, not research contributions.
+
+\begin{table}[t]
+\caption{Engineering stabilization fixes.}
+\label{tab:fixes}
+\centering
+\footnotesize
+\begin{tabular}{@{}p{4.0cm}p{4.0cm}@{}}
+\toprule
+Issue & Resolution \\
+\midrule
+Floating nets rejected by FAN & ERROR$\to$WARN in \texttt{netlist.cpp} \\
+\texttt{\_const0\_} as free input & LOGIC0/LOGIC1 tie cells \\
+Level-array OOB crashes & \texttt{maxGateLevel+1} sizing \\
+Stale masks after re-synthesis & \texttt{gen\_nonscan\_masks.sh} \\
+\texttt{report\_fault} prints nothing & fix inverted \texttt{stateSet} logic \\
+DFF faults lack instance name & print cell name for all gates \\
+ITC undriven / OAI-heavy AU & base-gate pipeline (MUX-only compound) \\
+ISCAS'89 TTU double-module stub & track \texttt{in\_target\_module} flag \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{ATPG Optimization Flags}
+Two flag-gated heuristics were implemented for ablation. \textbf{Enhanced
+Backtrace:} \texttt{calCompositeScore()} computes
+$0.6{\times}\mathrm{SCOAP}_{\text{ctrl}} + 0.3{\times}\text{depth} -
+0.1{\times}\text{fanout}$ per candidate objective; with
+\texttt{set\_enhanced\_backtrace on}, \texttt{findEasiestInput()} selects the
+lowest composite score instead of SCOAP-only. \textbf{Static Learning:}
+precomputes immediate fanout implications for controlling-value assignments
+(AND/OR/NAND/NOR/BUF/INV); with \texttt{set\_static\_learning on},
+\texttt{evaluateAndSetGateAtpgVal()} checks learned implications after each
+assignment for early conflict detection.
+
+\section{Experimental Setup}
+\label{sec:setup}
+
+\subsection{Benchmarks}
+Testset~A is ITC'99 (synthesized to NanGate45 via Yosys with a base-gate
+library~\cite{ref16}); Testset~B is ISCAS'89 (TTU gate-level netlists converted
+to NanGate45 SDFFR\_X1). s38417 and s38584 are excluded as their $T{=}1$ FC
+already exceeds 92\%. s27 and s510 ($<10$ FFs) are excluded from the pipeline;
+s27 (3 FFs) is retained as a sanity check only ($T{=}1$ FC = 37.9\%, pipeline
+FC = 81.8\%, +43.9\,pp). Table~\ref{tab:bench} lists the benchmark
+configuration.
+
+\begin{table}[t]
+\caption{Benchmark circuits at 10\% non-scan exclusion.}
+\label{tab:bench}
+\centering
+\footnotesize
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+Circuit & FFs & Non-scan @10\% & Full-scan B2 \\
+\midrule
+b03   & 30   & 4   & 91.62\% \\
+b04   & 66   & 7   & 93.46\% \\
+b05   & 88   & 9   & 95.34\% \\
+b07   & 44   & 5   & 93.46\% \\
+b08   & 67   & 7   & 94.03\% \\
+b09   & 29   & 3   & 93.44\% \\
+s953  & 29   & 3   & 96.91\% \\
+s1196 & 18   & 2   & 98.27\% \\
+s1238 & 18   & 2   & 95.14\% \\
+s5378 & 179  & 18  & 94.74\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Partial-Scan Setup}
+OpenSTA ranks FFs by minimum-path-slack on synthesized NanGate45 gate-level
+netlists. The top 10\% most timing-critical FFs are designated non-scan
+(masks \texttt{masks/<circuit>\_x10.mask}). Only the 10\% ratio is evaluated.
+
+\subsection{ATPG Experiments}
+All runs use a unified base configuration: stuck-at fault model; pipeline depths
+$T{=}1$ (all faults), $T{=}2$ (residual $R_1$), $T{=}4$ (residual $R_2$);
+static/dynamic compression off; wall timeout 3600\,s, no per-target timeout.
+The base pipeline uses $T1{=}800$ at $T{=}1$ and $\mathrm{BACKTRACK}{=}5000$ at
+$T{>}1$, with Two-Phase, enhanced backtrace, and static learning all OFF. Each
+of the five experiments (Table~\ref{tab:exp-design}) runs the full pipeline on
+all 10 circuits, changing exactly the one listed parameter.
+
+\subsection{Metrics and Baselines}
+Two baselines anchor all reporting: \textbf{B1} (partial-scan $T{=}1$, metric
+$\mathrm{FC}_{T1}$) and \textbf{B2} (full-scan $T{=}1$, metric
+$\mathrm{FC}_{\text{fullscan}}$). Pipeline metrics use the same $T{=}1$
+denominator $|F|$: $\mathrm{FC}_{T1}{=}|D_1|/|F|$,
+$\mathrm{FC}_{T1T2T4}{=}|D_1{\cup}D_2{\cup}D_4|/|F|$;
+$\texttt{gain\_T2}{=}\mathrm{FC}_{T1T2}{-}\mathrm{FC}_{T1}$,
+$\texttt{gain\_T4}{=}\mathrm{FC}_{T1T2T4}{-}\mathrm{FC}_{T1T2}$,
+$\texttt{total\_gain}{=}\mathrm{FC}_{T1T2T4}{-}\mathrm{FC}_{T1}$. The remaining
+gap is $\mathrm{B2}{-}\text{Experiment}$.
+
+\section{Results}
+\label{sec:results}
+We follow the discovery narrative: gap to full-scan $\rightarrow$ baseline
+multi-frame recovery $\rightarrow$ ablation to identify the mechanism.
+
+\subsection{Step 1: The $T{=}1$ Gap to Full-Scan}
+Table~\ref{tab:gap} compares B1 ($T{=}1$) against B2 (full-scan). The
+\textbf{average gap is 31.26\,pp}; non-scan FF X-state causes a severe coverage
+drop at $T{=}1$ (Fig.~\ref{fig:gap}).
+
+\begin{table}[t]
+\caption{B1 ($T{=}1$) vs.\ B2 (full-scan) coverage gap.}
+\label{tab:gap}
+\centering
+\footnotesize
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+Circuit & B1 ($T{=}1$) & B2 (full-scan) & Gap (pp) \\
+\midrule
+b03   & 44.50\% & 91.62\% & 47.12 \\
+b04   & 75.21\% & 93.46\% & 18.25 \\
+b05   & 29.10\% & 95.34\% & 66.24 \\
+b07   & 56.13\% & 93.46\% & 37.33 \\
+b08   & 72.96\% & 94.03\% & 21.07 \\
+b09   & 76.34\% & 93.44\% & 17.10 \\
+s953  & 36.75\% & 96.91\% & 60.16 \\
+s1196 & 86.13\% & 98.27\% & 12.14 \\
+s1238 & 82.42\% & 95.14\% & 12.72 \\
+s5378 & 74.25\% & 94.74\% & 20.49 \\
+\midrule
+\textbf{Avg} & & & \textbf{31.26} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{fig5_gap_to_fullscan.png}
+\caption{Remaining gap to full-scan: $T{=}1$ alone vs.\ the Two-Phase pipeline.}
+\label{fig:gap}
+\end{figure}
+
+\subsection{Step 2: Baseline Multi-Frame Recovery}
+The baseline pipeline ($T1{=}800$, Two-Phase OFF) runs $T{=}1$, then targets
+residuals at $T{=}2$ and $T{=}4$ (Table~\ref{tab:exp1}). Average
+$\mathrm{FC}_{T1T2T4}{=}73.48\%$, total gain 10.10\,pp. Stage attribution is
+inconsistent (Fig.~\ref{fig:depth}): some circuits gain entirely at $T{=}2$
+(s1196, s1238), others at $T{=}4$ (b05: +16.69\,pp), and a few show negligible
+recovery (b03, s953). This raises the central mechanism question.
+
+\begin{table}[t]
+\caption{Exp~1 baseline recovery ($T{=}1{\to}T{=}2{\to}T{=}4$, Two-Phase OFF).}
+\label{tab:exp1}
+\centering
+\footnotesize
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+Circuit & $T1$ FC & Pipe FC & g$_{T2}$ & g$_{T4}$ & total \\
+\midrule
+b03   & 44.50 & 44.50 & 0.00  & 0.00  & 0.00 \\
+b04   & 75.21 & 85.42 & 4.88  & 5.33  & 10.21 \\
+b05   & 29.10 & 45.94 & 0.16  & 16.69 & 16.84 \\
+b07   & 56.13 & 57.64 & 0.00  & 1.51  & 1.51 \\
+b08   & 72.96 & 91.99 & 14.86 & 4.17  & 19.02 \\
+b09   & 76.34 & 86.56 & 10.22 & 0.00  & 10.22 \\
+s953  & 36.75 & 37.40 & 0.65  & 0.00  & 0.65 \\
+s1196 & 86.13 & 98.40 & 12.27 & 0.00  & 12.27 \\
+s1238 & 82.42 & 95.12 & 12.71 & 0.00  & 12.71 \\
+s5378 & 74.25 & 91.86 & 14.93 & 2.68  & 17.61 \\
+\midrule
+\textbf{Avg} & 63.38 & \textbf{73.48} & 7.07 & 3.04 & \textbf{10.10} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{fig3_recovered_by_depth.png}
+\caption{Coverage recovered by frame depth ($T{=}2$ vs.\ $T{=}4$).}
+\label{fig:depth}
+\end{figure}
+
+\subsection{Step 3: Ablation Experiments}
+Each experiment runs the full pipeline on all 10 circuits, changing one
+parameter relative to Exp~1.
+
+\paragraph{Exp~2 (Two-Phase ON)} Table~\ref{tab:exp2}: average FC = 90.42\%,
+total gain 27.03\,pp; \textbf{$T{=}4$ adds 0\,pp on every circuit}.
+
+\begin{table}[t]
+\caption{Exp~2 Two-Phase ON (\texttt{useTwoPhaseJustification\_} at $T{>}1$).}
+\label{tab:exp2}
+\centering
+\footnotesize
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+Circuit & $T1$ FC & Pipe FC & g$_{T2}$ & g$_{T4}$ & total \\
+\midrule
+b03   & 44.50 & 85.41 & 40.91 & 0.00 & 40.91 \\
+b04   & 75.21 & 84.46 & 9.25  & 0.00 & 9.25 \\
+b05   & 29.20 & 87.68 & 58.49 & 0.00 & 58.49 \\
+b07   & 56.13 & 87.93 & 31.80 & 0.00 & 31.80 \\
+b08   & 72.96 & 91.09 & 18.13 & 0.00 & 18.13 \\
+b09   & 76.34 & 87.85 & 11.51 & 0.00 & 11.51 \\
+s953  & 36.75 & 91.26 & 54.51 & 0.00 & 54.51 \\
+s1196 & 86.13 & 98.40 & 12.27 & 0.00 & 12.27 \\
+s1238 & 82.42 & 95.12 & 12.71 & 0.00 & 12.71 \\
+s5378 & 74.21 & 94.97 & 20.76 & 0.00 & 20.76 \\
+\midrule
+\textbf{Avg} & & \textbf{90.42} & & 0.00 & \textbf{27.03} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Exp~3 (Uniform $T1{=}5000$)} Average FC = 73.50\%, total gain
+10.11\,pp; \textbf{$\Delta$FC vs Exp~1 = +0.02\,pp}. Raising the $T{=}1$ budget
+to match $T{>}1$ is nearly identical to baseline---the limit differential does
+not create the residual.
+
+\paragraph{Exp~4 (Enhanced Backtrace)} Average FC = 73.95\%, total gain
+10.32\,pp; $\Delta$FC = +0.47\,pp (negligible). The enhanced backtrace flag is
+active at all stages including $T{=}1$, so $T{=}1$ FC differs slightly (e.g.,
+b03 41.66\% vs 44.50\%), but the final FC is within 0.47\,pp of baseline.
+
+\paragraph{Exp~5 (Static Learning)} Average FC = 73.48\%, total gain 10.09\,pp;
+$\Delta$FC = +0.00\,pp (identical to baseline).
+
+\subsection{Step 4: Ablation Summary}
+Table~\ref{tab:ablation} and Fig.~\ref{fig:cov} identify the mechanism
+conclusively: \textbf{Two-Phase State Justification is dominant} (+16.94\,pp).
+Neither uniform $T1$, enhanced backtrace, nor static learning produces
+meaningful improvement.
+
+\begin{table}[t]
+\caption{Ablation summary across the 10 circuits.}
+\label{tab:ablation}
+\centering
+\footnotesize
+\begin{tabular}{@{}clrrr@{}}
+\toprule
+Exp & Parameter & Avg FC & $\Delta$ vs Exp1 & Avg rt \\
+\midrule
+1 & Baseline (T1=800, TP off) & 73.48\% & --- & 5.72\,s \\
+2 & \textbf{Two-Phase ON} & \textbf{90.42\%} & \textbf{+16.94} & 7.30\,s \\
+3 & Uniform T1=5000 & 73.50\% & +0.02 & 4.08\,s \\
+4 & Enhanced Backtrace & 73.95\% & +0.47 & 12.86\,s \\
+5 & Static Learning & 73.48\% & +0.00 & 4.64\,s \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{fig2_coverage_bar_chart.png}
+\caption{Per-circuit coverage: $T{=}1$, Two-Phase pipeline, and full-scan B2.}
+\label{fig:cov}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{fig4_runtime_vs_gain.png}
+\caption{Runtime vs.\ coverage gain across experiments.}
+\label{fig:rt}
+\end{figure}
+
+\section{Discussion}
+\label{sec:discussion}
+
+\subsection{Why $T{=}2$ Recovers Faults That $T{=}1$ Misses}
+At $T{=}1$, non-scan FF outputs are X; faults whose propagation requires a
+specific non-scan FF value are untestable in one frame, and with $T1{=}800$ the
+engine quickly aborts (AB) rather than spending 5000 backtracks proving AU. The
+ablation is unambiguous: Exp~3 shows that matching the $T{=}1$ budget to $T{>}1$
+changes final FC by only +0.02\,pp---non-scan FF X-state blocking, not the
+limit differential, creates the residual. Exp~2 shows the recovery engine is the
+decoupling: with Two-Phase OFF, $T{=}2$ recovers 7.07\,pp on average; with it
+ON, 27.03\,pp---a $3.8{\times}$ improvement.
+
+\subsection{The Role of the Backtrack Limit}
+The $T1{=}800$ limit is purely a \emph{bounding mechanism}: it creates the AB
+residual efficiently but does not cause recovery, as Exp~3 confirms.
+
+\subsection{$T{=}4$ Adds Nothing with Two-Phase ON}
+With Two-Phase ON, $T{=}4$ adds 0\,pp across all circuits---the post-$T{=}2$
+residual is structurally AU at any depth. Without Two-Phase, $T{=}4$ adds modest
+gain (up to 16.69\,pp for b05), reflecting the inefficiency of the unified
+search at $T{=}2$ rather than a genuine depth requirement.
+
+\subsection{Remaining Gap to Full-Scan}
+With Two-Phase ON the average gap is 4.24\,pp. s1196 and s5378 slightly exceed
+full-scan (more frames provide extra propagation paths) and s1238 is at parity;
+the residual gap concentrates in b04, b05, and s953, where non-scan FF topology
+yields faults with no observable path at any depth. Two sources: AU faults whose
+only observable path crosses a non-scan FF output, and UD faults on the
+complementary (QN) FF output, which FAN excludes from pattern generation
+($\approx$0.1\,pp).
+
+\subsection{Circuit-Size Scaling}
+$T{=}2$ gain depends on the structural relationship between the non-scan FFs and
+the fan-out cones of residual faults, not on circuit size. s953 ($T{=}1{\approx}37\%$)
+gains +54.51\,pp with Two-Phase ON, while b08 ($T{=}1{\approx}73\%$) gains less.
+
+\subsection{Why Enhanced Backtrace and Static Learning Fail}
+Both show negligible impact (+0.47\,pp, +0.00\,pp). The bottleneck is not
+backtrace quality or conflict-detection speed but the interleaving of
+propagation and justification in the unified search; only the Two-Phase
+decoupling overcomes it.
+
+\section{Related Work}
+\label{sec:related}
+\textbf{Sequential ATPG and time-frame expansion.} The standard approach unrolls
+the circuit across $T$ cycles and applies combinational ATPG to the unrolled
+model~\cite{ref1,ref2}; the FAN algorithm~\cite{ref1} underlies FAN\_ATPG.
+Deeper frames increase detectability but also search cost~\cite{ref3}. We apply
+this specifically to partial-scan circuits and evaluate incremental benefit via
+progressive residual targeting.
+\textbf{Partial scan design.} Classic methods select scan FFs by testability,
+loop-breaking, or sequential-depth reduction~\cite{ref4,ref5,ref6}; recent work
+considers timing and power~\cite{ref7,ref8,ref9}. We propose no new selection
+method---our non-scan set is a fixed timing-slack ranking.
+\textbf{Fault dropping and residual targeting.} Detected faults are dropped to
+avoid redundant generation~\cite{ref10}, typically within a single run;
+compaction targets multiple faults per pattern~\cite{ref11}. Our progressive
+residual list stages fault dropping across sequential depth.
+\textbf{Timing-constrained and low-power scan.} Scan-mux delay can exclude FFs
+from scan~\cite{ref12,ref13}; test power is an active area~\cite{ref7,ref14,ref15}.
+We address neither timing-closure synthesis nor test power.
+
+\section{Limitations and Threats to Validity}
+\label{sec:limitations}
+(1) Two suites only (ITC'99, ISCAS'89); no large industrial circuits. (2)
+Results depend on the $T1{=}800$/5000 choice. (3) We report both B1 and B2 for
+every circuit. (4) s27 is toy-scale, used for verification only. (5) $T{=}8$ not
+evaluated; $T{=}4$ adds 0 gain universally. (6) Masks must be regenerated after
+netlist changes. (7) FAN AU is operational (search failure within budget), not a
+formal untestability proof. (8) Single ATPG backend; no cross-tool validation.
 
 \section{Conclusion}
 \label{sec:conclusion}
-Placeholder.
+We implemented a reproducible progressive residual
+$T{=}1{\to}T{=}2{\to}T{=}4$ ATPG pipeline with a frame-based backtrack limit and
+five controlled ablation experiments on 10 circuits at 10\% non-scan exclusion.
+Key findings: (1) the baseline (Two-Phase OFF) recovers 10.10\,pp ($T{=}2$:
+7.07\,pp, $T{=}4$: 3.04\,pp); (2) \textbf{Two-Phase State Justification is the
+dominant mechanism}, raising FC to 90.42\% (+16.94\,pp), with $T{=}4$ adding
+0\,pp universally; (3) the $T1$ limit differential does not create the residual
+(+0.02\,pp in Exp~3); (4) enhanced backtrace (+0.47\,pp) and static learning
+(+0.00\,pp) are negligible; (5) the gap to full-scan narrows from 31.26\,pp to
+4.24\,pp. The bottleneck is not frame depth but the interleaving of propagation
+and justification in the unified search, which Two-Phase decoupling resolves.
 
-%% Bibliography enabled after full conversion (refs.bib populated):
-%\bibliographystyle{IEEEtran}
-%\bibliography{refs}
+\appendices
+\section{Result Files}
+Per-experiment data: \texttt{results/exp1\_baseline.csv} \ldots
+\texttt{exp5\_static\_learning.csv}; full-scan B2 in
+\texttt{phase\_d\_fullscan\_dataset.csv} (ITC) and
+\texttt{iscas89\_fullscan\_baseline.csv} (ISCAS); per-stage residual lists in
+\texttt{results/residual\_faults/}; OpenSTA slack rankings and masks in
+\texttt{masks/}.
+
+\section{Open Follow-ups}
+Experiments 1--5 complete on 10 common circuits; 5 excluded (b11/s35932 runner
+crash, b13/s9234/s15850 timeout at 600\,s). $T{=}8$ not evaluated (shallow depth
+suffices). Cone-aware non-scan selection may reduce the B2 gap. QN-pin UD faults
+are structurally untestable in both B1 and B2. The b11 runner crash (empty
+output, no error) remains unresolved.
+
+\begin{thebibliography}{16}
+\bibitem{ref1} H. Fujiwara and T. Shimono, ``On the acceleration of test generation algorithms,'' \emph{IEEE Trans. Computers}, vol.\ C-32, no.\ 12, pp.\ 1137--1144, 1983.
+\bibitem{ref2} M. Abramovici, M. A. Breuer, and A. D. Friedman, \emph{Digital Systems Testing and Testable Design}. IEEE Press, 1990.
+\bibitem{ref3} T. M. Niermann and J. H. Patel, ``HITEC: A test generation package for sequential circuits,'' \emph{Proc. European Design Automation Conf.}, pp.\ 214--218, 1991.
+\bibitem{ref4} V. D. Agrawal, K.-T. Cheng, D. D. Johnson, and T. Lin, ``A complete solution to the partial scan problem,'' \emph{Proc. ITC}, pp.\ 44--51, 1987.
+\bibitem{ref5} K.-T. Cheng and V. D. Agrawal, ``A partial scan method for sequential circuits with feedback,'' \emph{IEEE Trans. Computers}, vol.\ 39, no.\ 4, pp.\ 544--548, 1990.
+\bibitem{ref6} V. Chickermane and J. H. Patel, ``An optimization based approach to the partial scan design problem,'' \emph{Proc. ITC}, pp.\ 377--386, 1990.
+\bibitem{ref7} S. Remersaro et al., ``Scan cell reordering for peak power reduction during scan test cycles,'' \emph{Proc. ATS}, pp.\ 231--236, 2007.
+\bibitem{ref8} X. Lin et al., ``Scan chain reordering-aware X-filling and stitching for scan shift power reduction,'' \emph{Proc. DATE}, pp.\ 1--6, 2016.
+\bibitem{ref9} M. Cho and D. Z. Pan, ``PEAKASO: Peak-temperature aware scan-vector optimization,'' \emph{Proc. VTS}, pp.\ 231--236, 2006.
+\bibitem{ref10} I. Pomeranz and S. M. Reddy, ``On improving the stuck-at fault coverage of functional test sequences by using limited-scan operations,'' \emph{IEEE Trans. VLSI}, vol.\ 12, no.\ 7, pp.\ 780--788, 2004.
+\bibitem{ref11} I. Hamzaoglu and J. H. Patel, ``Test set compaction algorithms for combinational circuits,'' \emph{IEEE Trans. CAD}, vol.\ 19, no.\ 8, pp.\ 957--963, 2000.
+\bibitem{ref12} K. D. Wagner, ``Design for testability of mixed signal integrated circuits,'' \emph{Proc. ITC}, pp.\ 823--828, 1988.
+\bibitem{ref13} T.-C. Lee et al., ``A DFT methodology for at-speed scan testing with timing exception paths,'' \emph{Proc. ATS}, 2020.
+\bibitem{ref14} P. M. Rosinger et al., ``Analysing trade-offs in scan power and test data compression for SoCs,'' \emph{IEEE Trans. CAD}, 2004.
+\bibitem{ref15} K. M. Butler et al., ``Minimizing power consumption in scan testing: pattern generation and DFT techniques,'' \emph{Proc. ITC}, pp.\ 355--364, 2004.
+\bibitem{ref16} F. Corno, M. S. Reorda, and G. Squillero, ``RT-level ITC'99 benchmarks and first ATPG results,'' \emph{IEEE Design \& Test}, vol.\ 17, no.\ 3, pp.\ 44--53, 2000.
+\end{thebibliography}
 
 \end{document}

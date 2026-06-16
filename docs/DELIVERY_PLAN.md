@@ -32,13 +32,13 @@
   staged build in REPRODUCE.md.
 
 ## Phase 2 — IEEE-format LaTeX paper (keep `final_report.md` as-is)
-- [ ] `paper/`: vendor `IEEEtran.cls` (+ `IEEEtran.bst`); compiler = `tectonic`
-      (`~/.local/bin/tectonic`, auto-fetches packages) else `pdflatex`.
-- [ ] Convert `docs/final_report.md` → `paper/main.tex` (IEEEtran `conference`, two-column):
-      title + 3 co-first authors, abstract, index terms, §1–§11 + Appendix, tables via
-      `booktabs`, figures `docs/figures/fig1–5.png` (`figure*` for wide), references → `refs.bib`.
-- [ ] Build `paper/main.pdf`; check overfull boxes, float placement, citation numbering.
-- [blocked:data] Final numeric proofread of tables/figures once canonical data lands.
+- [x] `paper/`: IEEEtran `conference`; compiler = `tectonic` (auto-fetches IEEEtran). PDF builds.
+- [x] Full conversion `docs/final_report.md` → `paper/main.tex` (title, 3 co-first authors
+      Lo/Ting/Huang, abstract, keywords, §1–§11 + 2 appendices, all tables via `booktabs`,
+      figs 1–5, 16-entry `thebibliography`). Output: 7-page `paper/main.pdf`.
+- [x] Build clean (only minor under/overfull hbox warnings; one 3.47pt overfull in §Related Work).
+- [blocked:data] Final numeric proofread of tables/figures once canonical data lands
+      (numbers currently mirror `final_report.md`, the standard).
 
 ## Phase 3 — Code cleanup (refactor allowed; git backstop)
 - [ ] Remove stale/untracked: `logs/`, `results/{experiments,fault_status,logs,residual_faults}`,
