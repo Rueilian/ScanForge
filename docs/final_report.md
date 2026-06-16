@@ -330,6 +330,12 @@ Pipeline and comparison metrics (same T=1 fault denominator |F|):
 | **total_gain_pp** | FC_T1_T2_T4 − FC_T1 | Experiment vs **B1** |
 | **B2−Experiment** | FC_fullscan − FC_T1_T2_T4 | Remaining gap to full-scan |
 | **ΔvsExp1 (Exp N)** | FC(Exp N) − FC(Exp 1) | Ablation vs baseline pipeline |
+| **T1_mem_mb** | VmPeak (MB) at T=1 FAN run | Per-stage memory |
+| **T2_mem_mb** | VmPeak (MB) at T=2 FAN run | Per-stage memory |
+| **T4_mem_mb** | VmPeak (MB) at T=4 FAN run | Per-stage memory |
+| **peak_mem_mb** | max(T1, T2, T4) VmPeak | Pipeline memory ceiling |
+
+**Memory measurement:** Each pipeline stage invokes FAN in a separate process. After `run_atpg`, the runner calls FAN `report_memory_usage`, which reports VmPeak (virtual address space high-water mark, MB) from `/proc/self/status`. `peak_mem_mb` is the maximum across the three stage runs for that circuit — stages are sequential, so peaks are not summed.
 
 ---
 
@@ -492,7 +498,40 @@ The ablation results conclusively identify the mechanism:
 
 **Key takeaway:** Two-Phase State Justification is the dominant recovery mechanism (+16.94pp average). Neither uniform T1, enhanced backtrace, nor static learning produces meaningful improvement over the baseline pipeline.
 
----
+### 7.5 Memory Usage
+
+We record per-stage VmPeak (MB) for all 10 report circuits across Exp 1–5. Memory is dominated by **time-frame depth**: T=4 peak exceeds T=1 on every circuit because `build_circuit --frame 4` unrolls a larger combinational model. Residual fault count at T>1 does not drive peak — only frame depth does.
+
+**Exp 1 (baseline) per-stage memory:**
+
+| Circuit | T1 (MB) | T2 (MB) | T4 (MB) | peak (MB) |
+|---------|--------:|--------:|--------:|----------:|
+| b03 | 10.49 | 10.66 | 10.97 | 10.97 |
+| b04 | 12.39 | 12.61 | 13.70 | 13.70 |
+| b05 | 14.95 | 15.50 | 17.48 | 17.48 |
+| b07 | 11.46 | 11.62 | 12.36 | 12.36 |
+| b08 | 10.74 | 10.90 | 11.30 | 11.30 |
+| b09 | 10.73 | 10.90 | 11.30 | 11.30 |
+| s953 | 11.96 | 12.28 | 13.28 | 13.28 |
+| s1196 | 12.43 | 12.77 | 13.92 | 13.92 |
+| s1238 | 12.46 | 12.76 | 13.82 | 13.82 |
+| s5378 | 24.96 | 26.13 | 31.43 | **31.43** |
+
+**Average pipeline peak:** 14.96 MB (Exp 1). Worst case: s5378 at 31.43 MB. On small circuits, T4/T1 peak ratio is 1.05×–1.17×; on s5378 it is 1.26×.
+
+**Ablation impact on memory:**
+
+| Exp | Parameter | Avg peak (MB) | Max peak (MB) | Δpeak vs Exp 1 |
+|-----|-----------|:-------------:|:-------------:|:--------------:|
+| 1 | Baseline (T1=800, TP=OFF) | 14.96 | 31.43 | — |
+| 2 | Two-Phase ON | 14.91 | 31.25 | −0.05 MB |
+| 3 | Uniform T1=5000 | 14.96 | 31.43 | 0.00 MB |
+| 4 | Enhanced Backtrace | 14.96 | 31.43 | 0.00 MB |
+| 5 | Static Learning | 15.04 | 32.00 | +0.08 MB |
+
+None of the ablation flags materially change pipeline peak memory. Two-Phase ON increases T=2 VmPeak on s5378 (26.1→28.9 MB) because decoupled justification retains more frame state during search, but T=4 still sets the pipeline ceiling (~31 MB). Enhanced backtrace and static learning change runtime (especially Exp 4 on s5378) without increasing peak memory.
+
+**Conclusion:** At T≤4 on these benchmarks, memory cost is modest and predictable. Frame depth — not Two-Phase, backtrace heuristics, or static learning — is the primary memory driver.
 
 ## 8. Discussion
 
@@ -534,6 +573,10 @@ The T=2 gain depends on the structural relationship between the 10% non-scan FFs
 ### 8.6 Why Enhanced Backtrace and Static Learning Fail
 
 Exp 4 and Exp 5 test whether better backtrace selection or early conflict detection can improve the baseline pipeline. Both show negligible impact (+0.47pp and +0.00pp respectively). The reason is structural: the bottleneck is not backtrace quality or conflict detection speed, but the interleaving of propagation and state justification in the unified search. No amount of backtrace optimization within the single-search framework can overcome this — it requires the Two-Phase decoupling approach.
+
+### 8.7 Memory Cost of Multi-Frame Expansion
+
+Our measurements confirm the expected trade-off cited in sequential ATPG literature [3]: deeper frames increase memory. In our pipeline, T=4 VmPeak exceeds T=1 on every circuit because time-frame unrolling grows the circuit representation. However, absolute peaks remain small on all 10 evaluated circuits (≤32 MB VmPeak), and ablation configurations that dramatically change FC or runtime — especially Two-Phase ON and enhanced backtrace — do not proportionally increase memory. The practical implication is that the recovery gains from Two-Phase sequential ATPG (§7.3–7.4) are achievable without a large memory penalty at T≤4. Residual targeting reduces ATPG *runtime* by shrinking target fault sets at T>1, but does not reduce the unrolled circuit size, which is why T=4 memory tracks frame depth rather than residual count.
 
 ---
 
@@ -608,7 +651,7 @@ We implemented a reproducible progressive residual T=1→T=2→T=4 ATPG pipeline
 
 | File | Content |
 |------|---------|
-| `results/exp1_baseline.csv` | Exp 1: Baseline (T1=800, TP=OFF) |
+| `results/exp1_baseline.csv` | Exp 1: Baseline (T1=800, TP=OFF); includes T1/T2/T4/peak memory (MB) |
 | `results/exp2_two_phase.csv` | Exp 2: Two-Phase ON |
 | `results/exp3_uniform_T1.csv` | Exp 3: Uniform T1=5000 |
 | `results/exp4_enhanced_backtrace.csv` | Exp 4: Enhanced Backtrace |

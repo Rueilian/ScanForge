@@ -32,7 +32,7 @@ FC = |D1 ∪ D2 ∪ D4| / |F|
 
 | Exp | Data file | Content |
 |-----|-----------|---------|
-| 1 | `results/exp1_baseline.csv` | Per-circuit pipeline FC, runtime, fault counts |
+| 1 | `results/exp1_baseline.csv` | Per-circuit pipeline FC, runtime, fault counts, memory (VmPeak MB) |
 | 2 | `results/exp2_two_phase.csv` | Same fields, Two-Phase ON |
 | 3 | `results/exp3_uniform_T1.csv` | Same fields, T1=5000 |
 | 4 | `results/exp4_enhanced_backtrace.csv` | Same fields, enhanced backtrace ON |
@@ -53,8 +53,42 @@ final_DT, FC_T1, FC_T1_T2, FC_T1_T2_T4,
 gain_T2_pp, gain_T4_pp, total_gain_pp,
 T1_rt, T2_rt, T4_rt, total_rt,
 recovered_per_sec_T2, recovered_per_sec_T4,
+T1_mem_mb, T2_mem_mb, T4_mem_mb, peak_mem_mb,
 per_target_timeout_sec, status
 ```
+
+**Memory fields:** Per-stage VmPeak (MB) from FAN `report_memory_usage` at the end of each T=1, T=2, and T=4 FAN invocation. `peak_mem_mb` = max(T1, T2, T4) for that circuit run. Stages run in separate processes, so peaks are not summed.
+
+## Memory usage (10 circuits, all 5 experiments)
+
+**Measurement:** FAN VmPeak from `/proc/self/status`, recorded after each pipeline stage. Pipeline peak is the maximum across the three stage runs.
+
+**Frame-depth scaling (Exp 1 baseline):** T=4 always dominates peak memory. T4/T1 ratio is 1.05×–1.17× on small/medium circuits and 1.26× on s5378 (largest evaluated).
+
+| Circuit | T1 (MB) | T2 (MB) | T4 (MB) | peak (MB) |
+|---------|--------:|--------:|--------:|----------:|
+| b03 | 10.49 | 10.66 | 10.97 | 10.97 |
+| b04 | 12.39 | 12.61 | 13.70 | 13.70 |
+| b05 | 14.95 | 15.50 | 17.48 | 17.48 |
+| b07 | 11.46 | 11.62 | 12.36 | 12.36 |
+| b08 | 10.74 | 10.90 | 11.30 | 11.30 |
+| b09 | 10.73 | 10.90 | 11.30 | 11.30 |
+| s953 | 11.96 | 12.28 | 13.28 | 13.28 |
+| s1196 | 12.43 | 12.77 | 13.92 | 13.92 |
+| s1238 | 12.46 | 12.76 | 13.82 | 13.82 |
+| s5378 | 24.96 | 26.13 | 31.43 | **31.43** |
+
+**Ablation impact on memory:** Average pipeline peak is nearly identical across all five experiments (~15 MB). Ablation flags (Two-Phase, uniform T1, enhanced backtrace, static learning) do not materially change peak memory; frame unrolling at T=4 is the dominant factor. Two-Phase ON raises T=2 VmPeak on s5378 (26.1→28.9 MB) but pipeline peak remains ~31 MB.
+
+| Exp | Avg peak (MB) | Max peak (MB) | Worst circuit |
+|:---:|:-------------:|:-------------:|:-------------|
+| 1 Baseline | 14.96 | 31.43 | s5378 |
+| 2 Two-Phase ON | 14.91 | 31.25 | s5378 |
+| 3 Uniform T1 | 14.96 | 31.43 | s5378 |
+| 4 Enhanced Backtrace | 14.96 | 31.43 | s5378 |
+| 5 Static Learning | 15.04 | 32.00 | s5378 |
+
+**Takeaway:** Peak memory stays modest on all 10 report circuits (≤32 MB VmPeak). Memory is not a practical constraint for this pipeline at T≤4; depth scaling matters more than ablation configuration.
 
 ## Detailed design
 
