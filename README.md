@@ -42,7 +42,7 @@ ScanForge/
 │   └── archive/                       — legacy runners (T=8 sweep, ISCAS tools)
 ├── masks/                 # non-scan FF lists: masks/<circuit>_x10.mask
 ├── results/
-│   ├── progressive_residual_summary.csv — 8-run pipeline results (@10%)
+│   ├── progressive_residual_summary.csv — 17-circuit pipeline results (8 ITC'99 + 9 ISCAS'89, @10%)
 │   ├── phase_d_fullscan_dataset.csv     — B2 full-scan FC_scan_coll
 │   └── archive/                         — superseded CSVs and legacy sweeps
 ├── docs/
@@ -105,12 +105,17 @@ bash scripts/gen_nonscan_masks.sh
 
 ```bash
 # Single case (@10%):
-ATPG_PER_TARGET_TIMEOUT=0 ATPG_WALL_TIMEOUT=7200 python3 scripts/run_progressive_residual.py \
-  --circuit b03 --ratio 0.10 --nonscan $(cat masks/b03_x10.mask | tr '\n' ' ')
+ATPG_PER_TARGET_TIMEOUT=5 ATPG_WALL_TIMEOUT=3600 python3 scripts/run_progressive_residual.py \
+  --circuit b03 --ratio 0.10 \
+  --nonscan "$(tr '\n' ' ' < masks/b03_x10.mask)"
 
-# Tier A sweep (8 circuits @ 10%):
-ATPG_PER_TARGET_TIMEOUT=0 ATPG_WALL_TIMEOUT=7200 \
+# Tier A sweep (8 ITC'99 circuits @ 10%):
+ATPG_PER_TARGET_TIMEOUT=5 ATPG_WALL_TIMEOUT=3600 \
   python3 scripts/run_progressive_residual_sweep.py --fresh
+
+# ISCAS'89 sweep (9 circuits @ 10%):
+ATPG_PER_TARGET_TIMEOUT=5 ATPG_WALL_TIMEOUT=3600 \
+  python3 scripts/run_progressive_residual_iscas89_sweep.py --fresh
 
 # Regenerate report figures:
 python3 scripts/generate_figures.py
@@ -166,22 +171,22 @@ grep 'b03,0.1' results/progressive_residual_summary.csv
 |------|-------|--------|------|
 | **B1** | Partial-scan @10%, T=1 | `FC_T1` | `progressive_residual_summary.csv` |
 | **Experiment** | Partial-scan @10%, T=1→T=2→T=4 | `FC_T1_T2_T4` | same CSV |
-| **B2** | Full-scan, T=1 | `FC_scan_coll` | `phase_d_fullscan_dataset.csv` |
+| **B2** | Full-scan, T=1 | `FC_fullscan` | `phase_d_fullscan_dataset.csv` (ITC'99), `iscas89_fullscan_baseline.csv` (ISCAS'89) |
 
-### Results @10% (June 2026, 7/8 complete)
+### Results @10% (June 2026, 17/17 complete with ptt=5s)
 
-| Circuit | B1 | Experiment | B2 | Exp−B1 | B2−Exp |
-|---------|---:|-----------:|---:|-------:|-------:|
-| b03 | 89.54% | 89.54% | 91.62% | 0.00 | +2.08 pp |
-| b04 | 87.60% | 87.60% | 93.46% | 0.00 | +5.86 pp |
-| b05 | 92.81% | 92.81% | 95.34% | 0.00 | +2.53 pp |
-| b07 | 93.50% | 93.50% | 93.46% | 0.00 | −0.04 pp |
-| b08 | 92.75% | 92.75% | 94.03% | 0.00 | +1.28 pp |
-| b09 | 87.63% | 87.63% | 93.44% | 0.00 | +5.81 pp |
-| b13 | 87.59% | 87.59% | 91.13% | 0.00 | +3.54 pp |
-| b11 | — | — | 97.43% | — | — (T=1 TIMEOUT) |
+| Circuit | FFs | B1 (T=1) | Exp (T1+T2+T4) | B2 (full-scan) | Exp−B1 | B2−Exp |
+|---------|----:|---------:|---------------:|---------------:|-------:|-------:|
+| b03 | 30 | 44.50% | 85.41% | 91.62% | +40.91pp | +6.21pp |
+| b04 | 66 | 75.21% | 84.46% | 93.46% | +9.25pp | +9.00pp |
+| b05 | 88 | 29.20% | 87.68% | 95.34% | +58.49pp | +7.66pp |
+| b07 | 44 | 56.13% | 87.93% | 93.46% | +31.80pp | +5.53pp |
+| b08 | 67 | 72.96% | 91.09% | 94.03% | +18.13pp | +2.94pp |
+| b09 | 29 | 76.34% | 87.85% | 93.44% | +11.51pp | +5.59pp |
+| b11 | 84 | 66.21% | 94.34% | 97.43% | +28.13pp | +3.09pp |
+| b13 | 86 | 77.33% | 82.01% | 91.13% | +4.68pp | +9.12pp |
 
-Full table: [`docs/final_report.md`](./docs/final_report.md) §7.2.
+Full table + ISCAS'89 results: [`docs/final_report.md`](./docs/final_report.md) §7.
 
 ---
 
@@ -189,7 +194,7 @@ Full table: [`docs/final_report.md`](./docs/final_report.md) §7.2.
 
 **Scope:** Tier A @ **10%** only. Two baselines: **B1** partial T=1, **B2** full-scan.
 
-**Sweep:** 7/8 PASS in `progressive_residual_summary.csv`; **b11 T=1 TIMEOUT** @ 7200 s. See [`docs/final_report.md`](./docs/final_report.md) §7.2 for B1/B2 comparison table.
+**Sweep:** 17/17 PASS in `progressive_residual_summary.csv` (8 ITC'99 + 9 ISCAS'89, @10%, ptt=5s). **Key finding:** T=2 recovers +4.68–58.49pp vs B1; T=4 adds 0pp universally.
 
 ---
 

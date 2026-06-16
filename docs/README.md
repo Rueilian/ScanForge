@@ -30,8 +30,11 @@ Results tables must include **all three coverage columns** in this order.
 ## Evaluation protocol
 
 ```bash
-ATPG_PER_TARGET_TIMEOUT=0 ATPG_WALL_TIMEOUT=7200 \
-  python3 scripts/run_progressive_residual_sweep.py --fresh
+# All 15 circuits, no per-target timeout:
+python3 scripts/run_ablation_all.py
+
+# Full-scan baselines (B2):
+python3 scripts/run_fullscan_baseline_iscas89.py
 
 python3 scripts/generate_figures.py
 ```
