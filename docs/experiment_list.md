@@ -2,7 +2,7 @@
 
 All experiments run the **same progressive residual pipeline** (T=1→T=2→T=4) on the **same 15 circuits** (8 ITC'99 + 7 ISCAS'89). Each experiment changes exactly **one parameter** relative to the baseline.
 
-**Report-ready subset:** 10 circuits that PASS in all 5 experiments — b03, b04, b05, b07, b08, b09, s953, s1196, s1238, s5378. `docs/final_report.md` and `docs/final_slide.md` restructured with bottom-up discovery narrative: T=1 gap → T=2/T=4 recovery → ablation to find mechanism → Two-Phase is the answer. Remaining 5 (b11, b13, s9234, s15850, s35932) running in background with 600s timeout per circuit.
+**Report-ready subset:** 10 circuits that PASS in all 5 experiments — b03, b04, b05, b07, b08, b09, s953, s1196, s1238, s5378. Primary ablation narrative uses **x = 10%** non-scan exclusion; **ratio sweep R1** (§ below) extends Exp 1–5 to **5%–20%**. Remaining 5 (b11, b13, s9234, s15850, s35932) excluded from report tables.
 
 ## Unified Pipeline Configuration
 
@@ -27,19 +27,22 @@ FC = |D1 ∪ D2 ∪ D4| / |F|
 | 4 | Enhanced Backtrace | `set_enhanced_backtrace on` | **10 common PASS** |
 | 5 | Static Learning | `set_static_learning on` | **10 common PASS** |
 | B2 | Full-scan (reference) | All FFs scan, T=1 | **Done** |
+| R1 | **Ratio sweep** | Non-scan x = 5/10/15/20%; Exp 1–5 each | **Done** (10 circuits, 200/200 PASS) |
 
 ## Results file mapping
 
 | Exp | Data file | Content |
 |-----|-----------|---------|
-| 1 | `results/exp1_baseline.csv` | Per-circuit pipeline FC, runtime, fault counts, memory (VmPeak MB) |
-| 2 | `results/exp2_two_phase.csv` | Same fields, Two-Phase ON |
-| 3 | `results/exp3_uniform_T1.csv` | Same fields, T1=5000 |
-| 4 | `results/exp4_enhanced_backtrace.csv` | Same fields, enhanced backtrace ON |
-| 5 | `results/exp5_static_learning.csv` | Same fields, static learning ON |
+| 1 | `results/exp1_baseline.csv` | Per-circuit pipeline FC, runtime, fault counts, memory (VmPeak MB) @10% |
+| 2 | `results/exp2_two_phase.csv` | Same fields, Two-Phase ON @10% |
+| 3 | `results/exp3_uniform_T1.csv` | Same fields, T1=5000 @10% |
+| 4 | `results/exp4_enhanced_backtrace.csv` | Same fields, enhanced backtrace ON @10% |
+| 5 | `results/exp5_static_learning.csv` | Same fields, static learning ON @10% |
+| R1 | `results/ratio_sweep/x{pct}/exp{N}_*.csv` | Same schema; x = 5/10/15/20%, Exp 1–5 |
 | B2 | `results/phase_d_fullscan_dataset.csv` | ITC'99 full-scan FC |
 | B2 | `results/iscas89_fullscan_baseline.csv` | ISCAS'89 full-scan FC |
-| all | `results/sweep_log.txt` | Execution log (timestamps, timeouts) |
+| all | `results/sweep_log.txt` | Ablation execution log (@10%) |
+| R1 | `results/ratio_sweep_log.txt` | Ratio sweep execution log |
 | all | `results/residual_faults/` | Per-circuit T=2 and T=4 residual fault lists |
 
 ## CSV fields (same schema for all 5 experiments)
@@ -150,3 +153,44 @@ Not an ablation experiment. Upper-bound for gap-to-full-scan analysis.
 **Result files:** `results/phase_d_fullscan_dataset.csv` (ITC'99), `results/iscas89_fullscan_baseline.csv` (ISCAS'89).
 
 **Status:** Done.
+
+---
+
+## Non-scan ratio sweep (R1)
+
+**Purpose:** Test whether ablation conclusions (Two-Phase dominance; uniform T1 / static learning negligible) hold as timing-driven non-scan exclusion increases.
+
+**Design:**
+
+| Parameter | Value |
+|-----------|-------|
+| Ratios | 5%, 10%, 15%, 20% (5% steps) |
+| Circuits | 10 report-ready (same as Exp 1–5) |
+| Experiments per ratio | Exp 1–5 (identical configs to ablation sweep) |
+| Total runs | 200 (4 × 5 × 10) |
+| Masks | `masks/<circuit>_x{pct}.mask` from OpenSTA slack (`k = max(1, ⌈n·ratio⌉)`) |
+| Driver | `scripts/run_ratio_experiment_sweep.py` |
+| Timeout | `ATPG_WALL_TIMEOUT=3600` per circuit |
+
+**Output:** `results/ratio_sweep/x{pct}/exp{N}_{name}.csv` (same CSV schema as Exp 1–5).
+
+**Status:** **Done** — 200/200 PASS (`results/ratio_sweep_log.txt`).
+
+### R1 summary (10-circuit averages)
+
+| Ratio | Σ non-scan FFs | Exp 1 FC_T1 | Exp 1 pipeline | Exp 2 pipeline | Exp 2 gain | T=1 gap to B2 | Pipeline gap to B2 (Exp 2) |
+|:-----:|:--------------:|:-----------:|:--------------:|:--------------:|:----------:|:-------------:|:--------------------------:|
+| 5%    | 33 | 80.91% | 86.35% | 91.81% | 10.89pp | 13.73pp | 2.83pp |
+| 10%   | 60 | 71.20% | 77.72% | 90.57% | 19.37pp | 23.44pp | 4.07pp |
+| 15%   | 91 | 63.81% | 69.47% | 89.94% | 26.13pp | 30.83pp | 4.70pp |
+| 20%   | 118 | 62.02% | 67.84% | 88.59% | 26.57pp | 32.62pp | 6.05pp |
+
+**Takeaways:**
+
+- T=1 gap to B2 grows monotonically with ratio (13.7pp → 32.6pp).
+- Baseline pipeline gain stays flat (~5–6pp); Two-Phase gain scales (10.9pp → 26.6pp).
+- Exp 3 and Exp 5 are identical to Exp 1 at all ratios (ΔFC = 0.00pp); Exp 4 within ±1.15pp.
+- Two-Phase ON: T=4 adds 0 pp at every ratio (same as @10% ablation).
+- Circuit sensitivity is topology-dependent: b05/b08 flat across ratios; b04 drops sharply between 10% and 15% T=1 FC.
+
+Full per-circuit tables: `docs/final_report.md` §7.6.

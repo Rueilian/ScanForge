@@ -54,14 +54,14 @@ Each experiment runs the full T=1→T=2→T=4 pipeline on the same 10 circuits. 
 
 ### 1.4 Scope and Positioning
 
-This work does **not** propose a new partial-scan selection method or a new fault model. Timing-driven non-scan FF selection uses OpenSTA minimum-path-slack ranking at a **fixed 10%** exclusion ratio — **experimental setup only**. The **research narrative** follows a discovery path:
+This work does **not** propose a new partial-scan selection method or a new fault model. Timing-driven non-scan FF selection uses OpenSTA minimum-path-slack ranking — **experimental setup only**. The **primary research narrative** (§7.1–7.4) uses **x = 10%** non-scan exclusion. A **supplementary ratio sweep** at **5%, 10%, 15%, and 20%** (§7.6) tests whether ablation conclusions hold as exclusion burden increases. The discovery path:
 
 1. **What is the gap?** T=1 (combinational) vs full-scan: how much coverage is lost? (RQ1)
 2. **Does depth help?** How much does T=2 recover? Does T=4 recover more? (RQ2)
 3. **Why does T=2 work?** Which mechanism — backtrack limit differential or Two-Phase State Justification — drives the recovery? (RQ3)
 4. **Can heuristics help?** Do enhanced backtrace or static learning improve coverage? (RQ4)
 
-Multi-ratio comparison of absolute partial-scan FC is **not** part of this study; only **x = 10%** is evaluated. We report on **10 circuits** (6 ITC'99 + 4 ISCAS'89) that completed all 5 experiments; the remaining 5 circuits (b11, b13, s9234, s15850, s35932) are excluded — b11 and s35932 produce runner crashes, while b13, s9234, and s15850 timeout under the baseline pipeline.
+We report on **10 circuits** (6 ITC'99 + 4 ISCAS'89) that completed all 5 ablation experiments; the remaining 5 circuits (b11, b13, s9234, s15850, s35932) are excluded — b11 and s35932 produce runner crashes, while b13, s9234, and s15850 timeout under the baseline pipeline.
 
 ---
 
@@ -200,6 +200,7 @@ We extended FAN_ATPG with:
 | `scripts/run_progressive_residual.py` | End-to-end T=1→T=2→T=4 residual pipeline |
 | `scripts/run_progressive_residual_sweep.py` | ITC'99 sweep driver (8 circuits) |
 | `scripts/run_progressive_residual_iscas89_sweep.py` | ISCAS'89 sweep driver (7 circuits) |
+| `scripts/run_ratio_experiment_sweep.py` | Exp 1–5 × ratio grid (5%–20%) → `results/ratio_sweep/` |
 | `scripts/run_fullscan_baseline_iscas89.py` | ISCAS'89 full-scan ceiling (B2) |
 | `scripts/analyze_residual.py` | Per-fault overlap analysis and priority evaluation |
 | `scripts/generate_figures.py` | Matplotlib chart generation for report |
@@ -269,9 +270,9 @@ Circuits s27 and s510 (< 10 FFs) are excluded from the pipeline evaluation; s27 
 
 ### 6.2 Partial-Scan Setup
 
-OpenSTA ranks FFs by minimum-path-slack on synthesized NanGate45 gate-level netlists. The top **10%** most timing-critical FFs are designated non-scan. Only 10% is evaluated.
+OpenSTA ranks FFs by minimum-path-slack on synthesized NanGate45 gate-level netlists. The top **x%** most timing-critical FFs are designated non-scan (`k = max(1, ⌈n·x⌉)` FFs per circuit). **Primary ablation experiments** use **x = 10%**; masks at **5%, 15%, and 20%** support the ratio sensitivity sweep (§6.3a, §7.6).
 
-**ITC'99 masks:**
+**ITC'99 masks (x = 10%):**
 
 | Circuit | FF total | Non-scan @10% | Mask |
 |---------|--------:|-------------:|------|
@@ -309,6 +310,10 @@ All runs use a **unified base configuration**:
 | 5 | Static Learning | `set_static_learning on` | Does early conflict detection improve results? |
 
 Each experiment runs the **full pipeline** (T=1→T=2→T=4) on all **15 circuits**, changing exactly the one parameter listed above. Exp 2 (Two-Phase ON) uses data from a prior sweep under the same circuit set and backtrack limits.
+
+### 6.3a Non-Scan Ratio Sweep
+
+To test sensitivity to exclusion burden, we re-ran **Exp 1–5** on the **10 report circuits** at **x = 5%, 10%, 15%, 20%** (5% steps). Each ratio uses independently generated masks (`masks/<circuit>_x{pct}.mask`) from the same OpenSTA slack ranking. **200 runs** total (4 ratios × 5 experiments × 10 circuits); all completed with `status=PASS`. Results: `results/ratio_sweep/x{pct}/exp{N}_*.csv`; driver: `scripts/run_ratio_experiment_sweep.py`; log: `results/ratio_sweep_log.txt`.
 
 ### 6.4 Metrics and Baselines
 
@@ -533,6 +538,46 @@ None of the ablation flags materially change pipeline peak memory. Two-Phase ON 
 
 **Conclusion:** At T≤4 on these benchmarks, memory cost is modest and predictable. Frame depth — not Two-Phase, backtrace heuristics, or static learning — is the primary memory driver.
 
+### 7.6 Non-Scan Ratio Sensitivity (5%–20%)
+
+The ratio sweep re-runs Exp 1–5 at four exclusion levels on the same 10 circuits. **FC_T1** (B1) depends only on the non-scan mask and is identical across experiments at a given ratio; pipeline FC and ablation deltas isolate mechanism effects.
+
+**Average coverage vs exclusion ratio (10 circuits):**
+
+| Ratio | Σ non-scan FFs | Avg FC_T1 | Exp 1 pipeline | Exp 1 gain | Exp 2 pipeline | Exp 2 gain | T=1 gap to B2 | Pipeline gap to B2 (Exp 2) |
+|:-----:|:--------------:|:---------:|:--------------:|:----------:|:--------------:|:----------:|:-------------:|:--------------------------:|
+| 5%    | 33 | 80.91% | 86.35% | 5.44pp | 91.81% | 10.89pp | 13.73pp | 2.83pp |
+| 10%   | 60 | 71.20% | 77.72% | 6.53pp | 90.57% | 19.37pp | 23.44pp | 4.07pp |
+| 15%   | 91 | 63.81% | 69.47% | 5.66pp | 89.94% | 26.13pp | 30.83pp | 4.70pp |
+| 20%   | 118 | 62.02% | 67.84% | 5.81pp | 88.59% | 26.57pp | 32.62pp | 6.05pp |
+
+**Key observations:**
+
+1. **T=1 loss scales with ratio.** Average gap to B2 grows from 13.73pp at 5% to 32.62pp at 20%, confirming that heavier non-scan exclusion increases single-frame coverage loss as expected.
+
+2. **Baseline pipeline gain is flat (~5–6pp) across ratios.** Without Two-Phase, the unified T=2/T=4 search recovers a similar absolute increment regardless of how many FFs are non-scan — the bottleneck is search interleaving, not ratio alone.
+
+3. **Two-Phase gain scales with ratio (+10.9pp → +26.6pp).** The Two-Phase advantage over baseline grows from +5.45pp at 5% to +20.75pp at 20%, and closes the gap to B2 to 2.83–6.05pp across all ratios.
+
+4. **Ablation conclusions hold at every ratio.** Exp 3 (uniform T1) and Exp 5 (static learning) are identical to Exp 1 at all four ratios (ΔFC = 0.00pp). Exp 4 (enhanced backtrace) differs by at most ±1.15pp. With Two-Phase ON, T=4 adds **0 pp** at every ratio.
+
+**Exp 2 (Two-Phase ON) pipeline FC by circuit and ratio:**
+
+| Circuit | x=5% | x=10% | x=15% | x=20% |
+|---------|:----:|:-----:|:-----:|:-----:|
+| b03     | 90.18% | 85.41% | 83.65% | 81.27% |
+| b04     | 87.13% | 84.46% | 85.21% | 83.18% |
+| b05     | 90.23% | 90.23% | 90.23% | 90.23% |
+| b07     | 92.59% | 87.93% | 86.60% | 83.32% |
+| b08     | 90.07% | 90.07% | 90.07% | 90.07% |
+| b09     | 87.85% | 87.85% | 86.76% | 86.20% |
+| s953    | 91.51% | 91.26% | 89.77% | 88.63% |
+| s1196   | 98.36% | 98.40% | 98.02% | 96.26% |
+| s1238   | 95.10% | 95.12% | 94.75% | 93.01% |
+| s5378   | 95.04% | 94.97% | 94.31% | 93.73% |
+
+Circuits **b05** and **b08** show flat T=1 FC across all ratios (90.23% and 90.07% respectively) — the timing-critical non-scan FFs selected at each ratio do not block their dominant fault-propagation paths. **b04** drops sharply between 5% (82.42% T=1) and 15% (25.68% T=1), indicating high sensitivity to which specific FFs are excluded once the count crosses a topology threshold.
+
 ## 8. Discussion
 
 ### 8.1 Why T=2 Recovers Faults That T=1 Misses
@@ -549,32 +594,36 @@ The ablation results are unambiguous:
 
 **Why Exp 1/3/4/5 show T=4 gain while Exp 2 shows none:** Without Two-Phase, the unified search at T=2 often exhausts its backtrack budget on propagation before state justification begins, leaving a residual for T=4. With Two-Phase ON, the decoupled approach succeeds at T=2, and no further recovery is possible at T=4.
 
-### 8.2 The Role of the Backtrack Limit
+### 8.2 Ratio Sensitivity
+
+The ratio sweep (§7.6) shows that Two-Phase State Justification is the dominant recovery mechanism **at every exclusion level tested** (5%–20%). As non-scan burden increases, T=1 loss grows monotonically, but Two-Phase pipeline FC remains above 88% on average and within 6.05pp of full-scan. The baseline pipeline does not scale its recovery with ratio — reinforcing that the unified-search bottleneck, not the backtrack limit differential, limits baseline performance. Circuit-level variation (e.g., b04's cliff between 10% and 15%) depends on which specific timing-critical FFs are excluded, not on circuit size alone.
+
+### 8.3 The Role of the Backtrack Limit
 
 The T1=800 limit prevents wasting 5000 backtracks on structurally unrecoverable T=1 faults. This is purely a **bounding mechanism** — it creates the AB residual efficiently. **It does not cause the recovery.** Exp 3 confirms this: even with T1=5000, the residual and pipeline gain are nearly identical to T1=800.
 
-### 8.3 T=4 Adds Nothing with Two-Phase ON
+### 8.4 T=4 Adds Nothing with Two-Phase ON
 
 With Two-Phase ON (Exp 2), T=4 adds **0 pp** across all 10 circuits. The residual after T=2 consists entirely of faults that are structurally AU at any depth — two frames are sufficient for these circuits' non-scan-FF sequential depth. Without Two-Phase (Exp 1, 3, 4, 5), T=4 adds modest gain (up to 16.69pp for b05), but this reflects the inefficiency of the unified search at T=2 rather than a genuine depth requirement.
 
-### 8.4 Remaining Gap to Full-Scan
+### 8.5 Remaining Gap to Full-Scan
 
-With Two-Phase ON (Exp 2), the average gap to full-scan is 4.24pp. s1196 (−0.13pp) and s5378 (−0.23pp) exceed full-scan coverage because more time frames provide additional propagation paths. s1238 (0.02pp gap) is effectively at parity. The remaining gap is concentrated in b04 (9.00pp), b05 (7.66pp), and s953 (5.65pp), where non-scan FF topology creates faults with no observable path at any sequential depth.
+With Two-Phase ON (Exp 2) at **10%** exclusion, the average gap to full-scan is 4.24pp. s1196 (−0.13pp) and s5378 (−0.23pp) exceed full-scan coverage because more time frames provide additional propagation paths. s1238 (0.02pp gap) is effectively at parity. The remaining gap is concentrated in b04 (9.00pp), b05 (7.66pp), and s953 (5.65pp), where non-scan FF topology creates faults with no observable path at any sequential depth. The ratio sweep (§7.6) shows this average pipeline gap widens modestly to **6.05pp at 20%** exclusion while staying below 3pp at 5%.
 
 Two sources of the gap:
 
-1. **AU faults under partial scan:** Faults whose only observable path passes through a non-scan FF output are untestable even at T=2 if the FF value cannot be justified within the backtrack budget. These are structural limitations of the 10% non-scan configuration.
+1. **AU faults under partial scan:** Faults whose only observable path passes through a non-scan FF output are untestable even at T=2 if the FF value cannot be justified within the backtrack budget. These are structural limitations of the non-scan FF set at each ratio.
 2. **UD faults (QN-pin, faultyLine = -4):** Stuck-at faults on the complementary output (QN) of flip-flops are excluded from FAN_ATPG's pattern generation at any frame depth. These contribute ≈0.1 pp to the gap.
 
-### 8.5 Circuit-Size Scaling
+### 8.6 Circuit-Size Scaling
 
 The T=2 gain depends on the structural relationship between the 10% non-scan FFs and the fan-out cones of the residual faults, not simply on circuit size. Small circuits with severe non-scan FF blocking (s953: T=1 ≈ 37%) show huge T=2 gains with Two-Phase ON (+54.51pp). Circuits where non-scan FFs do not block the fault propagation path (b08: T=1 ≈ 73%) show more modest gains even with Two-Phase. Circuit size alone is not predictive of pipeline effectiveness.
 
-### 8.6 Why Enhanced Backtrace and Static Learning Fail
+### 8.7 Why Enhanced Backtrace and Static Learning Fail
 
 Exp 4 and Exp 5 test whether better backtrace selection or early conflict detection can improve the baseline pipeline. Both show negligible impact (+0.47pp and +0.00pp respectively). The reason is structural: the bottleneck is not backtrace quality or conflict detection speed, but the interleaving of propagation and state justification in the unified search. No amount of backtrace optimization within the single-search framework can overcome this — it requires the Two-Phase decoupling approach.
 
-### 8.7 Memory Cost of Multi-Frame Expansion
+### 8.8 Memory Cost of Multi-Frame Expansion
 
 Our measurements confirm the expected trade-off cited in sequential ATPG literature [3]: deeper frames increase memory. In our pipeline, T=4 VmPeak exceeds T=1 on every circuit because time-frame unrolling grows the circuit representation. However, absolute peaks remain small on all 10 evaluated circuits (≤32 MB VmPeak), and ablation configurations that dramatically change FC or runtime — especially Two-Phase ON and enhanced backtrace — do not proportionally increase memory. The practical implication is that the recovery gains from Two-Phase sequential ATPG (§7.3–7.4) are achievable without a large memory penalty at T≤4. Residual targeting reduces ATPG *runtime* by shrinking target fault sets at T>1, but does not reduce the unrolled circuit size, which is why T=4 memory tracks frame depth rather than residual count.
 
@@ -615,19 +664,20 @@ Test power during scan shift is an active research area [7][14][15]. Scan-chain 
 ## 10. Limitations and Threats to Validity
 
 1. **Benchmark coverage.** Two suites: ITC'99 (8 circuits, 29–88 FFs) and ISCAS'89 (7 circuits, 18–1728 FFs). Larger industrial circuits were not evaluated.
-2. **Backtrack limit sensitivity.** Results depend on the choice of T1=800 (T=1) and BACKTRACK=5000 (T>1). A lower T=1 limit would increase the residual at the risk of aborting faults that could have been DT with more search. A higher T=1 limit would reduce the residual but increase T=1 runtime.
-3. **Two baselines.** Report **B1** (partial T=1) and **B2** (full-scan) for every circuit. All runs use the same binary and backtrack limits.
-4. **s27 is toy-scale** (3 FFs, +43.9pp gain). Used for pipeline verification only — see §6.1.
-5. **Shallow depth.** T=8 not evaluated; T=4 adds 0 gain universally.
-6. **Mask/netlist alignment.** Regenerate `masks/<circuit>_x10.mask` after netlist changes.
-7. **AU semantics.** FAN AU is operational (search failure within budget), not a formal untestability proof.
-8. **Single ATPG backend.** Cross-tool validation not performed.
+2. **Ratio range.** Supplementary sweep covers 5%–20% only; results outside this range (especially >25%) are untested.
+3. **Backtrack limit sensitivity.** Results depend on the choice of T1=800 (T=1) and BACKTRACK=5000 (T>1). A lower T=1 limit would increase the residual at the risk of aborting faults that could have been DT with more search. A higher T=1 limit would reduce the residual but increase T=1 runtime.
+4. **Two baselines.** Report **B1** (partial T=1) and **B2** (full-scan) for every circuit. All runs use the same binary and backtrack limits.
+5. **s27 is toy-scale** (3 FFs, +43.9pp gain). Used for pipeline verification only — see §6.1.
+6. **Shallow depth.** T=8 not evaluated; T=4 adds 0 gain universally with Two-Phase ON (confirmed at all ratio sweep points).
+7. **Mask/netlist alignment.** Regenerate `masks/<circuit>_x{pct}.mask` after netlist changes (`gen_nonscan_masks.sh`).
+8. **AU semantics.** FAN AU is operational (search failure within budget), not a formal untestability proof.
+9. **Single ATPG backend.** Cross-tool validation not performed.
 
 ---
 
 ## 11. Conclusion
 
-We implemented a reproducible progressive residual T=1→T=2→T=4 ATPG pipeline with a **frame-based backtrack limit** (T1=800 at T=1, 5000 at T>1) and a suite of **five controlled ablation experiments** (baseline, Two-Phase ON, uniform T1, enhanced backtrace, static learning) evaluated on **10 circuits** (6 ITC'99 + 4 ISCAS'89) at **10% non-scan exclusion** (5 additional circuits excluded: b11/s35932 runner crash, b13/s9234/s15850 timeout). There is **no per-target timeout** — the backtrack limit is the sole bounding mechanism.
+We implemented a reproducible progressive residual T=1→T=2→T=4 ATPG pipeline with a **frame-based backtrack limit** (T1=800 at T=1, 5000 at T>1) and a suite of **five controlled ablation experiments** (baseline, Two-Phase ON, uniform T1, enhanced backtrace, static learning) evaluated on **10 circuits** (6 ITC'99 + 4 ISCAS'89) at **10% non-scan exclusion** (5 additional circuits excluded: b11/s35932 runner crash, b13/s9234/s15850 timeout). A **supplementary ratio sweep** at **5%, 10%, 15%, and 20%** (200 additional runs, all PASS) confirms that ablation conclusions generalize across exclusion burden. There is **no per-target timeout** — the backtrack limit is the sole bounding mechanism.
 
 **Key findings:**
 
@@ -641,7 +691,9 @@ We implemented a reproducible progressive residual T=1→T=2→T=4 ATPG pipeline
 
 5. **The gap to full-scan narrows from 31.26pp (T=1 alone) to 4.24pp (Exp 2, Two-Phase ON).** s1196 and s5378 match or exceed their full-scan coverage; s1238 is within 0.02pp of parity. This suggests that for circuits with favorable non-scan topology, Two-Phase sequential recovery can approach parity with full-scan targeting.
 
-6. **T=4 recovers additional faults only when Two-Phase is OFF.** Without Two-Phase, the unified search struggles at T=2 and leaves some faults for T=4. With Two-Phase ON, the decoupled approach is sufficient at T=2 depth. This confirms that the bottleneck is not frame depth but the interleaving of propagation and justification in the unified search.
+6. **T=4 recovers additional faults only when Two-Phase is OFF.** Without Two-Phase, the unified search struggles at T=2 and leaves some faults for T=4. With Two-Phase ON, the decoupled approach is sufficient at T=2 depth. This holds at all ratio sweep points (5%–20%).
+
+7. **Ratio sensitivity confirms mechanism stability.** Across 5%–20% exclusion, Two-Phase remains the only effective recovery lever (+5.5pp to +20.8pp over baseline); uniform T1 and static learning are identical to baseline at every ratio; T=1 gap to B2 grows with ratio (13.7–32.6pp) while Two-Phase keeps the pipeline gap below 6.1pp.
 
 ---
 
@@ -656,11 +708,13 @@ We implemented a reproducible progressive residual T=1→T=2→T=4 ATPG pipeline
 | `results/exp3_uniform_T1.csv` | Exp 3: Uniform T1=5000 |
 | `results/exp4_enhanced_backtrace.csv` | Exp 4: Enhanced Backtrace |
 | `results/exp5_static_learning.csv` | Exp 5: Static Learning |
+| `results/ratio_sweep/x{pct}/exp{N}_*.csv` | Ratio sweep: Exp 1–5 at x = 5/10/15/20% |
+| `results/ratio_sweep_log.txt` | Ratio sweep execution log |
 | `results/phase_d_fullscan_dataset.csv` | **B2** ITC'99 full-scan baseline |
 | `results/iscas89_fullscan_baseline.csv` | **B2** ISCAS'89 full-scan baseline |
 | `results/residual_faults/` | Per-stage residual fault list files |
-| `masks/*_slack.csv`, `masks/*_x10.mask` | OpenSTA slack ranking + non-scan masks |
-| `results/sweep_log.txt` | Master sweep execution log |
+| `masks/*_slack.csv`, `masks/*_x{pct}.mask` | OpenSTA slack ranking + non-scan masks (x = 5/10/15/20%) |
+| `results/sweep_log.txt` | Ablation sweep execution log (x = 10%) |
 
 ### B. Engineering Fixes
 
@@ -678,8 +732,9 @@ We implemented a reproducible progressive residual T=1→T=2→T=4 ATPG pipeline
 
 | Item | Status |
 |------|--------|
-| Experiments 1–5 sweep | 10 common circuits complete; 5 excluded (b11/s35932 runner crash, b13/s9234/s15850 timeout at 600s) |
-| T=8 pipeline depth | Not evaluated; T=4 adds 0 pp with Two-Phase ON, confirms shallow depth suffices |
+| Experiments 1–5 sweep (@10%) | 10 common circuits complete; 5 excluded (b11/s35932 runner crash, b13/s9234/s15850 timeout at 600s) |
+| Ratio sweep (5%–20%) | **Done** — 200/200 PASS on 10 report circuits (§7.6) |
+| T=8 pipeline depth | Not evaluated; T=4 adds 0 pp with Two-Phase ON, confirmed at all ratio points |
 | Non-scan FF selection (cone-aware) | Timing-slack selection; cone-aligned selection may reduce B2−Exp gap |
 | UD faults (QN, l=-4) | Structurally untestable in B1 and B2; not reducible by frame depth |
 | b03 full-scan AU blocker | PID stale from Jun 9; separate issue |
