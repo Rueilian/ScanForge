@@ -20,10 +20,16 @@
   Excluded: b11, s35932 (crash); b13, s9234, s15850 (timeout @600s).
 
 ## Phase 1 — Reproducible binaries (independent of data)
-- [ ] `FAN_ATPG`: `make clean && make`; work around the `libcore.a` link-order bug
-      (archive `libcore.a` into the global lib dir, then build `fan`). Produce `bin/opt/fan`.
-- [ ] `src/` (ScanForge): clean build → `src/scanforge`.
-- [ ] End-to-end smoke on s27 / b03 (partial-scan → progressive-residual) to prove pipeline.
+- [x] `FAN_ATPG`: clean staged build (archive `libcore.a` → global lib dir → build per-pkg)
+      works around the `libcore.a` link-order bug. `bin/opt/fan` produced & runs.
+- [x] `src/` (ScanForge): `make -C src` clean → `src/scanforge` produced & runs.
+- [x] Engine smoke: `fan` full-scan ATPG on s27 → DT=104, AU=2, FC 92.86% (merged binary OK).
+- [ ] **Repro gap:** canonical-circuit netlists `FAN_ATPG/mod_netlist/{b03,b04,...}.v` are NOT
+      materialized (removed from VCS in cleanup; only test netlists like `s27_dffr.v` remain).
+      Regenerate via `scripts/synth_itc99.sh` / `synth_iscas89.sh` (Yosys+OpenSTA) before a full
+      pipeline run or the zip. Full progressive-residual smoke (b03) blocked until netlists exist.
+- Note: README's `cd FAN_ATPG && make -j` is unreliable (the link-order race); document the
+  staged build in REPRODUCE.md.
 
 ## Phase 2 — IEEE-format LaTeX paper (keep `final_report.md` as-is)
 - [ ] `paper/`: vendor `IEEEtran.cls` (+ `IEEEtran.bst`); compiler = `tectonic`

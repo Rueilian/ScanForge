@@ -1,0 +1,67 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{url}
+
+\graphicspath{{figures/}{../docs/figures/}}
+
+\begin{document}
+
+\title{Sequential ATPG with Progressive Residual Targeting on\\
+Timing-Constrained Partial-Scan Circuits}
+
+\author{
+\IEEEauthorblockN{Yen-Chu Lo\textsuperscript{*}, Rueilian Ting\textsuperscript{*}, and Ssu-Wei Huang\textsuperscript{*}}
+\IEEEauthorblockA{
+Graduate Institute of Electronics Engineering, National Taiwan University\\
+EEE5001 VLSI Testing --- Group 5\\
+\textsuperscript{*}These authors contributed equally (co-first authors).}
+}
+
+\maketitle
+
+\begin{abstract}
+In scan-based testing, some flip-flops remain non-scan due to timing
+constraints, creating a partial-scan circuit. At $T{=}1$, non-scan flip-flop
+(FF) outputs are unknown (X), causing a \textbf{31.26\,pp average gap to
+full-scan coverage} across 10 benchmark circuits. We investigate how
+multi-frame sequential ATPG can recover this loss. We first establish that
+$T{=}2$ sequential ATPG recovers significant coverage, while $T{=}4$ adds
+little further benefit, raising the central question of \emph{what mechanism
+drives $T{=}2$ recovery}: the frame-based backtrack-limit differential
+($T1{=}800$ at $T{=}1$ vs.\ 5000 at $T{>}1$) or Two-Phase State Justification
+decoupling. Through five controlled ablation experiments on the same 10
+circuits, each varying exactly one parameter, we find: (1) Two-Phase ON raises
+average fault coverage (FC) from 73.48\% to \textbf{90.42\%} (+16.94\,pp),
+up to +58.49\,pp on individual circuits; (2) uniform $T1{=}5000$ changes FC by
+only +0.02\,pp---the backtrack-limit differential is \emph{not} the mechanism;
+(3) enhanced backtrace (+0.47\,pp) and static learning (+0.00\,pp) are
+negligible; (4) with Two-Phase ON, $T{=}4$ adds 0\,pp universally; (5) the
+pipeline narrows the gap to full-scan from 31.26\,pp to \textbf{4.24\,pp}.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Automatic test pattern generation, partial scan, sequential ATPG, time-frame
+expansion, stuck-at faults, state justification.
+\end{IEEEkeywords}
+
+\section{Introduction}
+\label{sec:intro}
+Placeholder --- full conversion of \texttt{docs/final\_report.md} in progress.
+
+\section{Conclusion}
+\label{sec:conclusion}
+Placeholder.
+
+%% Bibliography enabled after full conversion (refs.bib populated):
+%\bibliographystyle{IEEEtran}
+%\bibliography{refs}
+
+\end{document}
