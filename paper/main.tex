@@ -39,11 +39,11 @@ multi-frame sequential ATPG can recover this loss. We first establish that
 $T{=}2$ sequential ATPG recovers significant coverage, while $T{=}4$ adds
 little further benefit, raising the central question of \emph{what mechanism
 drives $T{=}2$ recovery}: the frame-based backtrack-limit differential
-($T1{=}800$ at $T{=}1$ vs.\ 5000 at $T{>}1$) or Two-Phase State Justification
+(800 at $T{=}1$ vs.\ 5000 at $T{>}1$) or Two-Phase State Justification
 decoupling. Through five controlled ablation experiments on the same 10
 circuits, each varying exactly one parameter, we find: (1) Two-Phase ON raises
 average fault coverage (FC) from 77.72\% to \textbf{90.57\%} (+12.85\,pp),
-up to +54.51\,pp on individual circuits; (2) uniform $T1{=}5000$ changes FC by
+up to +54.51\,pp on individual circuits; (2) a uniform limit (5000) changes FC by
 only +0.00\,pp---the backtrack-limit differential is \emph{not} the mechanism;
 (3) enhanced backtrace (+0.21\,pp) and static learning (+0.00\,pp) are
 negligible; (4) with Two-Phase ON, $T{=}4$ adds 0\,pp universally; (5) the
@@ -84,8 +84,8 @@ search space, and standard multi-frame ATPG interleaves fault propagation and
 state justification within a single backtrack search, causing propagation
 backtrack explosions to exhaust the budget before state justification begins.
 
-We implement a frame-based backtrack limit: $T1{=}800$ at $T{=}1$ (preventing
-wasted search on structurally unrecoverable faults), $\mathrm{BACKTRACK}{=}5000$
+We implement a frame-based backtrack limit: 800 at $T{=}1$ (preventing
+wasted search on structurally unrecoverable faults) and 5000
 at $T{>}1$ (full budget for sequential recovery). There is no per-target
 timeout; the backtrack limit is the sole bounding mechanism.
 
@@ -115,7 +115,7 @@ Exp & Name & Parameter changed \\
 \midrule
 1 & Baseline & --- \\
 2 & Two-Phase ON & \texttt{useTwoPhaseJustification\_} at $T{>}1$ \\
-3 & Uniform T1 & $T1{=}5000$ (same as $T{>}1$) \\
+3 & Uniform limit & 5000 at $T{=}1$ (same as $T{>}1$) \\
 4 & Enhanced Backtrace & composite-score heuristic ON \\
 5 & Static Learning & fanout-implication ON \\
 \bottomrule
@@ -173,12 +173,12 @@ $\mathrm{FC} = \mathrm{DT}/(\mathrm{DT}{+}\mathrm{AU}{+}\mathrm{AB}{+}\mathrm{TO
 
 \subsection{Frame-Based Backtrack Limit}
 FAN\_ATPG uses a backtrack limit to bound search effort per fault. By default
-this limit is uniform ($\mathrm{BACKTRACK}{=}5000$) across all depths. Our
-modification introduces a \emph{frame-based differential}: $T{=}1$ uses
-$T1{=}800$ while $T{>}1$ uses 5000. At $T{=}1$, faults blocked by non-scan FF
+this limit is uniform (5000) across all depths. Our
+modification introduces a \emph{frame-based differential}: the limit is
+800 at $T{=}1$ while $T{>}1$ keeps 5000. At $T{=}1$, faults blocked by non-scan FF
 X-state are structurally unrecoverable; without the differential the engine
 spends 5000 backtracks per fault proving them untestable (AU) at significant
-runtime. With $T1{=}800$, these faults quickly hit the limit, are classified AB,
+runtime. With the 800 limit at $T{=}1$, these faults quickly hit it, are classified AB,
 and enter the residual set that $T{=}2$ recovery can attempt.
 
 \subsection{Fault Dropping}
@@ -211,7 +211,7 @@ Justification (\S\ref{sec:twophase}) addresses this decoupling.
 Our analysis questions are: \textbf{RQ1} (pipeline gain): how many pp does
 $\mathrm{FC}(D_1{\cup}D_2{\cup}D_4)$ exceed $\mathrm{FC}(D_1)$? \textbf{RQ2}
 (stage attribution): how much comes from $T{=}2$ vs $T{=}4$? \textbf{RQ3}
-(mechanism): is the gain driven by the $T1$ limit, Two-Phase, or both?
+(mechanism): is the gain driven by the backtrack-limit differential, Two-Phase, or both?
 \textbf{RQ4} (enhancements): do enhanced backtrace or static learning help? For
 each circuit, all comparisons use the same $T{=}1$ collapsed fault set $F$ as
 denominator, since FAN\_ATPG's reported FC for $T{>}1$ uses a different
@@ -403,7 +403,7 @@ $x\in\{5\%,10\%,15\%,20\%\}$.
 All runs use a unified base configuration: stuck-at fault model; pipeline depths
 $T{=}1$ (all faults), $T{=}2$ (residual $R_1$), $T{=}4$ (residual $R_2$);
 static/dynamic compression off; wall timeout 3600\,s, no per-target timeout.
-The base pipeline uses $T1{=}800$ at $T{=}1$ and $\mathrm{BACKTRACK}{=}5000$ at
+The base pipeline uses a backtrack limit of 800 at $T{=}1$ and 5000 at
 $T{>}1$, with Two-Phase, enhanced backtrace, and static learning all OFF. Each
 of the five experiments (Table~\ref{tab:exp-design}) runs the full pipeline on
 all 10 circuits, changing exactly the one listed parameter.
@@ -482,7 +482,7 @@ s5378 & 74.21\% & 96.65\% & 22.44 \\
 \end{figure}
 
 \subsection{Step 2: Baseline Multi-Frame Recovery}
-The baseline pipeline ($T1{=}800$, Two-Phase OFF) runs $T{=}1$, then targets
+The baseline pipeline (limit 800, Two-Phase OFF) runs $T{=}1$, then targets
 residuals at $T{=}2$ and $T{=}4$ (Table~\ref{tab:exp1}). Average
 $\mathrm{FC}_{T1T2T4}{=}77.72\%$, total gain 6.53\,pp. Stage attribution is
 inconsistent (Fig.~\ref{fig:depth}): some circuits gain entirely at $T{=}2$
@@ -496,7 +496,7 @@ negligible recovery (b03, s953). This raises the central mechanism question.
 \footnotesize
 \begin{tabular}{@{}lrrrrr@{}}
 \toprule
-Circuit & $T1$ FC & Pipe FC & g$_{T2}$ & g$_{T4}$ & total \\
+Circuit & $T{=}1$ FC & Pipe FC & g$_{T2}$ & g$_{T4}$ & total \\
 \midrule
 b03   & 44.50 & 44.50 & 0.00  & 0.00  & 0.00 \\
 b04   & 75.21 & 85.42 & 4.89  & 5.33  & 10.21 \\
@@ -537,7 +537,7 @@ b05 and b08 are already at ${\approx}90\%$ at $T{=}1$ and gain nothing.
 \footnotesize
 \begin{tabular}{@{}lrrrrr@{}}
 \toprule
-Circuit & $T1$ FC & Pipe FC & g$_{T2}$ & g$_{T4}$ & total \\
+Circuit & $T{=}1$ FC & Pipe FC & g$_{T2}$ & g$_{T4}$ & total \\
 \midrule
 b03   & 44.50 & 85.41 & 40.91 & 0.00 & 40.91 \\
 b04   & 75.21 & 84.46 & 9.25  & 0.00 & 9.25 \\
@@ -555,7 +555,7 @@ s5378 & 74.21 & 94.97 & 20.76 & 0.00 & 20.76 \\
 \end{tabular}
 \end{table}
 
-\paragraph{Exp~3 (Uniform $T1{=}5000$)} Average FC = 77.72\%, total gain
+\paragraph{Exp~3 (Uniform limit 5000)} Average FC = 77.72\%, total gain
 6.53\,pp; \textbf{$\Delta$FC vs Exp~1 $\approx$ +0.00\,pp}. Raising the $T{=}1$
 budget to match $T{>}1$ is identical to baseline---the limit differential does
 not create the residual.
@@ -571,7 +571,7 @@ $\Delta$FC = +0.00\,pp (identical to baseline).
 \subsection{Step 4: Ablation Summary}
 Table~\ref{tab:ablation} and Fig.~\ref{fig:cov} identify the mechanism
 conclusively: \textbf{Two-Phase State Justification is dominant} (+12.85\,pp).
-Neither uniform $T1$, enhanced backtrace, nor static learning produces
+Neither a uniform limit, enhanced backtrace, nor static learning produces
 meaningful improvement.
 
 \begin{table}[t]
@@ -583,9 +583,9 @@ meaningful improvement.
 \toprule
 Exp & Parameter & Avg FC & $\Delta$ vs Exp1 & Avg rt \\
 \midrule
-1 & Baseline (T1=800, TP off) & 77.72\% & --- & 4.59\,s \\
+1 & Baseline (limit 800, TP off) & 77.72\% & --- & 4.59\,s \\
 2 & \textbf{Two-Phase ON} & \textbf{90.57\%} & \textbf{+12.85} & 4.62\,s \\
-3 & Uniform T1=5000 & 77.72\% & +0.00 & 4.90\,s \\
+3 & Uniform limit 5000 & 77.72\% & +0.00 & 4.90\,s \\
 4 & Enhanced Backtrace & 77.93\% & +0.21 & 8.52\,s \\
 5 & Static Learning & 77.72\% & +0.00 & 4.17\,s \\
 \bottomrule
@@ -656,7 +656,7 @@ Exp & Parameter & Avg peak & Max peak & $\Delta$ vs Exp1 \\
 \midrule
 1 & Baseline & 14.96\,MB & 31.43\,MB & --- \\
 2 & Two-Phase ON & 14.91\,MB & 31.25\,MB & $-$0.05\,MB \\
-3 & Uniform $T1{=}5000$ & 14.96\,MB & 31.43\,MB & 0.00\,MB \\
+3 & Uniform limit 5000 & 14.96\,MB & 31.43\,MB & 0.00\,MB \\
 4 & Enhanced Backtrace & 14.96\,MB & 31.43\,MB & 0.00\,MB \\
 5 & Static Learning & 15.04\,MB & 32.00\,MB & +0.08\,MB \\
 \bottomrule
@@ -681,7 +681,7 @@ Table~\ref{tab:ratio} summarizes average coverage across the 10 circuits.
 \footnotesize
 \begin{tabular}{@{}crrrrrrr@{}}
 \toprule
-Ratio & $\Sigma$ NS & Avg $T1$ & Exp1 & g$_{1}$ & Exp2 & g$_{2}$ & gap$_{T1}$ \\
+Ratio & $\Sigma$ NS & Avg $T{=}1$ & Exp1 & g$_{1}$ & Exp2 & g$_{2}$ & gap$_{T1}$ \\
 \midrule
 5\%  & 33  & 80.91\% & 86.35\% & 5.44 & 91.81\% & 10.89 & 13.73 \\
 10\% & 60  & 71.20\% & 77.72\% & 6.53 & 90.57\% & 19.37 & 23.44 \\
@@ -719,7 +719,7 @@ specific FFs are excluded once the count crosses a topology threshold.
 
 \subsection{Why $T{=}2$ Recovers Faults That $T{=}1$ Misses}
 At $T{=}1$, non-scan FF outputs are X; faults whose propagation requires a
-specific non-scan FF value are untestable in one frame, and with $T1{=}800$ the
+specific non-scan FF value are untestable in one frame, and with the 800 limit the
 engine quickly aborts (AB) rather than spending 5000 backtracks proving AU. The
 ablation is unambiguous: Exp~3 shows that matching the $T{=}1$ budget to $T{>}1$
 changes final FC by only +0.00\,pp---non-scan FF X-state blocking, not the
@@ -728,7 +728,7 @@ decoupling: with Two-Phase OFF, $T{=}2$ recovers 5.60\,pp on average; with it
 ON, 19.37\,pp---a $3.5{\times}$ improvement.
 
 \subsection{The Role of the Backtrack Limit}
-The $T1{=}800$ limit is purely a \emph{bounding mechanism}: it creates the AB
+The 800 limit at $T{=}1$ is purely a \emph{bounding mechanism}: it creates the AB
 residual efficiently but does not cause recovery, as Exp~3 confirms.
 
 \subsection{$T{=}4$ Adds Nothing with Two-Phase ON}
@@ -803,7 +803,7 @@ We address neither timing-closure synthesis nor test power.
 \label{sec:limitations}
 (1) Two suites only (ITC'99, ISCAS'89); no large industrial circuits. (2)
 Supplementary ratio sweep covers 5\%--20\% only; results outside this range are
-untested. (3) Results depend on the $T1{=}800$/5000 choice. (4) We report both
+untested. (3) Results depend on the backtrack-limit choice (800/5000). (4) We report both
 B1 and B2 for every circuit. (5) s27 is toy-scale, used for verification only.
 (6) $T{=}8$ not evaluated; $T{=}4$ adds 0 gain universally with Two-Phase ON.
 (7) Masks must be regenerated after netlist changes. (8) FAN AU is operational
@@ -819,7 +819,7 @@ five controlled ablation experiments on 10 circuits at 10\% non-scan exclusion.
 Key findings: (1) the baseline (Two-Phase OFF) recovers 6.53\,pp ($T{=}2$:
 5.60\,pp, $T{=}4$: 0.93\,pp); (2) \textbf{Two-Phase State Justification is the
 dominant mechanism}, raising FC to 90.57\% (+12.85\,pp), with $T{=}4$ adding
-0\,pp universally; (3) the $T1$ limit differential does not create the residual
+0\,pp universally; (3) the backtrack-limit differential does not create the residual
 (+0.00\,pp in Exp~3); (4) enhanced backtrace (+0.21\,pp) and static learning
 (+0.00\,pp) are negligible; (5) the gap to full-scan narrows from 24.32\,pp to
 4.95\,pp; (6) a ratio sweep (5\%--20\%) confirms Two-Phase dominance at every
