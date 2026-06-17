@@ -125,15 +125,18 @@ Exp & Name & Parameter changed \\
 \subsection{Scope and Positioning}
 This work does \textbf{not} propose a new partial-scan selection method or a new
 fault model. Timing-driven non-scan FF selection uses OpenSTA
-minimum-path-slack ranking at a fixed 10\% exclusion ratio---experimental setup
-only. The research narrative follows a discovery path: (RQ1) What is the gap
-between $T{=}1$ and full-scan? (RQ2) How much does $T{=}2$ recover, and does
-$T{=}4$ add more? (RQ3) Which mechanism---backtrack-limit differential or
-Two-Phase State Justification---drives recovery? (RQ4) Do enhanced backtrace or
-static learning help? We report on \textbf{10 circuits} (6 ITC'99 + 4
-ISCAS'89) that completed all five experiments; the remaining five circuits
-(b11, b13, s9234, s15850, s35932) are excluded---b11 and s35932 produce runner
-crashes, while b13, s9234, and s15850 time out under the baseline pipeline.
+minimum-path-slack ranking---experimental setup only. The \textbf{primary}
+ablation narrative uses a fixed 10\% exclusion ratio; a \textbf{supplementary
+ratio sweep} at 5\%, 10\%, 15\%, and 20\% tests whether ablation conclusions
+hold as exclusion burden increases (\S\ref{sec:ratio}). The research narrative
+follows a discovery path: (RQ1) What is the gap between $T{=}1$ and full-scan?
+(RQ2) How much does $T{=}2$ recover, and does $T{=}4$ add more? (RQ3) Which
+mechanism---backtrack-limit differential or Two-Phase State Justification---drives
+recovery? (RQ4) Do enhanced backtrace or static learning help? We report on
+\textbf{10 circuits} (6 ITC'99 + 4 ISCAS'89) that completed all five experiments;
+the remaining five circuits (b11, b13, s9234, s15850, s35932) are excluded---b11
+and s35932 produce runner crashes, while b13, s9234, and s15850 time out under
+the baseline pipeline.
 
 \section{Background}
 \label{sec:background}
@@ -390,8 +393,11 @@ s5378 & 179  & 18  & 94.74\% \\
 
 \subsection{Partial-Scan Setup}
 OpenSTA ranks FFs by minimum-path-slack on synthesized NanGate45 gate-level
-netlists. The top 10\% most timing-critical FFs are designated non-scan
-(masks \texttt{masks/<circuit>\_x10.mask}). Only the 10\% ratio is evaluated.
+netlists. The top $x$\% most timing-critical FFs are designated non-scan
+($k{=}\max(1,\lceil n{\cdot}x\rceil)$ FFs per circuit; masks
+\texttt{masks/<circuit>\_x\{pct\}.mask}). The primary ablation experiments use
+$x{=}10\%$; the ratio sweep (\S\ref{sec:ratio}) re-runs Exp~1--5 at
+$x\in\{5\%,10\%,15\%,20\%\}$.
 
 \subsection{ATPG Experiments}
 All runs use a unified base configuration: stuck-at fault model; pipeline depths
@@ -402,6 +408,22 @@ $T{>}1$, with Two-Phase, enhanced backtrace, and static learning all OFF. Each
 of the five experiments (Table~\ref{tab:exp-design}) runs the full pipeline on
 all 10 circuits, changing exactly the one listed parameter.
 
+\subsection{Ratio Sweep}
+\label{sec:ratio-setup}
+To test sensitivity to exclusion burden, we re-ran Exp~1--5 on the same 10
+circuits at $x{=}5\%$, 10\%, 15\%, and 20\%. Each ratio uses independently
+generated masks from the same OpenSTA slack ranking
+(\texttt{results/ratio\_sweep/x\{pct\}/}). All 200 runs (4 ratios $\times$ 5
+experiments $\times$ 10 circuits) completed with \texttt{status=PASS}.
+
+\subsection{Memory Measurement}
+Each pipeline stage invokes FAN in a separate process. After \texttt{run\_atpg},
+the runner calls FAN \texttt{report\_memory\_usage}, which reports VmPeak (virtual
+address-space high-water mark, MB) from \texttt{/proc/self/status}. We record
+per-stage peaks $T1\_\mathrm{mem}$, $T2\_\mathrm{mem}$, $T4\_\mathrm{mem}$ and
+pipeline ceiling $\mathrm{peak\_mem\_mb}{=}\max(T1,T2,T4)$. Stages run
+sequentially, so peaks are not summed.
+
 \subsection{Metrics and Baselines}
 Two baselines anchor all reporting: \textbf{B1} (partial-scan $T{=}1$, metric
 $\mathrm{FC}_{T1}$) and \textbf{B2} (full-scan $T{=}1$, metric
@@ -411,7 +433,9 @@ $\mathrm{FC}_{T1T2T4}{=}|D_1{\cup}D_2{\cup}D_4|/|F|$;
 $\texttt{gain\_T2}{=}\mathrm{FC}_{T1T2}{-}\mathrm{FC}_{T1}$,
 $\texttt{gain\_T4}{=}\mathrm{FC}_{T1T2T4}{-}\mathrm{FC}_{T1T2}$,
 $\texttt{total\_gain}{=}\mathrm{FC}_{T1T2T4}{-}\mathrm{FC}_{T1}$. The remaining
-gap is $\mathrm{B2}{-}\text{Experiment}$.
+gap is $\mathrm{B2}{-}\text{Experiment}$. Memory metrics
+($T1\_\mathrm{mem}$, $T2\_\mathrm{mem}$, $T4\_\mathrm{mem}$,
+$\mathrm{peak\_mem\_mb}$) characterize per-stage and pipeline VmPeak.
 
 \section{Results}
 \label{sec:results}
@@ -578,6 +602,114 @@ Exp & Parameter & Avg FC & $\Delta$ vs Exp1 & Avg rt \\
 \label{fig:rt}
 \end{figure}
 
+\subsection{Step 5: Memory Usage}
+\label{sec:memory}
+We record per-stage VmPeak for all 10 circuits across Exp~1--5. Memory is
+dominated by \textbf{time-frame depth}: $T{=}4$ peak exceeds $T{=}1$ on every
+circuit because \texttt{build\_circuit --frame 4} unrolls a larger combinational
+model. Residual fault count at $T{>}1$ does not drive peak---only frame depth
+does. Table~\ref{tab:mem-exp1} lists Exp~1 per-stage memory; average pipeline
+peak is 14.96\,MB, worst case s5378 at 31.43\,MB.
+
+\begin{table}[t]
+\caption{Exp~1 baseline per-stage VmPeak (MB).}
+\label{tab:mem-exp1}
+\centering
+\footnotesize
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+Circuit & $T{=}1$ & $T{=}2$ & $T{=}4$ & peak \\
+\midrule
+b03   & 10.49 & 10.66 & 10.97 & 10.97 \\
+b04   & 12.39 & 12.61 & 13.70 & 13.70 \\
+b05   & 14.95 & 15.50 & 17.48 & 17.48 \\
+b07   & 11.46 & 11.62 & 12.36 & 12.36 \\
+b08   & 10.74 & 10.90 & 11.30 & 11.30 \\
+b09   & 10.73 & 10.90 & 11.30 & 11.30 \\
+s953  & 11.96 & 12.28 & 13.28 & 13.28 \\
+s1196 & 12.43 & 12.77 & 13.92 & 13.92 \\
+s1238 & 12.46 & 12.76 & 13.82 & 13.82 \\
+s5378 & 24.96 & 26.13 & 31.43 & \textbf{31.43} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:mem-ablation} summarizes ablation impact. None of the flags
+materially changes pipeline peak memory ($\Delta{\leq}0.08$\,MB average). Two-Phase
+ON raises $T{=}2$ VmPeak on s5378 (26.1$\to$28.9\,MB) because decoupled
+justification retains more frame state, but $T{=}4$ still sets the ceiling
+(${\approx}31$\,MB). Enhanced backtrace increases runtime on s5378 without
+raising peak memory.
+
+\begin{table}[t]
+\caption{Ablation impact on pipeline VmPeak (10 circuits).}
+\label{tab:mem-ablation}
+\centering
+\footnotesize
+\begin{tabular}{@{}clrrr@{}}
+\toprule
+Exp & Parameter & Avg peak & Max peak & $\Delta$ vs Exp1 \\
+\midrule
+1 & Baseline & 14.96\,MB & 31.43\,MB & --- \\
+2 & Two-Phase ON & 14.91\,MB & 31.25\,MB & $-$0.05\,MB \\
+3 & Uniform $T1{=}5000$ & 14.96\,MB & 31.43\,MB & 0.00\,MB \\
+4 & Enhanced Backtrace & 14.96\,MB & 31.43\,MB & 0.00\,MB \\
+5 & Static Learning & 15.04\,MB & 32.00\,MB & +0.08\,MB \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+At $T{\leq}4$ on these benchmarks, memory cost is modest and predictable.
+Frame depth---not Two-Phase, backtrace heuristics, or static learning---is the
+primary memory driver.
+
+\subsection{Step 6: Non-Scan Ratio Sensitivity}
+\label{sec:ratio}
+The ratio sweep re-runs Exp~1--5 at four exclusion levels. $\mathrm{FC}_{T1}$
+(B1) depends only on the non-scan mask and is identical across experiments at a
+given ratio; pipeline FC and ablation deltas isolate mechanism effects.
+Table~\ref{tab:ratio} summarizes average coverage across the 10 circuits.
+
+\begin{table}[t]
+\caption{Average coverage vs.\ non-scan exclusion ratio (10 circuits).}
+\label{tab:ratio}
+\centering
+\footnotesize
+\begin{tabular}{@{}crrrrrrr@{}}
+\toprule
+Ratio & $\Sigma$ NS & Avg $T1$ & Exp1 & g$_{1}$ & Exp2 & g$_{2}$ & gap$_{T1}$ \\
+\midrule
+5\%  & 33  & 80.91\% & 86.35\% & 5.44 & 91.81\% & 10.89 & 13.73 \\
+10\% & 60  & 71.20\% & 77.72\% & 6.53 & 90.57\% & 19.37 & 23.44 \\
+15\% & 91  & 63.81\% & 69.47\% & 5.66 & 89.94\% & 26.13 & 30.83 \\
+20\% & 118 & 62.02\% & 67.84\% & 5.81 & 88.59\% & 26.57 & 32.62 \\
+\bottomrule
+\multicolumn{8}{@{}l@{}}{\footnotesize gap$_{T1}$\,=\,avg gap to B2 at $T{=}1$;
+Exp2 pipeline gap to B2: 2.83--6.05\,pp.}
+\end{tabular}
+\end{table}
+
+Four observations hold across ratios:
+\begin{enumerate}
+\item \textbf{$T{=}1$ loss scales with ratio.} Average gap to B2 grows from
+13.73\,pp at 5\% to 32.62\,pp at 20\%.
+\item \textbf{Baseline gain is flat (${\approx}5$--6\,pp).} Without Two-Phase,
+the unified $T{=}2$/$T{=}4$ search recovers a similar absolute increment
+regardless of how many FFs are non-scan.
+\item \textbf{Two-Phase gain scales with ratio (+10.9$\to$+26.6\,pp).} The
+Two-Phase advantage over baseline grows from +5.5\,pp at 5\% to +20.8\,pp at
+20\%, closing the gap to B2 to 2.83--6.05\,pp.
+\item \textbf{Ablation conclusions hold.} Exp~3 and Exp~5 match Exp~1 at all
+four ratios ($\Delta\mathrm{FC}{=}0.00$\,pp); Exp~4 differs by at most
+$\pm$1.15\,pp. With Two-Phase ON, $T{=}4$ adds \textbf{0\,pp} at every ratio.
+\end{enumerate}
+
+Circuits \textbf{b05} and \textbf{b08} show flat $T{=}1$ FC across all ratios
+(90.23\% and 90.07\%)---the timing-critical non-scan FFs selected at each ratio
+do not block dominant propagation paths. \textbf{b04} drops sharply between 5\%
+(82.42\% $T{=}1$) and 15\% (25.68\% $T{=}1$), indicating sensitivity to which
+specific FFs are excluded once the count crosses a topology threshold.
+
 \section{Discussion}
 \label{sec:discussion}
 
@@ -621,6 +753,27 @@ backtrace quality or conflict-detection speed but the interleaving of
 propagation and justification in the unified search; only the Two-Phase
 decoupling overcomes it.
 
+\subsection{Ratio Sensitivity}
+The ratio sweep (\S\ref{sec:ratio}) shows Two-Phase State Justification is the
+dominant recovery mechanism \textbf{at every exclusion level tested} (5\%--20\%).
+As non-scan burden increases, $T{=}1$ loss grows monotonically, but Two-Phase
+pipeline FC remains above 88\% on average and within 6.05\,pp of full-scan. The
+baseline pipeline does not scale its recovery with ratio---reinforcing that the
+unified-search bottleneck, not the backtrack-limit differential, limits baseline
+performance. Circuit-level variation (e.g., b04's cliff between 10\% and 15\%)
+depends on which specific timing-critical FFs are excluded, not on circuit size
+alone.
+
+\subsection{Memory Cost of Multi-Frame Expansion}
+Our measurements confirm the expected trade-off cited in sequential ATPG
+literature~\cite{ref3}: deeper frames increase memory. $T{=}4$ VmPeak exceeds
+$T{=}1$ on every circuit because time-frame unrolling grows the circuit
+representation. Absolute peaks remain small on all 10 circuits (${\leq}32$\,MB
+VmPeak), and ablation configurations that dramatically change FC or runtime do
+not proportionally increase memory. Residual targeting reduces ATPG \emph{runtime}
+by shrinking target fault sets at $T{>}1$, but does not reduce unrolled circuit
+size, which is why $T{=}4$ memory tracks frame depth rather than residual count.
+
 \section{Related Work}
 \label{sec:related}
 \textbf{Sequential ATPG and time-frame expansion.} The standard approach unrolls
@@ -644,11 +797,14 @@ We address neither timing-closure synthesis nor test power.
 \section{Limitations and Threats to Validity}
 \label{sec:limitations}
 (1) Two suites only (ITC'99, ISCAS'89); no large industrial circuits. (2)
-Results depend on the $T1{=}800$/5000 choice. (3) We report both B1 and B2 for
-every circuit. (4) s27 is toy-scale, used for verification only. (5) $T{=}8$ not
-evaluated; $T{=}4$ adds 0 gain universally. (6) Masks must be regenerated after
-netlist changes. (7) FAN AU is operational (search failure within budget), not a
-formal untestability proof. (8) Single ATPG backend; no cross-tool validation.
+Supplementary ratio sweep covers 5\%--20\% only; results outside this range are
+untested. (3) Results depend on the $T1{=}800$/5000 choice. (4) We report both
+B1 and B2 for every circuit. (5) s27 is toy-scale, used for verification only.
+(6) $T{=}8$ not evaluated; $T{=}4$ adds 0 gain universally with Two-Phase ON.
+(7) Masks must be regenerated after netlist changes. (8) FAN AU is operational
+(search failure within budget), not a formal untestability proof. (9) Single ATPG
+backend; no cross-tool validation. (10) Memory is VmPeak from
+\texttt{/proc/self/status}, not resident set size.
 
 \section{Conclusion}
 \label{sec:conclusion}
@@ -661,13 +817,17 @@ dominant mechanism}, raising FC to 90.42\% (+16.94\,pp), with $T{=}4$ adding
 0\,pp universally; (3) the $T1$ limit differential does not create the residual
 (+0.02\,pp in Exp~3); (4) enhanced backtrace (+0.47\,pp) and static learning
 (+0.00\,pp) are negligible; (5) the gap to full-scan narrows from 31.26\,pp to
-4.24\,pp. The bottleneck is not frame depth but the interleaving of propagation
-and justification in the unified search, which Two-Phase decoupling resolves.
+4.24\,pp; (6) a ratio sweep (5\%--20\%) confirms Two-Phase dominance at every
+exclusion level, with pipeline gap to B2 remaining below 6.05\,pp; (7) pipeline
+VmPeak is modest (${\leq}32$\,MB) and driven by frame depth, not ablation flags.
+The bottleneck is not frame depth but the interleaving of propagation and
+justification in the unified search, which Two-Phase decoupling resolves.
 
 \appendices
 \section{Result Files}
 Per-experiment data: \texttt{results/exp1\_baseline.csv} \ldots
-\texttt{exp5\_static\_learning.csv}; full-scan B2 in
+\texttt{exp5\_static\_learning.csv}; ratio sweep at
+\texttt{results/ratio\_sweep/x\{5,10,15,20\}/}; full-scan B2 in
 \texttt{phase\_d\_fullscan\_dataset.csv} (ITC) and
 \texttt{iscas89\_fullscan\_baseline.csv} (ISCAS); per-stage residual lists in
 \texttt{results/residual\_faults/}; OpenSTA slack rankings and masks in
