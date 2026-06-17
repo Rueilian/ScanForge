@@ -845,6 +845,22 @@ suffices). Cone-aware non-scan selection may reduce the B2 gap. QN-pin UD faults
 are structurally untestable in both B1 and B2. The b11 runner crash (empty
 output, no error) remains unresolved.
 
+\section*{Author Contributions}
+The three authors contributed equally as co-first authors; the division of
+labor (per the project commit history) was as follows.
+\textbf{Rueilian Ting} designed and implemented the Two-Phase State
+Justification engine extension in FAN\_ATPG (C++ prototype through integration),
+designed the five-experiment controlled ablation, ran the Exp~1--5 sweeps, and
+authored the mechanism narrative of the report and slides.
+\textbf{Ssu-Wei Huang} built the partial-scan and full-scan (B2) ATPG pipeline
+across the ISCAS'89 and ITC'99 benchmarks, implemented the FAN\_ATPG engine
+speed work and full-scan oracle / QN-pin handling, produced the timing-driven
+non-scan masks, and prepared the IEEE paper and reproduction packaging.
+\textbf{Yen-Chu Lo} implemented the non-scan ratio sweep (5\%--20\%) and the
+per-stage memory (VmPeak) instrumentation and analysis, contributed
+PARTIAL\_SEQUENTIAL fixes to FAN\_ATPG, and assembled the self-contained
+\texttt{team\_5\_project} reproduction bundle and its one-command runner.
+
 \begin{thebibliography}{16}
 \bibitem{ref1} H. Fujiwara and T. Shimono, ``On the acceleration of test generation algorithms,'' \emph{IEEE Trans. Computers}, vol.\ C-32, no.\ 12, pp.\ 1137--1144, 1983.
 \bibitem{ref2} M. Abramovici, M. A. Breuer, and A. D. Friedman, \emph{Digital Systems Testing and Testable Design}. IEEE Press, 1990.
