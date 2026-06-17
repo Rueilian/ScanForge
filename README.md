@@ -178,32 +178,37 @@ grep 'b03,0.1' results/progressive_residual_summary.csv
 
 | Role | Setup | Metric | Data |
 |------|-------|--------|------|
-| **B1** | Partial-scan @10%, T=1 | `FC_T1` | `progressive_residual_summary.csv` |
-| **Experiment** | Partial-scan @10%, T=1→T=2→T=4 | `FC_T1_T2_T4` | same CSV |
+| **B1** | Partial-scan @10%, T=1 | `FC_T1` | `results/exp1_baseline.csv` |
+| **Experiment** | Partial-scan @10%, Two-Phase ON, T=1→T=2→T=4 | `FC_T1_T2_T4` | `results/exp2_two_phase.csv` |
 | **B2** | Full-scan, T=1 | `FC_fullscan` | `phase_d_fullscan_dataset.csv` (ITC'99), `iscas89_fullscan_baseline.csv` (ISCAS'89) |
 
-### Results @10% (June 2026, 17/17 complete with ptt=5s)
+### Results @10% — 10 circuits, Two-Phase ON, no per-target timeout
 
-| Circuit | FFs | B1 (T=1) | Exp (T1+T2+T4) | B2 (full-scan) | Exp−B1 | B2−Exp |
-|---------|----:|---------:|---------------:|---------------:|-------:|-------:|
-| b03 | 30 | 44.50% | 85.41% | 91.62% | +40.91pp | +6.21pp |
-| b04 | 66 | 75.21% | 84.46% | 93.46% | +9.25pp | +9.00pp |
-| b05 | 88 | 29.20% | 87.68% | 95.34% | +58.49pp | +7.66pp |
-| b07 | 44 | 56.13% | 87.93% | 93.46% | +31.80pp | +5.53pp |
-| b08 | 67 | 72.96% | 91.09% | 94.03% | +18.13pp | +2.94pp |
-| b09 | 29 | 76.34% | 87.85% | 93.44% | +11.51pp | +5.59pp |
-| b11 | 84 | 66.21% | 94.34% | 97.43% | +28.13pp | +3.09pp |
-| b13 | 86 | 77.33% | 82.01% | 91.13% | +4.68pp | +9.12pp |
+| Circuit | FFs | B1 (T=1) | Exp (Two-Phase) | B2 (full-scan) | Exp−B1 | B2−Exp |
+|---------|----:|---------:|----------------:|---------------:|-------:|-------:|
+| b03   | 30  | 44.50% | 85.41% | 91.23% | +40.91pp | +5.82pp |
+| b04   | 66  | 75.21% | 84.46% | 94.18% | +9.25pp  | +9.72pp |
+| b05   | 88  | 90.23% | 90.23% | 96.10% | +0.00pp  | +5.87pp |
+| b07   | 44  | 56.13% | 87.93% | 93.92% | +31.80pp | +5.99pp |
+| b08   | 67  | 90.07% | 90.07% | 95.47% | +0.00pp  | +5.40pp |
+| b09   | 29  | 76.34% | 87.85% | 94.58% | +11.51pp | +6.73pp |
+| s953  | 29  | 36.75% | 91.26% | 97.79% | +54.51pp | +6.53pp |
+| s1196 | 18  | 86.13% | 98.40% | 98.87% | +12.27pp | +0.47pp |
+| s1238 | 18  | 82.42% | 95.12% | 96.36% | +12.71pp | +1.24pp |
+| s5378 | 179 | 74.21% | 94.97% | 96.65% | +20.76pp | +1.68pp |
+| **Avg** | | **71.20%** | **90.57%** | **95.52%** | **+19.37pp** | **+4.95pp** |
 
-Full table + ISCAS'89 results: [`docs/final_report.md`](./docs/final_report.md) §7.
+Full ablation (Exp 1–5), memory, and ratio sweep (5–20%): [`docs/final_report.md`](./docs/final_report.md) §7 and the IEEE paper `paper/main.pdf`.
 
 ---
 
 ## Current Status (June 2026)
 
-**Scope:** Tier A @ **10%** only. Two baselines: **B1** partial T=1, **B2** full-scan.
+**Scope:** 10 circuits (6 ITC'99 + 4 ISCAS'89) @ **10%** non-scan, no per-target timeout (backtrack limit is the sole bound). 5 circuits excluded (b11/s35932 runner crash; b13/s9234/s15850 timeout). Two baselines: **B1** partial T=1, **B2** full-scan.
 
-**Sweep:** 17/17 PASS in `progressive_residual_summary.csv` (8 ITC'99 + 9 ISCAS'89, @10%, ptt=5s). **Key finding:** T=2 recovers +4.68–58.49pp vs B1; T=4 adds 0pp universally.
+**Key finding:** Two-Phase State Justification is the dominant recovery mechanism — average FC 77.72% → **90.57%** (+12.85pp vs baseline), narrowing the gap to full-scan from 24.32pp to **4.95pp**; T=4 adds 0pp universally. Uniform backtrack limit, enhanced backtrace, and static learning are all negligible (≤+0.21pp). A 5–20% ratio sweep confirms the conclusion across exclusion levels.
+
+**Final deliverable:** reproduction bundle + PDFs in [Release `final-submission-20260617`](https://github.com/Rueilian/ScanForge/releases/tag/final-submission-20260617).
 
 ---
 
