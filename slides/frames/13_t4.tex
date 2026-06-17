@@ -1,0 +1,11 @@
+\begin{frame}[noframenumbering]{Why Four Frames Add Nothing}
+  \begin{itemize}
+    \item Two-phase ON: 4 frames add \alert{0 pp} on every circuit
+    \item 2 frames already catch \alert{all recoverable} faults
+    \item Without two-phase, 4-frame gain is just \alert{2-frame inefficiency}
+    \item Residual after 2 frames = untestable at \alert{any depth}
+  \end{itemize}
+  \vspace{0.5em}
+  \centering\footnotesize Frame depth is not the bottleneck --- \alert{search structure} is
+  \note{With two-phase on, four frames add exactly zero on every circuit, because two frames already catch all recoverable faults; the residual is structurally untestable at any depth. Without two-phase, the four-frame gain is not a genuine depth requirement, it is the inefficiency of the interleaved two-frame search leaking faults to the next stage. Depth is not the bottleneck; search structure is.}
+\end{frame}

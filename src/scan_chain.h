@@ -22,10 +22,18 @@ struct Pattern {
     std::vector<Value> ppo; // captured values (FF next state after test)
 };
 
+struct SeqEdge {
+    int from = 0; // FF index [0, numFF)
+    int to   = 0;
+};
+
 struct ScanData {
     int                   numFF;
     std::vector<FFInfo>   ffs;
     std::vector<Pattern>  patterns;
+    // Sequential FF graph: combinational Q→D reachability edges from mergeSequentialEdgesFromVerilog().
+    std::vector<SeqEdge>  seq_edges;
+    bool                  seq_netlist_loaded = false;
 };
 
 struct FFStress {
@@ -86,6 +94,17 @@ struct ScanResult {
 
 // Parse a .sf file produced by FAN_ATPG's add_scan_chains command.
 bool parseScanData(const std::string &path, ScanData &out);
+
+// Parse only header through FF metadata (NUM_FF, FF_NAMES, SCOAP); stops at
+// PATTERNS without loading PPI/PPO. SCOAP line optional (defaults to zeros). For fast
+// sequential-graph-only workflows.
+bool parseScanDataHeader(const std::string &path, ScanData &out);
+
+// Populate data.seq_edges from structural Verilog: for each FF pair (a,b), add edge a→b if
+// b's D net is reachable from a's Q net by walking assign/primitive fanout without entering
+// another FF's Q output net (combinational reachability only; no transitive F0→F2 when only
+// F0→F1 and F1→F2 exist as separate FF stages). FF instance names should match .sf FF_NAMES.
+bool mergeSequentialEdgesFromVerilog(ScanData &data, const std::string &verilog_path);
 
 // Simulate scan-shift sequence for a given ordered subset of FF indices.
 // Chain order: SI → chain[0] → chain[1] → ... → chain[K-1] → SO

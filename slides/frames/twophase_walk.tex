@@ -1,0 +1,28 @@
+\begin{frame}[noframenumbering]{Two-Phase: Why It Works (Walkthrough)}
+  \begin{columns}[T]
+    \begin{column}{0.5\textwidth}
+      \textbf{\alert{Single search}} (standard)
+      \footnotesize
+      \begin{itemize}
+        \item Goal: propagate fault to an output
+        \item Path needs non-scan FF $=1$
+        \item But FF is currently \alert{X}
+        \item Search does propagation \alert{+} justification at once
+        \item $\Rightarrow$ conflict $\to$ \alert{abort}
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \textbf{\alert{Two-phase}}
+      \footnotesize
+      \begin{itemize}
+        \item \textbf{Frame 1}: FF input free $\to$ propagate fault first
+        \item \textbf{Frame 0}: justify that FF $=1$ backward
+        \item $\Rightarrow$ the two goals are \alert{separated}
+        \item $\Rightarrow$ each solvable $\to$ \alert{detected}
+      \end{itemize}
+    \end{column}
+  \end{columns}
+  \vspace{0.6em}
+  \centering\footnotesize Same fault, same depth --- only the \alert{search order} changed
+  \note{A concrete walkthrough. Suppose detecting a fault needs its effect propagated to an output along a path that requires a non-scan FF to be 1, but that FF is currently X. In a single unified search, the engine tries to find the propagation path and justify the FF value simultaneously; contradictions in justification cause backtracks that exhaust the budget on propagation, and the fault aborts. Two-phase instead frees the FF input in the last frame to find a propagation path first, then justifies the required value backward in the earlier frame. The two subproblems are separated, each is solvable, and the fault is detected --- same fault, same depth, only the search order changed.}
+\end{frame}

@@ -1,0 +1,19 @@
+\begin{frame}{The Five Controlled Experiments}
+  \centering
+  \small
+  \begin{tabular}{@{}c l l@{}}
+    \toprule
+    \# & Change vs baseline & Isolates \\
+    \midrule
+    1 & --- (baseline) & plain pipeline \\
+    2 & \alert{Two-phase ON} & propagation / justify decoupling \\
+    3 & Uniform \BThi\ at 1 frame & backtrack-limit differential \\
+    4 & Enhanced backtrace & backtrace heuristic \\
+    5 & Static learning & early conflict detection \\
+    \bottomrule
+  \end{tabular}
+  \vspace{0.6em}
+
+  {\footnotesize Same \alert{\NumCirc} circuits, full 1$\to$2$\to$4 pipeline, \alert{one parameter} changed each}
+  \note{Ablation: start from the baseline and change exactly one parameter per experiment. Experiment 2 enables two-phase; experiment 3 makes the one-frame budget uniform at 5000 to test the limit differential; experiments 4 and 5 add backtrace and learning heuristics. All run the full pipeline on the same 10 circuits.}
+\end{frame}

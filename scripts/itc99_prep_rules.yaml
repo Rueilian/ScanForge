@@ -1,0 +1,39 @@
+version: 1
+output_dir: itc99_synth_rtl
+source_dir: itc99_rtl
+
+defaults:
+  - rule: copy
+
+circuits:
+  b05:
+    - rule: comb_nonblocking_to_blocking
+      match: 'always @(EN_DISP, RES_DISP, NUM, MAX)'
+  b08:
+    - rule: rom_to_case_table
+      array: ROM
+      depth: 8
+      width: 20
+      read_ports:
+        - signal: ROM_1
+          msb: 19
+          lsb: 12
+        - signal: ROM_2
+          msb: 11
+          lsb: 4
+        - signal: ROM_OR
+          msb: 3
+          lsb: 0
+  b12:
+    - rule: memory_sync_read
+      array: memory
+      depth: 32
+      width: 4
+      addr_signal: address
+      data_out_signal: data_out
+  b15:
+    - rule: blocking_to_nonblocking
+      signals: [Address, Datao]
+    - rule: resolve_multi_driver_ff
+      signal: TEMPORARY
+      width: 32

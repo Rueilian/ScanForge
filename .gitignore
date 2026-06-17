@@ -1,3 +1,26 @@
 *.o
 scanforge
 *.sf.tmp
+results/experiments/
+results/s27_exclude_sweep.csv
+results/s27_timing_proxy.csv
+results/residual_faults/
+results/fault_status/
+results/*.bak*
+logs/
+results/logs/
+results/*.log
+itc99_synth_rtl/
+tools/
+__pycache__/
+scripts/__pycache__/
+scripts/docs/
+# zip-staging + LaTeX build artifacts
+dist/
+*.bak
+paper/*.aux
+paper/*.bbl
+paper/*.blg
+paper/*.log
+paper/*.out
+paper/main.pdf

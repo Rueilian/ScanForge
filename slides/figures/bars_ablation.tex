@@ -1,0 +1,18 @@
+% Ablation: average FC of the 5 experiments. Two-Phase highlighted. report §7.4
+\begin{tikzpicture}
+\begin{axis}[
+  slidestyle, ybar, bar width=26pt,
+  width=\textwidth, height=5.2cm,
+  enlarge x limits=0.14, ymin=0, ymax=104,
+  ytick={0,20,40,60,80,100}, ymajorgrids=true,
+  ylabel={Average coverage (\%)},
+  symbolic x coords={Baseline,Two-Phase,Uniform,Backtrace,Learning},
+  xtick={Baseline,Two-Phase,Uniform,Backtrace,Learning}, xticklabel style={font=\scriptsize},
+  yticklabel style={font=\scriptsize}, ylabel style={font=\scriptsize},
+  nodes near coords, nodes near coords style={font=\small\bfseries, text=slidetext,
+    /pgf/number format/fixed, /pgf/number format/fixed zerofill, /pgf/number format/precision=2},
+]
+\addplot[ybar, bar shift=0pt, draw=PubBlue,   fill=PubBlue!55]   coordinates {(Baseline,73.48)(Uniform,73.50)(Backtrace,73.95)(Learning,73.48)};
+\addplot[ybar, bar shift=0pt, draw=HidOrange, fill=HidOrange!90] coordinates {(Two-Phase,90.42)};
+\end{axis}
+\end{tikzpicture}

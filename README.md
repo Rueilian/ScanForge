@@ -1,9 +1,10 @@
 # ScanForge
 
-**ScanForge** is an open-source scan chain DFT (Design for Testability) analysis tool.  
-It uses [FAN_ATPG](https://github.com/NTU-LaDS-II/FAN_ATPG) as a backend to export circuit data, then performs scan chain simulation and **partial scan selection** via SCOAP testability metrics — all in a standalone C++ engine.
+Sequential ATPG research pipeline for evaluating **progressive T=1→T=2→T=4 fault-coverage gain** on timing-driven partial-scan ITC'99 benchmarks.
 
----
+**Research focus:** Progressive T=1→T=2→T=4 **pipeline gain** at **10%** non-scan exclusion only.
+
+**Authoritative direction:** [`docs/spec.md`](./docs/spec.md) | [`docs/final_report.md`](./docs/final_report.md) | [`docs/README.md`](./docs/README.md)
 
 ## Features
 
@@ -14,6 +15,8 @@ It uses [FAN_ATPG](https://github.com/NTU-LaDS-II/FAN_ATPG) as a backend to expo
 | **Segment stress CSV** | Sliding-window stress along the **current scan chain** (`--segment-window`, `--segment-csv`); hotspot flag from mean+1σ over segment averages |
 | **Partial scan selection** | SCOAP-CO, SCOAP-Combined, Random, **wear-aware** (`co_wear`, `combined_wear`), or **wear-leveling** (`co_wear_leveling`, `combined_wear_leveling`) greedy selection using segment max stress along the chain |
 | **Ratio sweep** | Sweep 25/50/75/100% ratios in one command (`--sweep`) |
+| **Sequential graph — cycle breaking** | Parse a gate-level Verilog netlist, build the FF-to-FF **combinational reachability** graph (Tarjan SCC-based, O(V×(V+E))), and select a heuristic FVS to break all directed cycles; scales to 1 728 FFs and 32 000+ edges |
+| **Sequential graph — depth reduction** | After cycle breaking, greedily remove additional FFs to reduce the longest sequential path to a user-defined maximum (`--seq-depth`) |
 | **SCOAP export** | FAN_ATPG fork computes CC0/CC1/CO and exports them to `.sf` format |
 | **12 ISCAS'89 benchmarks** | Scripts and results for s27 through s38584 |
 
@@ -23,24 +26,46 @@ It uses [FAN_ATPG](https://github.com/NTU-LaDS-II/FAN_ATPG) as a backend to expo
 
 ```
 ScanForge/
-├── FAN_ATPG/          # git submodule — Rueilian/FAN_ATPG (minimal fork: SCOAP export only)
-├── src/               # ScanForge C++ engine
-│   ├── scan_chain.h/cpp   — .sf parser + scan shift simulator
-│   ├── partial_scan.h/cpp — SCOAP-based FF selection & sweep
-│   ├── segment_stress.h/cpp — segment-level / hotspot profiling
-│   ├── main.cpp           — CLI entry point
+├── FAN_ATPG/              # git submodule — FAN_ATPG with PARTIAL_SEQUENTIAL mode
+│   ├── bin/opt/fan        # compiled ATPG binary
+│   ├── mod_netlist/       # synthesized ITC'99 gate-level Verilog (b03–b15)
+│   ├── techlib/           # NanGate45 .lib and .mdt files
+│   └── pkg/core/src/      # core ATPG engine (atpg.cpp, circuit.cpp, etc.)
+├── itc99_rtl/             # git submodule — ITC'99 RTL source (b03–b15)
+├── scripts/               # pipeline scripts
+│   ├── synth_itc99.sh         — Yosys synthesis → mod_netlist/b*.v
+│   ├── fixup_verilog.py       — post-process Yosys output for FAN compatibility
+│   ├── run_progressive_residual.py      — T=1→T=2→T=4 pipeline (primary)
+│   ├── run_progressive_residual_sweep.py — Tier A batch runner
+│   ├── gen_nonscan_masks.sh           — OpenSTA + mask generation
+│   ├── generate_figures.py            — report figures
+│   └── archive/                       — legacy runners (T=8 sweep, ISCAS tools)
+├── masks/                 # non-scan FF lists: masks/<circuit>_x10.mask
+├── results/
+│   ├── progressive_residual_summary.csv — 17-circuit pipeline results (8 ITC'99 + 9 ISCAS'89, @10%)
+│   ├── phase_d_fullscan_dataset.csv     — B2 full-scan FC_scan_coll
+│   └── archive/                         — superseded CSVs and legacy sweeps
+├── docs/
+│   ├── README.md            — doc index (active vs archive)
+│   ├── spec.md
+│   └── final_report.md
+├── src/                   # ScanForge C++ engine
+│   ├── scan_chain.h/cpp       — .sf parser + scan-shift simulator
+│   ├── partial_scan.h/cpp     — SCOAP-based FF selection & sweep
+│   ├── segment_stress.h/cpp   — segment-level / hotspot profiling
+│   ├── seq_graph.h/cpp        — sequential FF graph: cycle breaking + depth reduction
+│   ├── verilog_netlist.cpp    — lightweight structural Verilog parser (Q→D FF edges)
+│   ├── timing_exclusion.h/cpp — timing-driven non-scan FF exclusion
+│   ├── netlist_timing_proxy.h/cpp — timing-depth proxy from gate-level netlist
+│   ├── main.cpp               — CLI entry point
 │   └── Makefile
-├── scripts/           # run_all.sh batch runner + per-circuit atpg scripts
-├── results/           # Generated .sf files + sweep result tables (includes `leveling_demo.sf` for wear-leveling docs)
-├── docs/              # Detailed flow, architecture, and results
-└── README.md
 ```
 
 ---
 
 ## Quick Start
 
-### 1. Clone (with submodule)
+### 1. Clone with submodules
 
 ```bash
 git clone --recurse-submodules https://github.com/Rueilian/ScanForge.git
@@ -50,45 +75,59 @@ cd ScanForge
 ### 2. Build FAN_ATPG
 
 ```bash
-sudo apt install bison flex   # if not installed
+sudo apt install bison flex
 cd FAN_ATPG
-make
+# NOTE: plain `make` / `make -j` can fail with "cannot find -lcore" — the core
+# package's test binary (logic_test) links -lcore before libcore.a is archived
+# into the global lib dir. Build the libraries in dependency order first:
+make -C pkg/common    global MODE=opt
+make -C pkg/interface global MODE=opt
+make -C pkg/core lib/opt/libcore.a MODE=opt && cp pkg/core/lib/opt/libcore.a lib/opt/
+make -C pkg/core global MODE=opt
+make -C pkg/fan  global MODE=opt
 cd ..
+# binary: FAN_ATPG/bin/opt/fan
 ```
 
-### 3. Build ScanForge engine
+### 3. Install external tools (no sudo)
 
 ```bash
-cd src
-make
-cd ..
+# Yosys and OpenSTA:
+export PATH=$HOME/local/bin:$PATH
 ```
 
-### 4. Run ATPG on a circuit
+### 4. Synthesize ITC'99 benchmarks (NanGate45 gate-level)
 
 ```bash
-cd FAN_ATPG
-mkdir -p results
-./bin/opt/fan -f script/fanScripts/atpg_s27.script
-# → produces results/s27.sf
-cd ..
+bash scripts/synth_itc99.sh
+# output: FAN_ATPG/mod_netlist/b{03,04,05,07,08,09,11,12,13,14,15}.v
 ```
 
-### 5. Analyze with ScanForge
+### 5. Generate non-scan masks via OpenSTA
 
 ```bash
-# Full scan
-./src/scanforge FAN_ATPG/results/s27.sf
+bash scripts/gen_nonscan_masks.sh
+# output: masks/<circuit>_x10.mask
+```
 
-# Per-FF stress profile (CSV) + segment-level sliding-window CSV (W=16)
-./src/scanforge FAN_ATPG/results/s27.sf --stress-csv stress.csv \
-  --segment-csv segment.csv --segment-window 16
+### 6. Run progressive residual pipeline (primary evaluation)
 
-# Partial scan sweep (25/50/75/100%) using SCOAP-CO strategy
-./src/scanforge FAN_ATPG/results/s953.sf --sweep
+```bash
+# Single case (@10%):
+ATPG_PER_TARGET_TIMEOUT=5 ATPG_WALL_TIMEOUT=3600 python3 scripts/run_progressive_residual.py \
+  --circuit b03 --ratio 0.10 \
+  --nonscan "$(tr '\n' ' ' < masks/b03_x10.mask)"
 
-# Single ratio with combined SCOAP metric
-./src/scanforge FAN_ATPG/results/s5378.sf --partial 0.5 --mode combined
+# Tier A sweep (8 ITC'99 circuits @ 10%):
+ATPG_PER_TARGET_TIMEOUT=5 ATPG_WALL_TIMEOUT=3600 \
+  python3 scripts/run_progressive_residual_sweep.py --fresh
+
+# ISCAS'89 sweep (9 circuits @ 10%):
+ATPG_PER_TARGET_TIMEOUT=5 ATPG_WALL_TIMEOUT=3600 \
+  python3 scripts/run_progressive_residual_iscas89_sweep.py --fresh
+
+# Regenerate report figures:
+python3 scripts/generate_figures.py
 
 # Random baseline
 ./src/scanforge FAN_ATPG/results/s5378.sf --sweep --mode random
@@ -106,41 +145,148 @@ cd ..
   --mode combined_wear_leveling \
   --lambda 0.5 \
   --segment-window 16
+
+# Sequential graph: cycle-break + depth heuristic, then scan simulation on selected chain
+./src/scanforge circuit.sf --seq-graph --seq-netlist circuit.v
+
+# Same with a stricter depth threshold (≤3 edges between FFs)
+./src/scanforge circuit.sf --seq-graph --seq-netlist circuit.v --seq-depth 3
+
+# --partial-seq-graph is an alias (same behavior as --seq-graph)
+./src/scanforge circuit.sf --partial-seq-graph --seq-netlist circuit.v --seq-depth 3
 ```
 
 ---
 
-## CLI Reference
+## Quick Sanity Checks
+
+```bash
+# Synthesis sanity
+grep -cE '\bDFFR?S?_X[12]\b' FAN_ATPG/mod_netlist/b03.v   # should be ~31
+
+# Mask sanity
+wc -l masks/b03_x10.mask
+
+# ATPG sanity — progressive pipeline summary
+head -3 results/progressive_residual_summary.csv
+grep 'b03,0.1' results/progressive_residual_summary.csv
+```
+
+---
+
+## Evaluation — B1, Experiment, B2
+
+| Role | Setup | Metric | Data |
+|------|-------|--------|------|
+| **B1** | Partial-scan @10%, T=1 | `FC_T1` | `progressive_residual_summary.csv` |
+| **Experiment** | Partial-scan @10%, T=1→T=2→T=4 | `FC_T1_T2_T4` | same CSV |
+| **B2** | Full-scan, T=1 | `FC_fullscan` | `phase_d_fullscan_dataset.csv` (ITC'99), `iscas89_fullscan_baseline.csv` (ISCAS'89) |
+
+### Results @10% (June 2026, 17/17 complete with ptt=5s)
+
+| Circuit | FFs | B1 (T=1) | Exp (T1+T2+T4) | B2 (full-scan) | Exp−B1 | B2−Exp |
+|---------|----:|---------:|---------------:|---------------:|-------:|-------:|
+| b03 | 30 | 44.50% | 85.41% | 91.62% | +40.91pp | +6.21pp |
+| b04 | 66 | 75.21% | 84.46% | 93.46% | +9.25pp | +9.00pp |
+| b05 | 88 | 29.20% | 87.68% | 95.34% | +58.49pp | +7.66pp |
+| b07 | 44 | 56.13% | 87.93% | 93.46% | +31.80pp | +5.53pp |
+| b08 | 67 | 72.96% | 91.09% | 94.03% | +18.13pp | +2.94pp |
+| b09 | 29 | 76.34% | 87.85% | 93.44% | +11.51pp | +5.59pp |
+| b11 | 84 | 66.21% | 94.34% | 97.43% | +28.13pp | +3.09pp |
+| b13 | 86 | 77.33% | 82.01% | 91.13% | +4.68pp | +9.12pp |
+
+Full table + ISCAS'89 results: [`docs/final_report.md`](./docs/final_report.md) §7.
+
+---
+
+## Current Status (June 2026)
+
+**Scope:** Tier A @ **10%** only. Two baselines: **B1** partial T=1, **B2** full-scan.
+
+**Sweep:** 17/17 PASS in `progressive_residual_summary.csv` (8 ITC'99 + 9 ISCAS'89, @10%, ptt=5s). **Key finding:** T=2 recovers +4.68–58.49pp vs B1; T=4 adds 0pp universally.
+
+---
+
+## Legacy: ScanForge C++ Engine (ISCAS'89)
+
+The `src/` directory contains a standalone C++ engine originally built for ISCAS'89 benchmark analysis. It supports:
+
+- SCOAP-based partial scan FF selection
+- Scan-shift switching activity simulation
+- Stress-aware and wear-leveling partial scan modes
+- Timing-exclusion sweep analysis
+
+This engine is independent of the current ITC'99 sequential ATPG pipeline.
+
+### Build
+
+```bash
+make -C src
+# binary: src/scanforge
+```
+
+### Key commands
+
+```bash
+# Full scan analysis
+./src/scanforge FAN_ATPG/results/s27.sf
+
+# Timing-driven exclusion sweep (ISCAS'89)
+./src/scanforge FAN_ATPG/results/s27.sf \
+  --timing-netlist FAN_ATPG/mod_netlist/s27.v \
+  --exclude-sweep \
+  --exclude-summary-csv exclude_sweep.csv
+
+# Batch sweep across ISCAS'89 benchmarks
+bash scripts/run_timing_exclusion_sweep.sh
+
+# Per-FF stress profile
+./src/scanforge FAN_ATPG/results/s27.sf --stress-csv stress.csv \
+  --segment-csv segment.csv --segment-window 16
+
+# Partial scan sweep (SCOAP-CO)
+./src/scanforge FAN_ATPG/results/s953.sf --sweep
+```
+
+### CLI Reference
 
 ```
 Usage: scanforge [options] <scan_data.sf>
 
 Options:
-  (no options)              Full scan analysis
   --sweep                   Sweep partial scan ratios 25/50/75/100%
   --coverage                Coverage estimate sweep
-  --fine                    Finer sweep steps (with --sweep / --coverage)
-  --csv                     With --coverage: CSV to stdout. With --sweep: CSV to stdout
-                            unless --summary-csv is set
-  --summary-csv <path>      With --sweep: write tradeoff sweep CSV (coverage proxy, stress, score)
-  --stress-csv <path>       Write per-FF scan stress metrics (full or --partial run)
-  --segment-csv <path>      Write segment stress CSV (needs --segment-window > 0; full/--partial only)
-  --segment-window <n>      Sliding window along chain for segment metrics (0 = off; also used in --sweep CSV)
+  --csv                     CSV output (with --coverage or --sweep)
+  --summary-csv <path>      Write tradeoff sweep CSV
+  --stress-csv <path>       Write per-FF scan stress metrics
+  --segment-csv <path>      Write segment stress CSV (needs --segment-window)
+  --segment-window <n>      Sliding window for segment metrics
   --partial <ratio>         Partial scan at given ratio (0.0–1.0)
+  --timing-ranking <csv>    Timing-criticality CSV
+  --timing-netlist <v>      Gate-level netlist for timing-depth proxy
+  --exclude-ratio <ratio>   Mark top ratio as non-scan
+  --exclude-sweep           Sweep exclusion ratios (legacy ISCAS'89 only)
+  --exclude-summary-csv <path>  Write exclusion-sweep summary CSV
   --mode <co|combined|random|co_wear|combined_wear|
                             co_wear_leveling|combined_wear_leveling>
                             FF selection strategy (default: co)
   --lambda <x>              Penalty weight for *_wear and *_wear_leveling (default: 0.5)
   --coverage-proxy <co|combined|controllability>
                             Which SCOAP sums define coverage_proxy in sweep / --partial
+  --seq-graph               Load full .sf + Verilog netlist; print sequential-graph report,
+                            then simulate the selected partial chain when non-empty
+  --seq-graph-only          Alias for --seq-graph
+  --partial-seq-graph       Same as --seq-graph (backward-compatible name)
+  --seq-netlist <path>      Required with --seq-graph / --partial-seq-graph: gate-level
+                            Verilog netlist (.v); FF instance names should match FF_NAMES
+  --seq-depth <n>           Maximum allowed sequential path length in edges; paths strictly
+                            longer trigger the depth-reduction greedy pass (default: 4)
+  --seq-path-cap <n>        Safety cap on long paths enumerated per greedy step
+                            (default: 500000)
   -h, --help                Print this help
 ```
 
----
-
-## The `.sf` File Format
-
-FAN_ATPG exports a `.sf` (ScanForge data) file with:
+### The `.sf` File Format
 
 ```
 SCAN_DATA 1.0
@@ -155,11 +301,13 @@ PPO <val0> <val1> ... <valN-1>
 
 Values: 0=L, 1=H, 2=X, 3=D, 4=B, 5=Z
 
----
+### Archived Results (ISCAS'89)
 
-## Partial Scan Selection Strategies
+Full scan switching activity and partial scan sweep tables for s27 through s38584 are available in git history and in [`docs/archive/flow_and_results.md`](./docs/archive/flow_and_results.md) (Section 9).
 
-ScanForge ranks FFs by their SCOAP testability metrics and selects the **K hardest-to-test** FFs for scanning:
+### Stress-Aware Partial Scan Study
+
+The initial project topic was "Stress-Aware Partial Scan Selection" targeting ISCAS’89 with a SCOAP coverage proxy. This work is documented in [`docs/archive/progress_report.md`](./docs/archive/progress_report.md). As of 2026, the active topic is progressive T=1→T=2→T=4 pipeline evaluation on timing-driven partial-scan ITC’99 benchmarks.
 
 | Mode | Score formula | Rationale |
 |------|---------------|-----------|
@@ -190,6 +338,137 @@ Small reproducible example `results/leveling_demo.sf` (8 FFs, 40 random patterns
 At **λ = 0.5**, wear-leveling keeps the same high-testability set as `combined` while **per-FF wear** (`combined_wear`) trades coverage for lower per-FF stress picks. At **λ = 2**, objectives differ: `combined_wear` lowers simulated max segment stress more aggressively at a larger coverage-proxy cost, while wear-leveling follows its **segment/full-scan** greedy objective and can report **higher** simulated max segment stress here — so always validate on your target benchmarks (`scripts/run_leveling_sweep.sh` once `FAN_ATPG/results/*.sf` exist).
 
 **Benchmark checklist:** After generating `FAN_ATPG/results/<circuit>.sf`, run `scripts/run_leveling_sweep.sh` and compare sweep CSVs. **`λ = 0`** parity for wear-leveling vs `combined` was checked on **`results/s27.sf`** (3 FFs) and on **`results/leveling_demo.sf`**; re-run the same `--partial` / `--segment-window` command on **s953** and **s5378** before publication tables (this workspace clone may not ship those `.sf` files).
+
+---
+
+## Sequential Graph Analysis
+
+### Overview
+
+The sequential graph features let you analyze and break unwanted **feedback loops** in the FF dependency graph of a circuit, and **reduce the sequential depth** (maximum path length between FFs).
+
+The sequential graph flow is exposed as **`--seq-graph`** (alias **`--seq-graph-only`**) and **`--partial-seq-graph`**, which behave the same: load the **full** `.sf` (patterns included), merge netlist-derived FF edges, print the sequential-graph report, then — **if `all_selected_ffs` is non-empty** — run scan simulation on that partial chain and print the **Scan Chain Analysis Report** plus coverage lines. If the unioned selection is empty (no cycles to break and no paths longer than `--seq-depth`), scan simulation is skipped and the run exits successfully.
+
+| Mode | What it does |
+|------|-------------|
+| `--seq-graph` | Sequential-graph report; partial-chain scan simulation only when at least one FF is selected |
+| `--partial-seq-graph` | Same as `--seq-graph` |
+
+Both require `--seq-netlist <circuit.v>`: a structural gate-level Verilog file whose DFF instance names match the `FF_NAMES` in the `.sf` file.
+
+### Verilog Netlist Parsing
+
+ScanForge parses the netlist to build the **FF-to-FF combinational reachability graph**: an edge `FF_i → FF_j` is added when FF_i's Q net can reach FF_j's D net by following assign/gate fanout without crossing another FF's Q net (i.e., no implicit F0→F2 shortcut when only F0→F1 and F1→F2 exist). Both named-port (`.d(net)`, `.q(net)`) and positional (`clk, d, q`) DFF instantiation styles are supported, and a single D net shared by multiple FFs produces an edge to each of them.
+
+> **Note:** Many standard ISCAS'89 gate-level netlists connect each FF's D pin through combinational gates, so the combinational reachability graph is dense. ScanForge handles this correctly at scale — see the benchmark results below.
+
+### Cycle Breaking (Heuristic FVS)
+
+ScanForge runs **Tarjan's SCC algorithm** to find all non-trivial strongly-connected components (SCCs) in the FF graph. It then applies a **greedy feedback vertex set (FVS) heuristic**: at each step it removes the FF with the highest combined in+out degree within the remaining cyclic SCCs, repeating until no cyclic SCCs remain. Self-loops are excluded.
+
+The selected FFs form the set found by this heuristic that breaks all detected cycles. The SCC-based approach runs in O(V×(V+E)) and handles circuits up to 1 728 FFs and 32 000+ edges without exponential blowup.
+
+### Depth Reduction
+
+After the cycle-breaking FFs are removed from the graph, ScanForge enumerates simple paths whose **edge count exceeds `--seq-depth`** (default: 4). A **greedy vertex-removal pass** picks FFs that appear most frequently near the **center** of long paths (center-weighted scoring), ensuring that removing one FF breaks the maximum number of oversized paths.
+
+The two passes are independent and their results are **unioned** into `all_selected_ffs` — the final partial-scan chain used for simulation under `--seq-graph` / `--partial-seq-graph`.
+
+### Command Usage
+
+```bash
+# Sequential graph report + scan simulation on the selected partial chain
+./src/scanforge circuit.sf \
+    --seq-graph \
+    --seq-netlist circuit.v
+
+# Stricter depth threshold (≤3 edges between FFs)
+./src/scanforge circuit.sf \
+    --seq-graph \
+    --seq-netlist circuit.v \
+    --seq-depth 3
+
+# Same as above (--partial-seq-graph is a synonym)
+./src/scanforge circuit.sf \
+    --partial-seq-graph \
+    --seq-netlist circuit.v \
+    --seq-depth 3
+
+# Stress and segment CSV exports (same as other full/partial runs)
+./src/scanforge circuit.sf \
+    --seq-graph \
+    --seq-netlist circuit.v \
+    --seq-depth 3 \
+    --stress-csv stress.csv \
+    --segment-csv seg.csv \
+    --segment-window 8
+```
+
+### Demo: `s27` benchmark (3 FFs)
+
+The smallest ISCAS'89 circuit, `s27`, gives a concrete example:
+
+```
+$ ./src/scanforge results/s27.sf \
+    --seq-graph --seq-netlist FAN_ATPG/netlist/s27.v
+
+Sequential FF graph: 4 directed edge(s) (combinational reachability from each FF's Q to others' D; 4 from this netlist).
+
+====================================================
+  ScanForge — Sequential FF Graph (--seq-graph)
+  Circuit FFs: 3   Seq edges: 4
+  Depth threshold: 4   Path enum cap: 500000
+  Edges: combinational Q→D reachability (no FF shortcuts across intermediate FFs)
+====================================================
+Metric                  Count   Detail
+--------------------------------------------------------------------------
+Cyclic SCCs             1       non-trivial strongly-connected components
+Cycle-break FFs         1       heuristic FVS (SCC greedy)
+Depth-reduction FFs     0       greedy on paths longer than depth threshold
+Combined selected       1       union of cycle-break and depth-reduction
+Long paths (<= cap)     0       enumerated for last depth pass
+====================================================
+  Cycle-breaking FFs (1)
+    Indices: 1
+    Names: U_G6
+  Combined selected FFs (1)
+    Indices: 1
+    Names: U_G6
+====================================================
+Seq-graph chain: selected FFs 1 / 3
+Switching Activity: 0.6000
+Max Stress: 0.6500
+Stress Variance: 0.0000
+Stress Imbalance: 1.0000
+====================================================
+  ScanForge — Scan Chain Analysis Report
+====================================================
+  Total FFs in circuit : 3
+  FFs in chain (K)     : 1
+  Scan ratio           : 33.3%
+  Test patterns        : 5
+  ...
+====================================================
+  Estimated coverage: 0/5 patterns applicable (68.4%)
+  Coverage proxy (combined): 0.6364  (loss 0.3636)
+```
+
+The circuit has one cyclic SCC (U_G5↔U_G6 form a feedback pair through combinational logic); breaking U_G6 removes the cycle. The **Scan Chain Analysis Report** reflects simulation on that single selected FF only (K=1).
+
+### Effect of `--seq-depth` on Sequential Depth
+
+With `--seq-depth 3`, additional depth-reduction FFs are selected to ensure no sequential path exceeds 3 edges. Example on s953 (29 FFs):
+
+```
+$ ./src/scanforge FAN_ATPG/results/s953.sf \
+    --seq-graph --seq-netlist FAN_ATPG/netlist/s953.v
+
+  Cyclic SCCs: 1   Cycle-breaking FFs: 5   Depth-reduction FFs: 0
+```
+
+All state-machine FFs belong to one SCC; after breaking 5 FFs the remaining graph is acyclic with paths ≤ 4 edges, so no additional depth-reduction FFs are needed at the default `--seq-depth 4`.
+
+---
 
 ## Results on ISCAS'89 Benchmarks
 
@@ -230,6 +509,52 @@ At **λ = 0.5**, wear-leveling keeps the same high-testability set as `combined`
 | 75%   | 134 | 945,111   | 0.4499          |
 | 100%  | 179 | 1,703,514 | 0.4544          |
 
+### Sequential Graph Analysis — All ISCAS'89 Benchmarks
+
+Results of `--seq-graph` on all 12 ISCAS'89 benchmarks using `FAN_ATPG/netlist/*.v` (gate-level, combinational reachability edges).  
+**Algorithm:** Tarjan's SCC (Cyclic SCCs) + greedy FVS via in/out-degree heuristic (cycle-break FFs) + center-weighted greedy on long paths (depth-reduction FFs, `--seq-depth 4`).
+
+| Circuit | FFs | Comb. Edges | Cyclic SCCs | Cycle-break FFs | Depth-red. FFs | Total selected |
+|---------|----:|------------:|:-----------:|:---------------:|:--------------:|:--------------:|
+| s27     |   3 |           4 |      1      |        1        |        0       |        1       |
+| s208    |   8 |          28 |      0      |        0        |        3       |        3       |
+| s510    |   6 |          30 |      1      |        5        |        0       |        5       |
+| s953    |  29 |         150 |      1      |        5        |        0       |        5       |
+| s1196   |  18 |          20 |      0      |        0        |        0       |        0       |
+| s1238   |  18 |          20 |      0      |        0        |        0       |        0       |
+| s5378   | 179 |       1,200 |      1      |       32        |        7       |       39       |
+| s9234   | 211 |       2,546 |     10      |       63        |       23       |       86       |
+| s15850  | 534 |      11,497 |      7      |      105        |       99       |      204       |
+| s35932  | 1728|       4,475 |     18      |      306        |      171       |      477       |
+| s38417  | 1636|      32,774 |     31      |      390        |      205       |      595       |
+| s38584  | 1426|      15,300 |      1      |      376        |      269       |      645       |
+
+**Combinational edges** = FF-to-FF combinational reachability edges (from `--seq-netlist`); higher counts reflect denser FSM-to-datapath connectivity.  
+**Cyclic SCCs** = non-trivial strongly-connected components in the FF dependency graph; circuits with 0 SCCs are acyclic.  
+**Cycle-break FFs** = minimum heuristic FVS to dissolve all cycles; after removal the graph is a DAG.  
+**Depth-red. FFs** = additional FFs chosen to ensure no sequential path exceeds `--seq-depth 4` edges; 0 means the post-FVS DAG already satisfies the depth constraint.
+
+Run command for any circuit:
+```bash
+./src/scanforge FAN_ATPG/results/<circuit>.sf \
+    --seq-graph \
+    --seq-netlist FAN_ATPG/netlist/<circuit>.v
+```
+
+---
+
+## Reports, Paper & Slides
+
+- **Report (standard of truth):** `docs/final_report.md`
+- **IEEE paper:** `paper/main.tex` (IEEEtran). Build:
+  ```bash
+  cd paper && ~/.local/bin/tectonic -X compile main.tex --outdir .   # → paper/main.pdf
+  # fallback (no tectonic): pdflatex main && pdflatex main
+  ```
+- **Slides:** `slides/main.tex` (Beamer). Build: `bash slides/build.sh` (dark) / `bash slides/build.sh light`
+- **Figures:** regenerated from result CSVs via `python scripts/generate_figures.py`
+- **Data status:** see `results/DATA_ISSUES.md`; delivery progress in `docs/DELIVERY_PLAN.md`
+
 ---
 
 ## Architecture
@@ -243,12 +568,25 @@ At **λ = 0.5**, wear-leveling keeps the same high-testability set as `combined`
 │      • exports FF names, SCOAP values, PPI/PPO patterns         │
 └────────────────────────────┬────────────────────────────────────┘
                              │  .sf file
-┌────────────────────────────▼────────────────────────────────────┐
+               ┌─────────────┤  (optional) gate-level .v netlist
+               │             │
+┌──────────────▼─────────────▼────────────────────────────────────┐
 │  ScanForge Engine (src/)                                        │
-│   parseScanData()   — reads .sf, builds ScanData struct         │
-│   selectFFs()       — ranks FFs by SCOAP, returns chain[K]      │
-│   simulate()        — scan-shift simulation on chain            │
-│   sweepPartialScan()— iterates over ratios, prints table        │
+│                                                                 │
+│  ── SCOAP-based partial scan ──────────────────────────────     │
+│   parseScanData()         — reads .sf, builds ScanData struct   │
+│   selectFFs()             — ranks FFs by SCOAP, returns chain[K]│
+│   simulate()              — scan-shift simulation on chain      │
+│   sweepPartialScan()      — iterates over ratios, prints table  │
+│                                                                 │
+│  ── Sequential graph analysis ─────────────────────────────     │
+│   mergeSequentialEdgesFromVerilog()                             │
+│                           — parses .v; adds Q→D FF edges        │
+│   selectSequentialGraphFFs()                                    │
+│                           — heuristic FVS (cycle break)         │
+│                           — greedy depth-reduction pass         │
+│   simulate() on all_selected_ffs                                │
+│                           — scan simulation of seq-graph chain  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -272,7 +610,7 @@ For each test pattern:
 - [FAN_ATPG](https://github.com/NTU-LaDS-II/FAN_ATPG) — NTU Laboratory of Dependable Systems, MIT License
 - ISCAS'89 benchmark circuits
 
+
 ## License
 
 MIT License — see [LICENSE](LICENSE).
-

@@ -1,0 +1,12 @@
+# LaTeX build intermediates (keep .tex sources and the built PDFs)
+*.aux
+*.log
+*.nav
+*.out
+*.snm
+*.toc
+*.vrb
+*.xdv
+*.fls
+*.fdb_latexmk
+*.synctex.gz

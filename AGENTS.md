@@ -1,38 +1,82 @@
-# AGENTS.md
+# AGENTS.md — ScanForge
 
-## Cursor Cloud specific instructions
+**Read this before any code, doc, or experiment change.**
 
-### Overview
+## Project scope (mandatory)
 
-ScanForge is a C++ CLI tool for scan chain DFT analysis. It has no web UI, no databases, and no runtime services — it is a pure offline binary that reads `.sf` files and produces analysis reports.
+| Item | Value |
+|------|--------|
+| **Research framing** | **B1** (partial T=1) → **Experiment** (T1→T2→T4) → **B2** (full-scan) |
+| **Experiment metric** | `FC_T1_T2_T4`; gain = Exp−B1; gap to B2 = B2−Exp |
+| **Partial-scan ratio** | **10% only** (`ratio=0.10`, masks `masks/<circuit>_x10.mask`) |
+| **Tier A circuits** | b03, b04, b05, b07, b08, b09, b11, b13 |
+| Results | `results/progressive_residual_summary.csv` (B1 + pipeline, @10%) |
+| Full-scan baseline | `results/phase_d_fullscan_dataset.csv` (B2, `fc_scan_coll`) |
+| **Authoritative docs** | `docs/spec.md`, `docs/final_report.md`, `README.md`, `docs/README.md` |
 
-### Build
+## Forbidden (do not repeat)
 
-- **ScanForge engine**: `make -C src` (produces `src/scanforge`). Uses g++ with C++14, no external libraries.
-- **FAN_ATPG** (optional submodule): `git submodule update --init && make -C FAN_ATPG -j4`. Requires system packages `bison` and `flex`.
+1. **Do not run or document multi-ratio sweeps.** Only 10% is in scope.
+2. **Do not read or cite `*/archive/` directories** for current numbers, masks, scripts, or plans. They are historical only.
+3. **Do not restore** multi-ratio `RATIOS` lists or “32-run sweep” language in active files.
+4. **Do not use** `scripts/archive/run_atpg_sweep.py` or legacy T=8 flows for the report.
 
-### Run
+## Archive policy (hard)
 
-Pre-generated test data exists at `results/s27.sf`. Use it for quick validation:
+Paths in `.cursorignore` are **out of scope** for Read, Grep, Glob, and subagent search.
 
+**Unless the user explicitly asks for archived content:**
+
+- Do **not** `grep` / `rg` / search under `**/archive/**`
+- Do **not** open files in `docs/archive/`, `results/archive/`, `scripts/archive/`, `masks/archive/`
+- Do **not** cite archived CSVs, masks, or plans in active docs
+
+**Always exclude `archive/` when running grep/rg/find:**
+
+```bash
+grep -r --exclude-dir=archive "pattern" .
+rg --glob '!**/archive/**' "pattern"
+find . -not -path '*/archive/*' -name "*.py"
 ```
-./src/scanforge results/s27.sf              # full scan analysis
-./src/scanforge results/s27.sf --sweep      # partial scan sweep
-./src/scanforge --coverage results/s27.sf   # coverage estimation
+
+Cursor rule: `.cursor/rules/no-archive-scan.mdc` (`alwaysApply: true`).
+
+If old data seems useful, **ask the user** — do not recover it silently from archive.
+
+## Commands (current)
+
+```bash
+# Masks (10% only)
+bash scripts/gen_nonscan_masks.sh
+
+# ITC'99 sweep (8 circuits @10%, no per-target timeout):
+ATPG_WALL_TIMEOUT=3600 python3 scripts/run_progressive_residual_sweep.py --fresh
+
+# ISCAS'89 sweep (9 circuits @10%, no per-target timeout):
+ATPG_WALL_TIMEOUT=3600 python3 scripts/run_progressive_residual_iscas89_sweep.py --fresh
+
+# Figures + report tables
+python3 scripts/generate_figures.py
 ```
 
-See `README.md` for full CLI reference and `docs/flow_and_results.md` for architecture details.
+Single case:
 
-### Test
+```bash
+ATPG_WALL_TIMEOUT=3600 python3 scripts/run_progressive_residual.py \
+  --circuit b03 --ratio 0.10 \
+  --nonscan "$(tr '\n' ' ' < masks/b03_x10.mask)" --per-target-timeout 0
+```
 
-There is no automated test suite. Validation is done by running the binary against benchmark `.sf` files and comparing output to the expected results in `README.md` and `docs/flow_and_results.md`.
+## Build
 
-### Lint
+```bash
+cd FAN_ATPG && make -j$(nproc) bin/opt/fan
+export PATH=$HOME/local/bin:$PATH   # yosys, sta
+```
 
-Compilation with `-Wall -Wextra` (already in the Makefile) serves as the linter. There is no separate lint command.
+## Gotchas
 
-### Gotchas
-
-- `make -C FAN_ATPG` emits many warnings and exits with code 2, but the binary (`FAN_ATPG/bin/opt/fan`) is still produced successfully. Check for the binary rather than relying on the exit code.
-- The `results/` directory in the repo root contains pre-generated `.sf` files. `FAN_ATPG/results/` is where newly generated files go when running the ATPG pipeline.
-- The `scripts/run_all.sh` script runs both FAN_ATPG and ScanForge on all 12 ISCAS'89 benchmark circuits. It expects both binaries to be built first.
+- FAN must run with `cwd=FAN_ATPG/` (runners handle this).
+- Regenerate masks after netlist changes (`scripts/build_itc99_netlists.sh`).
+- **b11 @10%** excluded — runner exits silently with no output.
+- Full-scan B2: `results/phase_d_fullscan_dataset.csv` (ITC'99), `results/iscas89_fullscan_baseline.csv` (ISCAS'89).

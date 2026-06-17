@@ -1,0 +1,29 @@
+---
+description: Never grep/read/glob archive trees unless user explicitly asks for archived content
+alwaysApply: true
+---
+
+# Archive is out of scope
+
+Do **not** use Read, Grep, Glob, or Task subagents on these paths unless the user **explicitly** requests archived material:
+
+- `docs/archive/`
+- `results/archive/`
+- `scripts/archive/`
+- `masks/archive/`
+
+## Active sources only
+
+| Need | Use |
+|------|-----|
+| B1 + pipeline (@10%) | `results/progressive_residual_summary.csv` |
+| B2 full-scan | `results/phase_d_fullscan_dataset.csv` (`fc_scan_coll`) |
+| Spec / report | `docs/spec.md`, `docs/final_report.md`, `README.md` |
+
+## Partial-scan ratio
+
+**10% only.** Never run or document 5%, 15%, or 20% sweeps. Never restore 32-run multi-ratio language.
+
+## If archive is needed
+
+Stop and ask the user. Do not autonomously grep archive to “fill in” numbers or recover old plans.

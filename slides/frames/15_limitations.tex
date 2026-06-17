@@ -1,0 +1,18 @@
+\begin{frame}[noframenumbering]{Threats to Validity \& Next Steps}
+  \centering
+  \small
+  \begin{tabular}{@{}l l l@{}}
+    \toprule
+    Threat & Current & Next step \\
+    \midrule
+    Non-scan ratio    & only \alert{10\%}       & sweep 5 / 10 / 20 / 30\% \\
+    Engine dependence & one ATPG engine         & cross-check another engine \\
+    Depth claim       & up to 4 frames          & test 8 frames selectively \\
+    Excluded circuits & \alert{5} excluded      & debug crash / timeout \\
+    \bottomrule
+  \end{tabular}
+  \vspace{0.6em}
+
+  {\footnotesize Also bounded by the \BTone\,/\,\BThi\ limit choice and operational \eng{``untestable''}}
+  \note{We frame the limitations as threats to validity with planned next steps. Only the 10\% non-scan ratio is evaluated, so the next step is a ratio sweep. We use one ATPG engine, so the next step is cross-checking on another. The depth claim covers up to four frames, so we would test eight selectively. Five circuits were excluded for crashes or timeouts, which we would debug. The backtrack-limit choice and the operational definition of untestable also bound the claims.}
+\end{frame}

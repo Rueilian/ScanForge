@@ -1,0 +1,20 @@
+% X-state blocks propagation: fault -> logic -> non-scan FF(X) --X--> output
+\begin{tikzpicture}[
+  >=Stealth, node distance=0.85cm,
+  blk/.style={draw=PubBlue, fill=PubBlue!80, text=black, rounded corners=3pt,
+              minimum width=1.7cm, minimum height=0.85cm, align=center, font=\scriptsize\bfseries},
+  xff/.style={draw=WarnRed, fill=WarnRed!85, text=black, rounded corners=3pt,
+              minimum width=2.0cm, minimum height=0.85cm, align=center, font=\scriptsize\bfseries},
+  obs/.style={draw=GoodGreen, fill=GoodGreen!80, text=black, rounded corners=3pt,
+              minimum width=1.6cm, minimum height=0.85cm, align=center, font=\scriptsize\bfseries},
+  arr/.style={->, thick, gray!70},
+]
+  \node[blk] (f) {fault};
+  \node[blk, right=of f] (l) {logic};
+  \node[xff, right=of l] (ff) {non-scan FF\\= X};
+  \node[obs, right=1.5cm of ff] (o) {output};
+  \draw[arr] (f) -- (l);
+  \draw[arr] (l) -- (ff);
+  \draw[->, very thick, WarnRed, dashed] (ff) -- (o);
+  \node[font=\scriptsize\bfseries, text=WarnRed] at ($(ff)!0.5!(o)+(0,0.32)$) {blocked};
+\end{tikzpicture}

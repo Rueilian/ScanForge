@@ -1,0 +1,32 @@
+\documentclass[aspectratio=169,12pt]{beamer}
+\input{preamble.tex}
+\title[Two-Phase Partial-Scan ATPG]{Two-Phase State Justification Recovers Partial-Scan ATPG Coverage}
+\subtitle{A progressive residual study on timing-constrained partial-scan circuits \\ VLSI Testing — Group 5}
+\author{丁睿濂 \and 駱彥竹 \and 黃思維}
+\date{\DeckVersion}
+\begin{document}
+% ===== Main line (~10 min) =====
+\input{frames/01_title.tex}
+\input{frames/02_motivation.tex}     % Motivation + X-state (combined)
+\input{frames/keyfinding.tex}
+\input{frames/05_pipeline.tex}       % Method + Setup (combined)
+\input{frames/06_gap.tex}
+\input{frames/07_baseline.tex}
+\input{frames/09_twophase.tex}
+\input{frames/10_ablation_design.tex}
+\input{frames/11_ablation_result.tex}
+\input{frames/14_results.tex}
+\input{frames/16_conclusion.tex}
+\input{frames/17_thanks.tex}
+% ===== Backup (after Q&A): footer without page number =====
+\setbeamertemplate{footline}{%
+  \begin{beamercolorbox}[wd=\paperwidth,ht=2.2ex,dp=0.9ex,leftskip=1.5em,rightskip=1.5em]{footbar}%
+    \scriptsize\insertshorttitle\hfill Backup%
+  \end{beamercolorbox}}
+\input{frames/backup_divider.tex}
+\input{frames/08_hypotheses.tex}
+\input{frames/twophase_walk.tex}
+\input{frames/evidence.tex}
+\input{frames/13_t4.tex}
+\input{frames/15_limitations.tex}
+\end{document}

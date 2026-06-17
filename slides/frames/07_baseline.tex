@@ -1,0 +1,7 @@
+\begin{frame}{Step 2 --- Baseline Recovery is Inconsistent}
+  \centering
+  \input{figures/bars_baseline.tex}
+  \vspace{0.2em}
+  {\footnotesize Two-phase OFF: +\BaseGain\,pp avg --- but \alert{b05 gains at 4 frames, s1196 at 2}. Why?}
+  \note{Running the plain pipeline with two-phase off recovers only about 10 points on average, and the stage attribution is inconsistent: b05 gains almost entirely at four frames (green), s1196 entirely at two (orange), and b03 and s953 barely move. If more backtracks at deeper frames were the cause, two frames should capture it uniformly. It doesn't, which points to something structural.}
+\end{frame}
