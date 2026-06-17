@@ -30,8 +30,19 @@ SUMMARY_FIELDS = [
     "gain_T2_pp", "gain_T4_pp", "total_gain_pp",
     "T1_rt", "T2_rt", "T4_rt", "total_rt",
     "recovered_per_sec_T2", "recovered_per_sec_T4",
+    "T1_mem_mb", "T2_mem_mb", "T4_mem_mb", "peak_mem_mb",
     "per_target_timeout_sec", "status"
 ]
+
+_MEM_PEAK_RE = re.compile(r"peak\s+([\d.]+)\s+MB")
+
+
+def parse_peak_mem_mb(text):
+    """Parse FAN VmPeak (MB) from report_memory_usage or goodbye output."""
+    if not text:
+        return None
+    peaks = [float(m.group(1)) for m in _MEM_PEAK_RE.finditer(text)]
+    return round(max(peaks), 2) if peaks else None
 
 def run_fan(label, circuit, frame, nonscan_ffs, fault_file=None, timeout_s=None, per_target_timeout=None, two_phase=True, extra_flags=""):
     if timeout_s is None:
@@ -62,6 +73,7 @@ def run_fan(label, circuit, frame, nonscan_ffs, fault_file=None, timeout_s=None,
         "run_atpg",
         f"report_statistics > {rpt_path}",
         f"report_fault > {os.path.join(RPT_DIR, label + '_faults.txt')}",
+        "report_memory_usage",
         "exit",
     ]
     with open(script_path, "w") as f:
@@ -73,7 +85,9 @@ def run_fan(label, circuit, frame, nonscan_ffs, fault_file=None, timeout_s=None,
             cwd=FAN_DIR, capture_output=True, text=True, timeout=timeout_s)
         elapsed = time.time() - t0
     except subprocess.TimeoutExpired:
-        return {"label": label, "returncode": -1, "elapsed": timeout_s, "status": "TIMEOUT"}
+        return {"label": label, "returncode": -1, "elapsed": timeout_s, "status": "TIMEOUT",
+                "mem_peak_mb": None}
+    mem_peak_mb = parse_peak_mem_mb(proc.stdout + proc.stderr)
     fc = dt = au = ab = ud = to_num = total = None
     status = "PASS"
     if os.path.exists(rpt_path):
@@ -107,7 +121,7 @@ def run_fan(label, circuit, frame, nonscan_ffs, fault_file=None, timeout_s=None,
         print(f"  FAN stdout:\n{proc.stdout}")
         print(f"  FAN stderr:\n{proc.stderr}")
     return {"label": label, "fc": fc, "dt": dt, "au": au, "ab": ab, "ud": ud, "to": to_num or 0, "total": total,
-            "returncode": proc.returncode, "elapsed": elapsed, "status": status}
+            "returncode": proc.returncode, "elapsed": elapsed, "status": status, "mem_peak_mb": mem_peak_mb}
 
 def parse_faults(path):
     faults = {}; fault_list = []
@@ -171,7 +185,9 @@ def main():
         print("  ERROR: T=1 report missing fault coverage")
         return
     t1_elapsed = t1.get("elapsed") or 0.0
-    print(f"  FC={t1['fc']:.2f}% DT={t1['dt']} AU={t1['au']} ({t1_elapsed:.1f}s)")
+    t1_mem = t1.get("mem_peak_mb")
+    mem_s = f" peak={t1_mem:.1f}MB" if t1_mem is not None else ""
+    print(f"  FC={t1['fc']:.2f}% DT={t1['dt']} AU={t1['au']} ({t1_elapsed:.1f}s{mem_s})")
 
     t1_faults, _ = parse_faults(os.path.join(RPT_DIR, f"{tag}_t1_all_faults.txt"))
     if not t1_faults:
@@ -193,7 +209,9 @@ def main():
         D2_ab = sum(1 for k, v in t2_faults.items() if v == 'AB')
         D2_to = sum(1 for k, v in t2_faults.items() if v == 'TO')
         t2_new = len(D2 - D1)
-        print(f"  new_DT={t2_new} AU={D2_au} ({t2['elapsed']:.1f}s)")
+        t2_mem = t2.get("mem_peak_mb")
+        mem_s = f" peak={t2_mem:.1f}MB" if t2_mem is not None else ""
+        print(f"  new_DT={t2_new} AU={D2_au} ({t2['elapsed']:.1f}s{mem_s})")
     else:
         print(f"  {t2['status']}")
         D2 = set()
@@ -212,7 +230,9 @@ def main():
         D4_ab = sum(1 for k, v in t4_faults.items() if v == 'AB')
         D4_to = sum(1 for k, v in t4_faults.items() if v == 'TO')
         t4_new = len(D4 - D1 - D2)
-        print(f"  new_DT={t4_new} AU={D4_au} ({t4['elapsed']:.1f}s)")
+        t4_mem = t4.get("mem_peak_mb")
+        mem_s = f" peak={t4_mem:.1f}MB" if t4_mem is not None else ""
+        print(f"  new_DT={t4_new} AU={D4_au} ({t4['elapsed']:.1f}s{mem_s})")
     else:
         print(f"  {t4['status']}")
         D4 = set()
@@ -226,8 +246,16 @@ def main():
     rps4 = t4_new / t4["elapsed"] if t4.get("elapsed") and t4_new else 0
     status = "PASS" if all(r["status"] == "PASS" for r in [t1, t2, t4]) else "PARTIAL"
 
+    t1_mem_mb = t1.get("mem_peak_mb")
+    t2_mem_mb = t2.get("mem_peak_mb")
+    t4_mem_mb = t4.get("mem_peak_mb")
+    mem_vals = [m for m in (t1_mem_mb, t2_mem_mb, t4_mem_mb) if m is not None]
+    peak_mem_mb = round(max(mem_vals), 2) if mem_vals else None
+
     print(f"\nUnion: FC_T1={fc1:.2f}%  T1∪T2={fc12:.2f}%  T1∪T2∪T4={fc124:.2f}%")
     print(f"  +{t2_new} from T=2, +{t4_new} from T=4, total +{t2_new+t4_new}")
+    if peak_mem_mb is not None:
+        print(f"  Memory peak: T1={t1_mem_mb} T2={t2_mem_mb} T4={t4_mem_mb} MB (pipeline max={peak_mem_mb} MB)")
 
     # CSV row
     row = {
@@ -247,6 +275,8 @@ def main():
         "T1_rt": round(t1.get("elapsed", 0), 2), "T2_rt": round(t2.get("elapsed", 0), 2),
         "T4_rt": round(t4.get("elapsed", 0), 2), "total_rt": round(trt, 2),
         "recovered_per_sec_T2": round(rps2, 2), "recovered_per_sec_T4": round(rps4, 2),
+        "T1_mem_mb": t1_mem_mb, "T2_mem_mb": t2_mem_mb, "T4_mem_mb": t4_mem_mb,
+        "peak_mem_mb": peak_mem_mb,
         "per_target_timeout_sec": ptt, "status": status,
     }
 
