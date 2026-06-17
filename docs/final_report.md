@@ -10,11 +10,11 @@
 
 ## Abstract
 
-In scan-based testing, some flip-flops remain non-scan due to timing constraints, creating a partial-scan circuit. At T=1, non-scan FF outputs are unknown (X), causing a **31.26pp average gap to full-scan coverage** across 10 benchmark circuits. We investigate how multi-frame sequential ATPG can recover this loss.
+In scan-based testing, some flip-flops remain non-scan due to timing constraints, creating a partial-scan circuit. At T=1, non-scan FF outputs are unknown (X), causing a **24.32pp average gap to full-scan coverage** across 10 benchmark circuits. We investigate how multi-frame sequential ATPG can recover this loss.
 
 We first establish that T=2 sequential ATPG recovers significant coverage, but T=4 adds little further benefit. This raises the central question: **what mechanism drives T=2 recovery?** Is it the frame-based backtrack limit differential (T1=800 at T=1 vs 5000 at T>1), or the Two-Phase State Justification decoupling?
 
-To answer this, we conduct **five controlled ablation experiments** on the same 10 circuits, each varying exactly one parameter. Results are unambiguous: **(1)** Two-Phase ON (Exp 2) raises average FC from 73.48% to **90.42%** (+16.94pp vs baseline), with individual circuits gaining up to 58.49pp. **(2)** Uniform T1=5000 (Exp 3) changes FC by only +0.02pp — the backtrack limit differential is **not** the mechanism. **(3)** Enhanced backtrace (+0.47pp) and static learning (+0.00pp) produce negligible impact. **(4)** With Two-Phase ON, T=4 adds **0 pp universally** — T=2 exhausts all recoverable faults. **(5)** The pipeline narrows the gap to full-scan from 31.26pp to **4.24pp**.
+To answer this, we conduct **five controlled ablation experiments** on the same 10 circuits, each varying exactly one parameter. Results are unambiguous: **(1)** Two-Phase ON (Exp 2) raises average FC from 77.72% to **90.57%** (+12.85pp vs baseline), with individual circuits gaining up to 54.51pp. **(2)** Uniform T1=5000 (Exp 3) changes FC by only +0.00pp — the backtrack limit differential is **not** the mechanism. **(3)** Enhanced backtrace (+0.21pp) and static learning (+0.00pp) produce negligible impact. **(4)** With Two-Phase ON, T=4 adds **0 pp universally** — T=2 exhausts all recoverable faults. **(5)** The pipeline narrows the gap to full-scan from 24.32pp to **4.95pp**.
 
 ---
 
@@ -24,7 +24,7 @@ To answer this, we conduct **five controlled ablation experiments** on the same 
 
 Full-scan design grants ATPG direct controllability and observability over all flip-flops, enabling high single-frame stuck-at fault coverage. In practice, however, a subset of FFs may remain non-scan: converting them to scan cells would add multiplexer delay on timing-critical paths, pushing slack negative. Once these FFs are fixed as non-scan, the circuit becomes a *partial-scan* design, and single-frame ATPG loses coverage because non-scan FFs are not freely controllable nor directly observable.
 
-**Initial measurement:** At T=1 with 10% non-scan exclusion, the average gap to full-scan coverage across our 10 circuits is **31.26pp**. This loss motivates the search for recovery through sequential ATPG.
+**Initial measurement:** At T=1 with 10% non-scan exclusion, the average gap to full-scan coverage across our 10 circuits is **24.32pp**. This loss motivates the search for recovery through sequential ATPG.
 
 ### 1.2 Problem and Discovery
 
@@ -34,7 +34,7 @@ Multi-frame sequential ATPG — unrolling the circuit across multiple time frame
 
 We implement a frame-based backtrack limit: T1=800 at T=1 (preventing wasted search on structurally unrecoverable faults), BACKTRACK=5000 at T>1 (full budget for sequential recovery). There is no per-target timeout; the backtrack limit is the sole bounding mechanism.
 
-**Empirical observation:** The baseline pipeline recovers 10.10pp (from 63.38% to 73.48%). T=2 and T=4 each contribute, but the recovery is inconsistent across circuits. Some circuits gain most at T=2 (s5378: +14.93pp), others at T=4 (b05: +16.69pp), and some show almost no recovery (b03: +0.00pp, s953: +0.65pp). This raises the central question: **what drives recovery?** Is it the backtrack limit differential (T1=800 vs 5000), Two-Phase State Justification, or something else entirely? This question motivates our controlled ablation experiments.
+**Empirical observation:** The baseline pipeline recovers 6.53pp (from 71.20% to 77.72%). T=2 and T=4 each contribute, but the recovery is inconsistent across circuits. Some circuits gain most at T=2 (s5378: +15.22pp), others split between T=2 and T=4 (b04: +4.89pp / +5.33pp), and some show almost no recovery (b03: +0.00pp, s953: +0.65pp). This raises the central question: **what drives recovery?** Is it the backtrack limit differential (T1=800 vs 5000), Two-Phase State Justification, or something else entirely? This question motivates our controlled ablation experiments.
 
 ### 1.3 Approach
 
@@ -258,10 +258,10 @@ We evaluate on two benchmark suites.
 
 | Circuit | FFs | Non-scan @10% | Full-scan B2 |
 |---------|----:|-------------:|-------------:|
-| s953    |  29 |  3 | 96.91% |
-| s1196   |  18 |  2 | 98.27% |
-| s1238   |  18 |  2 | 95.14% |
-| s5378   | 179 | 18 | 94.74% |
+| s953    |  29 |  3 | 97.79% |
+| s1196   |  18 |  2 | 98.87% |
+| s1238   |  18 |  2 | 96.36% |
+| s5378   | 179 | 18 | 96.65% |
 | s9234   | 211 | 22 | 92.91% |
 | s15850  | 534 | 54 | 93.32% |
 | s35932  | 1728 | 173 | 87.17% |
@@ -356,33 +356,33 @@ We first quantify the coverage loss caused by non-scan FF X-state at T=1.
 
 | Circuit | B2 (full-scan FC) |
 |---------|:-----------------:|
-| b03     | 91.62% |
-| b04     | 93.46% |
-| b05     | 95.34% |
-| b07     | 93.46% |
-| b08     | 94.03% |
-| b09     | 93.44% |
-| s953    | 96.91% |
-| s1196   | 98.27% |
-| s1238   | 95.14% |
-| s5378   | 94.74% |
+| b03     | 91.23% |
+| b04     | 94.18% |
+| b05     | 96.10% |
+| b07     | 93.92% |
+| b08     | 95.47% |
+| b09     | 94.58% |
+| s953    | 97.79% |
+| s1196   | 98.87% |
+| s1238   | 96.36% |
+| s5378   | 96.65% |
 
 **T=1 (B1) vs B2:**
 
 | Circuit | B1 (T=1) | B2 (full-scan) | **Gap** |
 |---------|:--------:|:--------------:|:-------:|
-| b03 | 44.50% | 91.62% | 47.12pp |
-| b04 | 75.21% | 93.46% | 18.25pp |
-| b05 | 29.10% | 95.34% | 66.24pp |
-| b07 | 56.13% | 93.46% | 37.33pp |
-| b08 | 72.96% | 94.03% | 21.07pp |
-| b09 | 76.34% | 93.44% | 17.10pp |
-| s953 | 36.75% | 96.91% | 60.16pp |
-| s1196 | 86.13% | 98.27% | 12.14pp |
-| s1238 | 82.42% | 95.14% | 12.72pp |
-| s5378 | 74.25% | 94.74% | 20.49pp |
+| b03 | 44.50% | 91.23% | 46.73pp |
+| b04 | 75.21% | 94.18% | 18.97pp |
+| b05 | 90.23% | 96.10% | 5.87pp |
+| b07 | 56.13% | 93.92% | 37.79pp |
+| b08 | 90.07% | 95.47% | 5.40pp |
+| b09 | 76.34% | 94.58% | 18.24pp |
+| s953 | 36.75% | 97.79% | 61.04pp |
+| s1196 | 86.13% | 98.87% | 12.74pp |
+| s1238 | 82.42% | 96.36% | 13.94pp |
+| s5378 | 74.21% | 96.65% | 22.44pp |
 
-**Average gap: 31.26pp.** Non-scan FF X-state causes a severe coverage drop at T=1.
+**Average gap: 24.32pp.** Non-scan FF X-state causes a severe coverage drop at T=1 on most circuits; b05 and b08 already reach ≈90% at T=1 because their timing-critical non-scan FFs do not block dominant fault-propagation paths.
 
 ### 7.2 Step 2: Baseline Multi-Frame Recovery (T=1→T=2→T=4)
 
@@ -391,22 +391,22 @@ The baseline pipeline (T1=800 at T=1, BACKTRACK=5000 at T>1, Two-Phase OFF) runs
 | Circuit | T1 FC | T1→T2→T4 FC | Gain T2 | Gain T4 | Total gain |
 |---------|:----:|:-----------:|:-------:|:-------:|:----------:|
 | b03     | 44.50% | 44.50% | +0.00pp | +0.00pp | +0.00pp |
-| b04     | 75.21% | 85.42% | +4.88pp | +5.33pp | +10.21pp |
-| b05     | 29.10% | 45.94% | +0.16pp | +16.69pp | +16.84pp |
+| b04     | 75.21% | 85.42% | +4.89pp | +5.33pp | +10.21pp |
+| b05     | 90.23% | 90.23% | +0.00pp | +0.00pp | +0.00pp |
 | b07     | 56.13% | 57.64% | +0.00pp | +1.51pp | +1.51pp |
-| b08     | 72.96% | 91.99% | +14.86pp | +4.17pp | +19.02pp |
+| b08     | 90.07% | 90.07% | +0.00pp | +0.00pp | +0.00pp |
 | b09     | 76.34% | 86.56% | +10.22pp | +0.00pp | +10.22pp |
 | s953    | 36.75% | 37.40% | +0.65pp | +0.00pp | +0.65pp |
 | s1196   | 86.13% | 98.40% | +12.27pp | +0.00pp | +12.27pp |
 | s1238   | 82.42% | 95.12% | +12.71pp | +0.00pp | +12.71pp |
-| s5378   | 74.25% | 91.86% | +14.93pp | +2.68pp | +17.61pp |
+| s5378   | 74.21% | 91.91% | +15.22pp | +2.48pp | +17.70pp |
 
-**Average:** T1→T2→T4 FC = 73.48%, total gain = 10.10pp.
+**Average:** T1→T2→T4 FC = 77.72%, total gain = 6.53pp.
 
 **Key observation — inconsistent stage attribution:**
 - Some circuits gain entirely at T=2 (s1196, s1238)
-- Others gain entirely at T=4 (b05: +16.69pp at T=4)
-- A few show negligible recovery (b03: +0.00pp, s953: +0.65pp)
+- Others split between T=2 and T=4 (b04: +4.89pp at T=2, +5.33pp at T=4)
+- A few show negligible recovery (b03: +0.00pp, s953: +0.65pp), and b05/b08 are already at ≈90% at T=1 with no residual to recover
 
 This inconsistency raises the central question: **what mechanism drives T=2 recovery?** Two candidates exist:
 1. **T1 backtrack limit differential** (800→5000): T=1's lower budget creates an AB residual; T=2 retries with 5000 backtracks
@@ -423,71 +423,71 @@ We run **five controlled experiments** to decompose the mechanism. Each experime
 
 | Circuit | T1 FC | T1→T2→T4 FC | Gain T2 | Gain T4 | Total gain | Runtime |
 |---------|:----:|:-----------:|:-------:|:-------:|:----------:|:-------:|
-| b03     | 44.50% | 85.41% | +40.91pp | +0.00pp | +40.91pp | 0.32s |
-| b04     | 75.21% | 84.46% | +9.25pp | +0.00pp | +9.25pp | 34.41s |
-| b05     | 29.20% | 87.68% | +58.49pp | +0.00pp | +58.49pp | 15.64s |
-| b07     | 56.13% | 87.93% | +31.80pp | +0.00pp | +31.80pp | 0.88s |
-| b08     | 72.96% | 91.09% | +18.13pp | +0.00pp | +18.13pp | 0.59s |
-| b09     | 76.34% | 87.85% | +11.51pp | +0.00pp | +11.51pp | 0.33s |
-| s953    | 36.75% | 91.26% | +54.51pp | +0.00pp | +54.51pp | 0.32s |
-| s1196   | 86.13% | 98.40% | +12.27pp | +0.00pp | +12.27pp | 0.27s |
-| s1238   | 82.42% | 95.12% | +12.71pp | +0.00pp | +12.71pp | 0.36s |
-| s5378   | 74.21% | 94.97% | +20.76pp | +0.00pp | +20.76pp | 19.90s |
+| b03     | 44.50% | 85.41% | +40.91pp | +0.00pp | +40.91pp | 0.05s |
+| b04     | 75.21% | 84.46% | +9.25pp | +0.00pp | +9.25pp | 22.72s |
+| b05     | 90.23% | 90.23% | +0.00pp | +0.00pp | +0.00pp | 13.64s |
+| b07     | 56.13% | 87.93% | +31.80pp | +0.00pp | +31.80pp | 0.05s |
+| b08     | 90.07% | 90.07% | +0.00pp | +0.00pp | +0.00pp | 0.03s |
+| b09     | 76.34% | 87.85% | +11.51pp | +0.00pp | +11.51pp | 0.06s |
+| s953    | 36.75% | 91.26% | +54.51pp | +0.00pp | +54.51pp | 0.12s |
+| s1196   | 86.13% | 98.40% | +12.27pp | +0.00pp | +12.27pp | 0.09s |
+| s1238   | 82.42% | 95.12% | +12.71pp | +0.00pp | +12.71pp | 0.13s |
+| s5378   | 74.21% | 94.97% | +20.76pp | +0.00pp | +20.76pp | 9.28s |
 
-**Average:** FC = 90.42%, total gain = 27.03pp. **T=4 adds 0 pp on every circuit.**
+**Average:** FC = 90.57%, total gain = 19.37pp. **T=4 adds 0 pp on every circuit.** Largest gains: s953 +54.51pp, b03 +40.91pp, b07 +31.80pp; b05/b08 start at ≈90% and gain nothing.
 
 #### Exp 3 (Uniform T1=5000): Tests whether the backtrack limit differential drives recovery
 
 | Circuit | T1 FC | T1→T2→T4 FC | Gain T2 | Gain T4 | Total gain | Runtime |
 |---------|:----:|:-----------:|:-------:|:-------:|:----------:|:-------:|
-| b03     | 44.50% | 44.50% | +0.00pp | +0.00pp | +0.00pp | 0.25s |
-| b04     | 75.21% | 85.42% | +4.88pp | +5.33pp | +10.21pp | 17.50s |
-| b05     | 29.20% | 46.10% | +0.13pp | +16.77pp | +16.90pp | 7.39s |
-| b07     | 56.13% | 57.64% | +0.00pp | +1.51pp | +1.51pp | 0.33s |
-| b08     | 72.96% | 91.99% | +14.86pp | +4.17pp | +19.02pp | 0.86s |
-| b09     | 76.34% | 86.56% | +10.22pp | +0.00pp | +10.22pp | 0.57s |
-| s953    | 36.75% | 37.40% | +0.65pp | +0.00pp | +0.65pp | 0.52s |
-| s1196   | 86.13% | 98.40% | +12.27pp | +0.00pp | +12.27pp | 0.71s |
-| s1238   | 82.42% | 95.12% | +12.71pp | +0.00pp | +12.71pp | 1.88s |
-| s5378   | 74.25% | 91.86% | +14.93pp | +2.68pp | +17.61pp | 10.76s |
+| b03     | 44.50% | 44.50% | +0.00pp | +0.00pp | +0.00pp | 0.03s |
+| b04     | 75.21% | 85.42% | +4.89pp | +5.33pp | +10.21pp | 21.29s |
+| b05     | 90.20% | 90.20% | +0.00pp | +0.00pp | +0.00pp | 14.62s |
+| b07     | 56.13% | 57.64% | +0.00pp | +1.51pp | +1.51pp | 0.05s |
+| b08     | 90.07% | 90.07% | +0.00pp | +0.00pp | +0.00pp | 0.02s |
+| b09     | 76.34% | 86.56% | +10.22pp | +0.00pp | +10.22pp | 0.50s |
+| s953    | 36.75% | 37.40% | +0.65pp | +0.00pp | +0.65pp | 0.13s |
+| s1196   | 86.13% | 98.40% | +12.27pp | +0.00pp | +12.27pp | 0.07s |
+| s1238   | 82.42% | 95.12% | +12.71pp | +0.00pp | +12.71pp | 1.59s |
+| s5378   | 74.21% | 91.91% | +15.22pp | +2.48pp | +17.70pp | 10.70s |
 
-**Average:** FC = 73.50%, total gain = 10.11pp. **ΔFC vs Exp 1: +0.02pp.** Nearly identical to baseline.
+**Average:** FC = 77.72%, total gain = 6.53pp. **ΔFC vs Exp 1: +0.00pp.** Identical to baseline.
 
 #### Exp 4 (Enhanced Backtrace): Composite-score heuristic ON
 
 | Circuit | T1 FC | T1→T2→T4 FC | Gain T2 | Gain T4 | Total gain | Runtime |
 |---------|:----:|:-----------:|:-------:|:-------:|:----------:|:-------:|
-| b03     | 41.66% | 41.66% | +0.00pp | +0.00pp | +0.00pp | 0.68s |
-| b04     | 81.14% | 89.57% | +5.91pp | +2.52pp | +8.42pp | 6.30s |
-| b05     | 29.40% | 48.86% | +0.15pp | +19.31pp | +19.47pp | 8.64s |
-| b07     | 56.07% | 57.57% | +0.00pp | +1.50pp | +1.51pp | 0.34s |
-| b08     | 72.52% | 91.99% | +15.30pp | +4.17pp | +19.47pp | 1.10s |
-| b09     | 76.34% | 86.56% | +10.22pp | +0.00pp | +10.22pp | 0.83s |
-| s953    | 37.56% | 37.94% | +0.38pp | +0.00pp | +0.38pp | 0.50s |
-| s1196   | 85.30% | 98.40% | +13.10pp | +0.00pp | +13.10pp | 0.34s |
-| s1238   | 82.01% | 95.12% | +13.11pp | +0.00pp | +13.11pp | 0.88s |
-| s5378   | 74.33% | 91.83% | +14.93pp | +2.57pp | +17.50pp | 109.01s |
+| b03     | 41.66% | 41.66% | +0.00pp | +0.00pp | +0.00pp | 0.04s |
+| b04     | 81.14% | 89.57% | +5.89pp | +2.53pp | +8.42pp | 6.13s |
+| b05     | 90.57% | 90.57% | +0.00pp | +0.00pp | +0.00pp | 11.59s |
+| b07     | 56.07% | 57.57% | +0.00pp | +1.51pp | +1.51pp | 0.06s |
+| b08     | 90.07% | 90.07% | +0.00pp | +0.00pp | +0.00pp | 0.03s |
+| b09     | 76.34% | 86.56% | +10.22pp | +0.00pp | +10.22pp | 0.19s |
+| s953    | 37.56% | 37.94% | +0.38pp | +0.00pp | +0.38pp | 0.20s |
+| s1196   | 85.30% | 98.40% | +13.10pp | +0.00pp | +13.10pp | 0.10s |
+| s1238   | 82.01% | 95.12% | +13.11pp | +0.00pp | +13.11pp | 0.49s |
+| s5378   | 74.28% | 91.88% | +15.19pp | +2.40pp | +17.59pp | 66.37s |
 
-**Average:** FC = 73.95%, total gain = 10.32pp. **ΔFC vs Exp 1: +0.47pp.** Negligible.
+**Average:** FC = 77.93%, total gain = 6.43pp. **ΔFC vs Exp 1: +0.21pp.** Negligible.
 
-> **Note:** Exp 4 T1 FC values differ from Exp 1 (e.g., b03 41.66% vs 44.50%) because the enhanced backtrace flag is active for all pipeline stages including T=1, not only T>1. This means more than one parameter technically changes at T=1. However, the key metric is the final pipeline FC, which differs from baseline by only 0.47pp — confirming enhanced backtrace has negligible impact regardless of T=1 variation.
+> **Note:** Exp 4 T1 FC values differ from Exp 1 (e.g., b03 41.66% vs 44.50%) because the enhanced backtrace flag is active for all pipeline stages including T=1, not only T>1. This means more than one parameter technically changes at T=1. However, the key metric is the final pipeline FC, which differs from baseline by only 0.21pp — confirming enhanced backtrace has negligible impact regardless of T=1 variation.
 
 #### Exp 5 (Static Learning): Fanout-implication ON
 
 | Circuit | T1 FC | T1→T2→T4 FC | Gain T2 | Gain T4 | Total gain | Runtime |
 |---------|:----:|:-----------:|:-------:|:-------:|:----------:|:-------:|
-| b03     | 44.50% | 44.50% | +0.00pp | +0.00pp | +0.00pp | 0.16s |
-| b04     | 75.21% | 85.42% | +4.88pp | +5.33pp | +10.21pp | 19.47s |
-| b05     | 29.20% | 45.92% | +0.07pp | +16.66pp | +16.73pp | 8.96s |
-| b07     | 56.13% | 57.64% | +0.00pp | +1.51pp | +1.51pp | 0.41s |
-| b08     | 72.96% | 91.99% | +14.86pp | +4.17pp | +19.02pp | 0.98s |
-| b09     | 76.34% | 86.56% | +10.22pp | +0.00pp | +10.22pp | 0.69s |
-| s953    | 36.75% | 37.40% | +0.65pp | +0.00pp | +0.65pp | 0.47s |
-| s1196   | 86.13% | 98.40% | +12.27pp | +0.00pp | +12.27pp | 0.51s |
-| s1238   | 82.46% | 95.12% | +12.62pp | +0.04pp | +12.66pp | 1.01s |
-| s5378   | 74.25% | 91.86% | +14.93pp | +2.68pp | +17.61pp | 13.78s |
+| b03     | 44.50% | 44.50% | +0.00pp | +0.00pp | +0.00pp | 0.03s |
+| b04     | 75.21% | 85.42% | +4.89pp | +5.33pp | +10.21pp | 18.95s |
+| b05     | 90.23% | 90.23% | +0.00pp | +0.00pp | +0.00pp | 12.03s |
+| b07     | 56.13% | 57.64% | +0.00pp | +1.51pp | +1.51pp | 0.05s |
+| b08     | 90.07% | 90.07% | +0.00pp | +0.00pp | +0.00pp | 0.03s |
+| b09     | 76.34% | 86.56% | +10.22pp | +0.00pp | +10.22pp | 0.48s |
+| s953    | 36.75% | 37.40% | +0.65pp | +0.00pp | +0.65pp | 0.13s |
+| s1196   | 86.13% | 98.40% | +12.27pp | +0.00pp | +12.27pp | 0.08s |
+| s1238   | 82.46% | 95.12% | +12.66pp | +0.00pp | +12.66pp | 0.49s |
+| s5378   | 74.21% | 91.91% | +15.22pp | +2.48pp | +17.70pp | 9.48s |
 
-**Average:** FC = 73.48%, total gain = 10.09pp. **ΔFC vs Exp 1: +0.00pp.** Completely identical.
+**Average:** FC = 77.72%, total gain = 6.52pp. **ΔFC vs Exp 1: +0.00pp.** Essentially identical.
 
 ### 7.4 Step 4: Ablation Summary
 
@@ -495,13 +495,13 @@ The ablation results conclusively identify the mechanism:
 
 | Exp | Parameter | Avg FC | Avg Gain | ΔFC vs Exp 1 | Avg Runtime |
 |-----|-----------|:------:|:--------:|:-----------:|:----------:|
-| 1 | Baseline (T1=800, TP=OFF) | 73.48% | 10.10pp | — | 5.72s |
-| 2 | **Two-Phase ON** | **90.42%** | **27.03pp** | **+16.94pp** | 7.30s |
-| 3 | Uniform T1=5000 | 73.50% | 10.11pp | +0.02pp | 4.08s |
-| 4 | Enhanced Backtrace | 73.95% | 10.32pp | +0.47pp | 12.86s |
-| 5 | Static Learning | 73.48% | 10.09pp | +0.00pp | 4.64s |
+| 1 | Baseline (T1=800, TP=OFF) | 77.72% | 6.53pp | — | 4.59s |
+| 2 | **Two-Phase ON** | **90.57%** | **19.37pp** | **+12.85pp** | 4.62s |
+| 3 | Uniform T1=5000 | 77.72% | 6.53pp | +0.00pp | 4.90s |
+| 4 | Enhanced Backtrace | 77.93% | 6.43pp | +0.21pp | 8.52s |
+| 5 | Static Learning | 77.72% | 6.52pp | +0.00pp | 4.17s |
 
-**Key takeaway:** Two-Phase State Justification is the dominant recovery mechanism (+16.94pp average). Neither uniform T1, enhanced backtrace, nor static learning produces meaningful improvement over the baseline pipeline.
+**Key takeaway:** Two-Phase State Justification is the dominant recovery mechanism (+12.85pp average). Neither uniform T1, enhanced backtrace, nor static learning produces meaningful improvement over the baseline pipeline.
 
 ### 7.5 Memory Usage
 
@@ -588,7 +588,7 @@ The ablation results are unambiguous:
 
 - **Exp 3 (Uniform T1=5000)** shows that giving T=1 the same backtrack budget as T=2 changes the final FC by only +0.02pp. The T1 differential does **not** create the residual — non-scan FF X-state blocking does. Even with 5000 backtracks at T=1, faults blocked by non-scan FF X-state remain AB/AU.
 
-- **Exp 2 (Two-Phase ON)** shows that decoupling propagation from state justification is the recovery engine. With Two-Phase OFF, T=2 recovers 7.07pp on average. With Two-Phase ON, T=2 recovers 27.03pp — a **3.8× improvement** over the unified search. Two-Phase works because:
+- **Exp 2 (Two-Phase ON)** shows that decoupling propagation from state justification is the recovery engine. With Two-Phase OFF, T=2 recovers 5.60pp on average. With Two-Phase ON, T=2 recovers 19.37pp — a **3.5× improvement** over the unified search. Two-Phase works because:
   1. **Phase 1 (propagation in frame 1):** Non-scan FF PPIs in frame 1 are decoupled and treated as free PIs. The engine can assign any value to enable propagation. At T=1, the non-scan FF PPO is X and blocks propagation.
   2. **Phase 2 (state justification in frame 0):** Required PPI values are justified backward through frame 0. Success depends on functional paths from controllable sources.
 
@@ -604,7 +604,7 @@ The T1=800 limit prevents wasting 5000 backtracks on structurally unrecoverable 
 
 ### 8.4 T=4 Adds Nothing with Two-Phase ON
 
-With Two-Phase ON (Exp 2), T=4 adds **0 pp** across all 10 circuits. The residual after T=2 consists entirely of faults that are structurally AU at any depth — two frames are sufficient for these circuits' non-scan-FF sequential depth. Without Two-Phase (Exp 1, 3, 4, 5), T=4 adds modest gain (up to 16.69pp for b05), but this reflects the inefficiency of the unified search at T=2 rather than a genuine depth requirement.
+With Two-Phase ON (Exp 2), T=4 adds **0 pp** across all 10 circuits. The residual after T=2 consists entirely of faults that are structurally AU at any depth — two frames are sufficient for these circuits' non-scan-FF sequential depth. Without Two-Phase (Exp 1, 3, 4, 5), T=4 adds modest gain (up to 5.33pp for b04), but this reflects the inefficiency of the unified search at T=2 rather than a genuine depth requirement.
 
 ### 8.5 Remaining Gap to Full-Scan
 
@@ -681,15 +681,15 @@ We implemented a reproducible progressive residual T=1→T=2→T=4 ATPG pipeline
 
 **Key findings:**
 
-1. **The baseline pipeline (Two-Phase OFF) recovers 10.10pp average gain** (73.48% vs 63.38% T=1 alone). T=2 recovers 7.07pp on average while T=4 adds 3.04pp — the majority of recovery comes from T=2, but T=4 contributes meaningfully when Two-Phase is OFF.
+1. **The baseline pipeline (Two-Phase OFF) recovers 6.53pp average gain** (77.72% vs 71.20% T=1 alone). T=2 recovers 5.60pp on average while T=4 adds 0.93pp — the majority of recovery comes from T=2, but T=4 contributes modestly when Two-Phase is OFF.
 
-2. **Two-Phase State Justification is the dominant recovery mechanism.** Enabling it increases average FC to 90.42% (+16.94pp vs baseline). Individual circuits show dramatic gains: b05 +58.49pp, s953 +54.51pp, b07 +31.80pp. With Two-Phase ON, T=2 recovers everything — T=4 adds **0 pp universally**.
+2. **Two-Phase State Justification is the dominant recovery mechanism.** Enabling it increases average FC to 90.57% (+12.85pp vs baseline). Individual circuits show dramatic gains: s953 +54.51pp, b03 +40.91pp, b07 +31.80pp. With Two-Phase ON, T=2 recovers everything — T=4 adds **0 pp universally**.
 
 3. **The T1 backtrack limit differential does not create the residual.** Raising T1 from 800 to 5000 (Exp 3) changes average FC by only +0.02pp. Faults blocked by non-scan FF X-state are structurally unrecoverable at any T=1 backtrack budget — they require T>1 frames regardless.
 
 4. **Enhanced backtrace (+0.47pp) and static learning (+0.00pp) produce negligible improvement.** These heuristics do not address the fundamental bottleneck: non-scan FF X-state blocking at T=1.
 
-5. **The gap to full-scan narrows from 31.26pp (T=1 alone) to 4.24pp (Exp 2, Two-Phase ON).** s1196 and s5378 match or exceed their full-scan coverage; s1238 is within 0.02pp of parity. This suggests that for circuits with favorable non-scan topology, Two-Phase sequential recovery can approach parity with full-scan targeting.
+5. **The gap to full-scan narrows from 24.32pp (T=1 alone) to 4.95pp (Exp 2, Two-Phase ON).** The smallest remaining gaps are s1196 (0.47pp), s1238 (1.24pp), and s5378 (1.68pp); the largest are b04 (9.72pp), b09 (6.73pp), and s953 (6.53pp). This suggests that for circuits with favorable non-scan topology, Two-Phase sequential recovery can approach parity with full-scan targeting.
 
 6. **T=4 recovers additional faults only when Two-Phase is OFF.** Without Two-Phase, the unified search struggles at T=2 and leaves some faults for T=4. With Two-Phase ON, the decoupled approach is sufficient at T=2 depth. This holds at all ratio sweep points (5%–20%).
 

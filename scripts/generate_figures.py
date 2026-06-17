@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate report figures from progressive_residual_summary.csv (17 circuits)."""
+"""Generate report figures from exp2_two_phase.csv (10 canonical circuits)."""
 import csv, os
 import matplotlib
 matplotlib.use("Agg")
@@ -18,10 +18,10 @@ plt.rcParams.update({
 })
 
 C = {"blue":"#3B7DD8","orange":"#E8923A","green":"#4DAF7A","red":"#E25A5A","gray":"#95A5A6"}
-CSV = os.path.join(REPO, "results", "progressive_residual_summary.csv")
+CSV = os.path.join(REPO, "results", "exp2_two_phase.csv")
 
-ITC99 = ["b03","b04","b05","b07","b08","b09","b11","b13"]
-ISCAS89 = ["s953","s1196","s1238","s5378","s9234","s15850","s35932","s38417","s38584"]
+ITC99 = ["b03","b04","b05","b07","b08","b09"]
+ISCAS89 = ["s953","s1196","s1238","s5378"]
 
 def load():
     rows = {}
@@ -140,9 +140,10 @@ def fig4_runtime_vs_gain():
     fig.savefig(os.path.join(FIG_DIR,"fig4_runtime_vs_gain.png"))
     plt.close(fig); print("  fig4_runtime_vs_gain.png")
 
-# B2 full-scan FC values from phase_d_fullscan_dataset.csv and iscas89_fullscan_baseline.csv
-B2_ITC99 = {"b03":91.62,"b04":93.46,"b05":95.34,"b07":93.46,"b08":94.03,"b09":93.44,"b11":97.43,"b13":91.13}
-B2_ISCAS89 = {"s953":97.79,"s1196":98.87,"s1238":96.36,"s5378":96.65,"s9234":93.09,"s15850":96.04,"s35932":88.20,"s38417":97.10,"s38584":93.58}
+# B2 full-scan FC values from phase_d_fullscan_dataset.csv (fc_scan) and
+# iscas89_fullscan_baseline.csv (FC_fullscan_pct)
+B2_ITC99 = {"b03":91.23,"b04":94.18,"b05":96.10,"b07":93.92,"b08":95.47,"b09":94.58}
+B2_ISCAS89 = {"s953":97.79,"s1196":98.87,"s1238":96.36,"s5378":96.65}
 
 def fig5_gap_to_fullscan():
     rows = load()

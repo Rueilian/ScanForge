@@ -1,5 +1,17 @@
 # Data Issues — Audit Against `docs/final_report.md` (Standard)
 
+> **STATUS 2026-06-17 — RESOLVED.** After merging `origin/submit` (final re-run with
+> memory columns), `exp1–5.csv` are clean 10-circuit sets. The new run changed b05/b08
+> (now T1≈90%, gain 0; old data had b05=29.2→87.68). Per decision *"new data is
+> authoritative, full recompute"*, all averages, the §7 tables, the abstract/discussion/
+> conclusion of `docs/final_report.md` and `paper/main.tex`, and figures fig1–5 were
+> recomputed from the new data. `generate_figures.py` now reads `exp2_two_phase.csv`
+> (10 circuits) with B2 from the full-scan data files. The notes below are the original
+> audit, kept for history.
+
+---
+
+
 > **Standard of truth:** `docs/final_report.md`. The report's numbers and narrative are
 > canonical; CSV/figure data must be regenerated to match it (not the other way around).
 > This file marks every place the committed data disagrees with the report, for the
