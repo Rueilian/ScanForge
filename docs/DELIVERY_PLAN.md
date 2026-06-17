@@ -54,7 +54,17 @@
 - Deferred (do NOT do mid re-run): physically reorg `scripts/` into `legacy/` and split
   `results/` into canonical vs raw — would break the classmate's active pipeline paths.
 
-## Phase 4 — Zip packaging
+## Phase 4 — Zip packaging  ✅ DONE
+- [x] Merged `origin/submit` (final data); recomputed all numbers; regenerated fig1–5;
+      rebuilt paper + report PDFs from corrected sources.
+- [x] Rebuilt the team bundle (`team_5_project/`) from corrected content: corrected
+      `paper/main.tex`+`main.pdf`+figures, `docs/final_report.md`, regenerated
+      `final_report.pdf` (pandoc+tectonic, 23pp), `generate_figures.py`. Reused the
+      classmate's `run` one-command repro script, README_REPRO, FAN_ATPG (prebuilt fan).
+- [x] Produced `team_5_project.zip` (deliverable) + refreshed tracked `team_5_project.tgz`.
+- [x] Acceptance: unzipped clean; paper 8pp with corrected 90.57/12.85/24.32; report 23pp.
+
+### (original Phase 4 plan)
 - [ ] `REPRODUCE.md`: (1) build fan+scanforge; (2) regenerate figures; (3) build paper + slides.
 - [ ] Assemble `dist/ScanForge_final/`: `paper/main.pdf` + `paper/` sources; `slides/main.pdf`
       (+ light); `docs/final_report.md` + `docs/figures/`; `results/` (canonical + needed raw);

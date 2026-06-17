@@ -17,6 +17,7 @@ scripts/__pycache__/
 scripts/docs/
 # zip-staging + LaTeX build artifacts
 dist/
+team_5_project.zip
 *.bak
 paper/*.aux
 paper/*.bbl
